@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS health_status (
   last_query_attempt TEXT,
   consecutive_failures INTEGER DEFAULT 0 NOT NULL,
   in_grace_period INTEGER DEFAULT 0 NOT NULL,
+  last_synced_block TEXT,  -- Last block synced for incremental sync
   updated_at TEXT DEFAULT (datetime('now')) NOT NULL
 );
 
@@ -98,6 +99,43 @@ CREATE TABLE IF NOT EXISTS wallet_mappings (
 
 CREATE INDEX IF NOT EXISTS idx_wallet_mappings_address
   ON wallet_mappings(wallet_address);
+
+-- Cached claim events (RewardPaid events from reward vaults)
+CREATE TABLE IF NOT EXISTS cached_claim_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block_number TEXT NOT NULL,
+  address TEXT NOT NULL COLLATE NOCASE,
+  amount TEXT NOT NULL,  -- Stored as string for bigint precision
+  vault_address TEXT NOT NULL COLLATE NOCASE,
+  created_at TEXT DEFAULT (datetime('now')) NOT NULL,
+  UNIQUE(tx_hash, log_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cached_claim_events_address
+  ON cached_claim_events(address);
+
+CREATE INDEX IF NOT EXISTS idx_cached_claim_events_block
+  ON cached_claim_events(block_number);
+
+-- Cached burn events (Transfer to 0x0 from BGT token)
+CREATE TABLE IF NOT EXISTS cached_burn_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block_number TEXT NOT NULL,
+  from_address TEXT NOT NULL COLLATE NOCASE,
+  amount TEXT NOT NULL,  -- Stored as string for bigint precision
+  created_at TEXT DEFAULT (datetime('now')) NOT NULL,
+  UNIQUE(tx_hash, log_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cached_burn_events_address
+  ON cached_burn_events(from_address);
+
+CREATE INDEX IF NOT EXISTS idx_cached_burn_events_block
+  ON cached_burn_events(block_number);
 `;
 
 /**

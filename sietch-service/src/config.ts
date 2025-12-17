@@ -21,6 +21,14 @@ const addressListSchema = z
   .pipe(z.array(addressSchema));
 
 /**
+ * Zod schema for validating comma-separated URL lists
+ */
+const urlListSchema = z
+  .string()
+  .transform((val) => val.split(',').map((url) => url.trim()).filter(Boolean))
+  .pipe(z.array(z.string().url()));
+
+/**
  * Admin API key schema: "key:name,key:name"
  */
 const adminApiKeysSchema = z
@@ -42,7 +50,7 @@ const adminApiKeysSchema = z
 const configSchema = z.object({
   // Berachain RPC Configuration
   chain: z.object({
-    rpcUrl: z.string().url(),
+    rpcUrls: urlListSchema, // Support multiple RPC URLs for resilience
     bgtAddress: addressSchema,
     rewardVaultAddresses: addressListSchema,
   }),
@@ -96,7 +104,7 @@ const configSchema = z.object({
 function parseConfig() {
   const rawConfig = {
     chain: {
-      rpcUrl: process.env.BERACHAIN_RPC_URL ?? '',
+      rpcUrls: process.env.BERACHAIN_RPC_URLS ?? process.env.BERACHAIN_RPC_URL ?? '',
       bgtAddress: process.env.BGT_ADDRESS ?? '',
       rewardVaultAddresses: process.env.REWARD_VAULT_ADDRESSES ?? '',
     },
@@ -150,7 +158,7 @@ function parseConfig() {
  */
 export interface Config {
   chain: {
-    rpcUrl: string;
+    rpcUrls: string[];
     bgtAddress: Address;
     rewardVaultAddresses: Address[];
   };
@@ -194,7 +202,7 @@ const parsedConfig = parseConfig();
  */
 export const config: Config = {
   chain: {
-    rpcUrl: parsedConfig.chain.rpcUrl,
+    rpcUrls: parsedConfig.chain.rpcUrls,
     bgtAddress: parsedConfig.chain.bgtAddress as Address,
     rewardVaultAddresses: parsedConfig.chain.rewardVaultAddresses as Address[],
   },

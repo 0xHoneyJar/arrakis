@@ -11,13 +11,15 @@
 
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
+import { startServer } from './api/index.js';
 
 async function main() {
   logger.info({ config: { port: config.api.port, host: config.api.host } }, 'Starting Sietch Service');
 
-  // TODO: Initialize database
+  // Start Express API server (initializes database internally)
+  await startServer();
+
   // TODO: Initialize Discord bot
-  // TODO: Start Express server
 
   logger.info('Sietch Service started successfully');
 }

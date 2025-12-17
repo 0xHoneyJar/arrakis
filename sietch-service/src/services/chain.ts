@@ -1,6 +1,7 @@
 import {
   createPublicClient,
   http,
+  fallback,
   type Address,
   type PublicClient,
   type AbiEvent,
@@ -49,21 +50,95 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 const BLOCK_RANGE = 10000n;
 
 /**
+ * RPC endpoint health tracking
+ */
+interface RpcEndpointHealth {
+  url: string;
+  failureCount: number;
+  lastFailure: Date | null;
+  isHealthy: boolean;
+}
+
+/**
  * Chain Service
  *
  * Queries Berachain RPC via viem to fetch BGT eligibility data.
  * Fetches claim events from reward vaults and burn events from BGT transfers.
+ * Supports multiple RPC endpoints with automatic fallback.
  */
 class ChainService {
   private client: PublicClient;
+  private rpcHealth: Map<string, RpcEndpointHealth> = new Map();
+  private currentRpcIndex: number = 0;
 
   constructor() {
+    // Initialize health tracking for all configured RPCs
+    for (const url of config.chain.rpcUrls) {
+      this.rpcHealth.set(url, {
+        url,
+        failureCount: 0,
+        lastFailure: null,
+        isHealthy: true,
+      });
+    }
+
+    // Create fallback transport with all configured RPCs
+    const transports = config.chain.rpcUrls.map((url) =>
+      http(url, {
+        timeout: 30000, // 30 second timeout
+        retryCount: 2,
+        retryDelay: 1000,
+      })
+    );
+
     this.client = createPublicClient({
       chain: berachain,
-      transport: http(config.chain.rpcUrl),
+      transport: fallback(transports, {
+        rank: true, // Use fastest endpoint
+        retryCount: 3,
+        retryDelay: 1000,
+      }),
     });
 
-    logger.info({ rpcUrl: config.chain.rpcUrl }, 'Chain service initialized');
+    logger.info(
+      { rpcUrls: config.chain.rpcUrls, count: config.chain.rpcUrls.length },
+      'Chain service initialized with multiple RPC endpoints'
+    );
+  }
+
+  /**
+   * Get health status of all RPC endpoints
+   */
+  getRpcHealth(): RpcEndpointHealth[] {
+    return Array.from(this.rpcHealth.values());
+  }
+
+  /**
+   * Mark an RPC endpoint as failed
+   */
+  private markRpcFailed(url: string): void {
+    const health = this.rpcHealth.get(url);
+    if (health) {
+      health.failureCount++;
+      health.lastFailure = new Date();
+      // Mark unhealthy after 3 consecutive failures
+      if (health.failureCount >= 3) {
+        health.isHealthy = false;
+        logger.warn({ url, failureCount: health.failureCount }, 'RPC endpoint marked unhealthy');
+      }
+    }
+  }
+
+  /**
+   * Reset RPC endpoint health on success
+   */
+  private markRpcHealthy(url: string): void {
+    const health = this.rpcHealth.get(url);
+    if (health && !health.isHealthy) {
+      health.failureCount = 0;
+      health.isHealthy = true;
+      logger.info({ url }, 'RPC endpoint recovered');
+    }
   }
 
   /**

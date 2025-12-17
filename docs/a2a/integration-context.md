@@ -5,8 +5,9 @@
 **Team**: Laboratory
 **Team ID**: `466d92ac-5b8d-447d-9d2b-cc320ee23b31`
 
-**Project**: Sietch (to be created)
-**Project ID**: TBD
+**Project**: Sietch
+**Project ID**: `e4099077-6435-4850-b7b2-63efd1b9055b`
+**Project URL**: https://linear.app/honeyjar/project/sietch-240533adb0d4
 
 ## Standard Labels
 
