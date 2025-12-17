@@ -17,7 +17,7 @@ This document maintains organizational memory across sprints for the Sietch proj
 | Sprint 1 | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Approved |
 | Sprint 2 | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Approved |
 | Sprint 3 | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Approved |
-| Sprint 4 | ⏳ Pending | - | - | - |
+| Sprint 4 | 🔄 In Progress | ✅ Complete | ⏳ Pending Review | - |
 | Sprint 5 | ⏳ Pending | - | - | - |
 
 ---
@@ -141,6 +141,47 @@ This document maintains organizational memory across sprints for the Sietch proj
 
 ---
 
+## Sprint 4: Collab.Land Integration & Deployment
+
+**Goal**: Production deployment infrastructure and Collab.Land token gate integration
+
+**Directory**: `docs/a2a/sprint-4/`
+
+### Files
+- `reviewer.md` - Implementation report from engineer (✅ Created)
+- `engineer-feedback.md` - Review feedback from senior lead (⏳ Pending)
+- `auditor-sprint-feedback.md` - Security audit feedback (⏳ Pending)
+- `COMPLETED` - Completion marker (⏳ Pending)
+
+### Tasks Completed
+- [x] S4-T1: Collab.Land Configuration Documentation
+- [x] S4-T2: VPS Environment Setup Scripts
+- [x] S4-T3: nginx Configuration
+- [x] S4-T4: PM2 Configuration
+- [x] S4-T5: Deployment Script
+- [x] S4-T6: Initial Production Deployment Documentation
+- [x] S4-T7: Backup Script Setup
+
+### Implementation Summary
+- 7 deployment infrastructure files created
+- VPS setup automation with security hardening
+- Zero-downtime deployment with automatic rollback
+- Complete deployment runbook documentation
+
+### Key Files Created
+- `sietch-service/docs/deployment/collabland-setup.md` - Collab.Land integration guide
+- `sietch-service/docs/deployment/scripts/setup-vps.sh` - VPS setup automation
+- `sietch-service/docs/deployment/scripts/deploy.sh` - Zero-downtime deployment
+- `sietch-service/docs/deployment/scripts/backup.sh` - Database backup script
+- `sietch-service/docs/deployment/configs/nginx-sietch.conf` - nginx reverse proxy
+- `sietch-service/docs/deployment/DEPLOYMENT_RUNBOOK.md` - Complete runbook
+- `sietch-service/ecosystem.config.cjs` - PM2 process management
+
+### Linear Issue
+- [LAB-717](https://linear.app/laboratory/issue/LAB-717) - Sprint 4 Implementation
+
+---
+
 ## Deployment Status
 
 | Environment | Status | URL |
@@ -158,4 +199,4 @@ This document maintains organizational memory across sprints for the Sietch proj
 
 ---
 
-*Last Updated: December 18, 2025 (Sprint 3 Security Audit Approved)*
+*Last Updated: December 18, 2025 (Sprint 4 Implementation Complete - Awaiting Review)*
