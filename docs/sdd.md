@@ -11,13 +11,13 @@
 
 Sietch is a token-gated Discord community service that manages access for the top 69 BGT holders who have never redeemed their tokens. The system consists of:
 
-1. **Sietch Service** - A TypeScript/Node.js application that queries Dune Analytics for eligibility data, caches results in SQLite, exposes a REST API for Collab.Land, and manages Discord notifications via a built-in bot.
+1. **Sietch Service** - A TypeScript/Node.js application that queries Berachain RPC directly via viem for eligibility data, uses trigger.dev for scheduled tasks, caches results in SQLite, exposes a REST API for Collab.Land, and manages Discord notifications via a built-in bot.
 
 2. **Collab.Land Integration** - Token gating that queries the Sietch Service API to assign Discord roles (Naib, Fedaykin) based on wallet verification.
 
 3. **Discord Server** - The community platform with role-based channel access.
 
-The architecture prioritizes simplicity, minimal maintenance, and reliability with graceful degradation during upstream outages.
+The architecture prioritizes simplicity, minimal maintenance, and reliability with graceful degradation during RPC outages. It follows the same patterns used in `fatbera-contracts` for trigger.dev scheduling and viem chain interactions.
 
 ---
 
@@ -30,16 +30,16 @@ The architecture prioritizes simplicity, minimal maintenance, and reliability wi
 │                           Sietch Service                                 │
 │                        (TypeScript/Node.js)                              │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │  Scheduler  │  │  REST API   │  │ Discord Bot │  │   SQLite    │    │
-│  │  (node-cron)│  │  (Express)  │  │ (discord.js)│  │   Cache     │    │
+│  │ trigger.dev │  │  REST API   │  │ Discord Bot │  │   SQLite    │    │
+│  │ (Scheduler) │  │  (Express)  │  │ (discord.js)│  │   Cache     │    │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘    │
 │         │                │                │                │            │
 └─────────┼────────────────┼────────────────┼────────────────┼────────────┘
           │                │                │                │
           ▼                │                ▼                │
 ┌─────────────────┐        │        ┌─────────────────┐      │
-│   Dune API      │        │        │  Discord API    │      │
-│  (Query Source) │        │        │  (Notifications)│      │
+│  Berachain RPC  │        │        │  Discord API    │      │
+│  (viem queries) │        │        │  (Notifications)│      │
 └─────────────────┘        │        └─────────────────┘      │
                            │                                  │
                            ▼                                  │
@@ -62,7 +62,7 @@ The architecture prioritizes simplicity, minimal maintenance, and reliability wi
 │                        Every 6 Hours                              │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  Scheduler ──▶ Dune API ──▶ Parse Results ──▶ SQLite Cache       │
+│  trigger.dev ──▶ viem/RPC ──▶ Parse Events ──▶ SQLite Cache      │
 │                                    │                              │
 │                                    ▼                              │
 │                          Diff with Previous                       │
@@ -107,8 +107,8 @@ The architecture prioritizes simplicity, minimal maintenance, and reliability wi
 | **Web Framework** | Express.js | Simple, well-documented, minimal overhead |
 | **Database** | SQLite (better-sqlite3) | Zero config, file-based, supports queries |
 | **Discord Library** | discord.js v14 | Official library, full API coverage |
-| **Scheduler** | node-cron | Simple cron syntax, reliable |
-| **HTTP Client** | axios | Promise-based, interceptors for retry |
+| **Scheduler** | trigger.dev v3 | Managed scheduling, same pattern as fatbera-contracts |
+| **Chain Client** | viem | Type-safe Ethereum client, Berachain support |
 | **Process Manager** | PM2 | Auto-restart, log management, monitoring |
 | **Reverse Proxy** | nginx | SSL termination, rate limiting |
 
@@ -127,9 +127,8 @@ sietch-service/
 │   │       ├── health.ts
 │   │       └── admin.ts
 │   ├── services/
-│   │   ├── dune.ts           # Dune API client
+│   │   ├── chain.ts          # viem client for Berachain RPC
 │   │   ├── eligibility.ts    # Core eligibility logic
-│   │   ├── scheduler.ts      # Cron job management
 │   │   └── discord.ts        # Discord bot & notifications
 │   ├── db/
 │   │   ├── schema.ts         # SQLite schema definitions
@@ -140,6 +139,9 @@ sietch-service/
 │   └── utils/
 │       ├── logger.ts         # Structured logging
 │       └── errors.ts         # Custom error classes
+├── trigger/
+│   └── syncEligibility.ts    # trigger.dev scheduled task
+├── trigger.config.ts         # trigger.dev configuration
 ├── tests/
 │   ├── unit/
 │   └── integration/
@@ -153,141 +155,227 @@ sietch-service/
 
 ## 4. Component Design
 
-### 4.1 Scheduler Service
+### 4.1 Scheduled Task (trigger.dev)
 
-**Purpose**: Execute Dune queries on a 6-hour cadence and trigger eligibility updates.
+**Purpose**: Execute eligibility sync on a 6-hour cadence using trigger.dev managed scheduling.
 
 ```typescript
-// src/services/scheduler.ts
+// trigger/syncEligibility.ts
+import { logger, schedules } from "@trigger.dev/sdk/v3";
+import { chainService } from "../src/services/chain";
+import { eligibilityService } from "../src/services/eligibility";
+import { discordService } from "../src/services/discord";
+import { db } from "../src/db";
 
-interface SchedulerConfig {
-  cronExpression: string;  // "0 */6 * * *" (every 6 hours)
-  onTick: () => Promise<void>;
-  onError: (error: Error) => void;
-}
+export const syncEligibility = schedules.task({
+  id: "sync-eligibility",
+  // Run every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+  cron: "0 */6 * * *",
+  maxDuration: 300, // 5 minutes max
+  run: async (payload, { ctx }) => {
+    logger.info("Starting eligibility sync", { runId: ctx.run.id });
 
-class SchedulerService {
-  private job: CronJob;
-  private isRunning: boolean = false;
-
-  async runEligibilityUpdate(): Promise<void> {
-    if (this.isRunning) {
-      logger.warn('Skipping update - previous run still in progress');
-      return;
-    }
-
-    this.isRunning = true;
     try {
-      // 1. Fetch from Dune
-      const duneResult = await duneService.executeQuery();
+      // 1. Fetch BGT data from Berachain RPC
+      const chainResult = await chainService.fetchEligibilityData();
+      logger.info("Fetched chain data", { walletCount: chainResult.length });
 
       // 2. Get previous state
       const previousState = await db.getLatestEligibilitySnapshot();
 
       // 3. Compute diff
-      const diff = computeEligibilityDiff(previousState, duneResult);
+      const diff = eligibilityService.computeDiff(previousState, chainResult);
+      logger.info("Computed diff", {
+        added: diff.added.length,
+        removed: diff.removed.length,
+        promotions: diff.promotedToNaib.length,
+        demotions: diff.demotedFromNaib.length,
+      });
 
       // 4. Store new state
-      await db.saveEligibilitySnapshot(duneResult);
+      await db.saveEligibilitySnapshot(chainResult);
 
-      // 5. Process changes
+      // 5. Process changes via Discord bot
       await discordService.processEligibilityChanges(diff);
 
       // 6. Update health status
       await db.updateHealthStatus({ lastSuccessfulQuery: new Date() });
 
+      logger.info("Eligibility sync completed successfully");
+      return { success: true, processed: chainResult.length };
+
     } catch (error) {
-      await this.handleUpdateError(error);
-    } finally {
-      this.isRunning = false;
+      logger.error("Eligibility sync failed", { error });
+
+      // Check if we should enter grace period
+      const health = await db.getHealthStatus();
+      const hoursSinceSuccess = getHoursSince(health.lastSuccessfulQuery);
+
+      if (hoursSinceSuccess >= 24) {
+        logger.warn("Grace period exceeded - manual intervention required");
+        // Could trigger alert here (e.g., Discord webhook, PagerDuty)
+      }
+
+      throw error; // Let trigger.dev handle retry logic
     }
-  }
-
-  private async handleUpdateError(error: Error): Promise<void> {
-    logger.error('Eligibility update failed', { error });
-
-    // Check if we should enter grace period
-    const lastSuccess = await db.getLastSuccessfulQuery();
-    const hoursSinceSuccess = getHoursSince(lastSuccess);
-
-    if (hoursSinceSuccess >= 24) {
-      logger.warn('Grace period exceeded - manual intervention required');
-      // Alert admin but don't revoke access
-    }
-  }
-}
+  },
+});
 ```
-
-### 4.2 Dune Service
-
-**Purpose**: Interface with Dune Analytics API to fetch eligibility data.
 
 ```typescript
-// src/services/dune.ts
+// trigger.config.ts
+import type { TriggerConfig } from "@trigger.dev/sdk/v3";
 
-interface DuneConfig {
-  apiKey: string;
-  queryId: string;        // Pre-saved query ID on Dune
-  maxRetries: number;
-  retryDelayMs: number;
+export const config: TriggerConfig = {
+  project: "sietch-service",
+  retries: {
+    enabledInDev: false,
+    default: {
+      maxAttempts: 3,
+      minTimeoutInMs: 1000,
+      maxTimeoutInMs: 10000,
+      factor: 2,
+    },
+  },
+};
+```
+
+### 4.2 Chain Service
+
+**Purpose**: Query Berachain RPC directly via viem to fetch BGT eligibility data.
+
+```typescript
+// src/services/chain.ts
+import { createPublicClient, http, parseAbiItem, type Address } from "viem";
+import { berachain } from "viem/chains";
+import { config } from "../config";
+
+// Contract addresses on Berachain
+const BGT_ADDRESS = "0x..." as Address; // BGT token contract
+const REWARD_VAULT_ADDRESSES: Address[] = [
+  // List of known reward vault contracts
+];
+
+interface EligibilityEntry {
+  address: Address;
+  bgt_claimed: bigint;
+  bgt_burned: bigint;
+  bgt_held: bigint;
 }
 
-interface DuneResult {
-  rows: Array<{
-    recipient: string;    // Wallet address
-    bgt_held: number;     // BGT balance
-  }>;
-  executedAt: Date;
-}
+class ChainService {
+  private client = createPublicClient({
+    chain: berachain,
+    transport: http(config.rpcUrl),
+  });
 
-class DuneService {
-  private client: AxiosInstance;
+  async fetchEligibilityData(): Promise<EligibilityEntry[]> {
+    // 1. Get all BGT claim events from reward vaults
+    const claimEvents = await this.fetchClaimEvents();
 
-  constructor(config: DuneConfig) {
-    this.client = axios.create({
-      baseURL: 'https://api.dune.com/api/v1',
-      headers: { 'X-Dune-API-Key': config.apiKey },
-      timeout: 60000,  // Dune queries can be slow
-    });
-  }
+    // 2. Get all BGT burn events (transfers to 0x0)
+    const burnEvents = await this.fetchBurnEvents();
 
-  async executeQuery(): Promise<DuneResult> {
-    // Execute fresh query (Plus tier allows this)
-    const execution = await this.client.post(
-      `/query/${this.config.queryId}/execute`
+    // 3. Aggregate by wallet
+    const walletData = this.aggregateWalletData(claimEvents, burnEvents);
+
+    // 4. Filter out wallets that have burned any BGT
+    const eligibleWallets = walletData.filter(w => w.bgt_burned === 0n);
+
+    // 5. Sort by BGT held descending
+    eligibleWallets.sort((a, b) =>
+      Number(b.bgt_held - a.bgt_held)
     );
 
-    // Poll for results
-    return await this.pollForResults(execution.data.execution_id);
+    return eligibleWallets;
   }
 
-  private async pollForResults(executionId: string): Promise<DuneResult> {
-    const maxAttempts = 30;
-    const pollInterval = 2000;
+  private async fetchClaimEvents(): Promise<ClaimEvent[]> {
+    // RewardPaid event from reward vaults
+    const rewardPaidEvent = parseAbiItem(
+      "event RewardPaid(address indexed user, uint256 reward)"
+    );
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const status = await this.client.get(
-        `/execution/${executionId}/status`
-      );
+    const events: ClaimEvent[] = [];
 
-      if (status.data.state === 'QUERY_STATE_COMPLETED') {
-        const results = await this.client.get(
-          `/execution/${executionId}/results`
-        );
-        return this.parseResults(results.data);
-      }
+    for (const vaultAddress of REWARD_VAULT_ADDRESSES) {
+      const logs = await this.client.getLogs({
+        address: vaultAddress,
+        event: rewardPaidEvent,
+        fromBlock: "earliest",
+        toBlock: "latest",
+      });
 
-      if (status.data.state === 'QUERY_STATE_FAILED') {
-        throw new DuneQueryError('Query execution failed');
-      }
-
-      await sleep(pollInterval);
+      events.push(...logs.map(log => ({
+        recipient: log.args.user as Address,
+        amount: log.args.reward as bigint,
+      })));
     }
 
-    throw new DuneQueryError('Query timed out');
+    return events;
+  }
+
+  private async fetchBurnEvents(): Promise<BurnEvent[]> {
+    // Transfer to 0x0 address = burn
+    const transferEvent = parseAbiItem(
+      "event Transfer(address indexed from, address indexed to, uint256 value)"
+    );
+
+    const logs = await this.client.getLogs({
+      address: BGT_ADDRESS,
+      event: transferEvent,
+      args: {
+        to: "0x0000000000000000000000000000000000000000",
+      },
+      fromBlock: "earliest",
+      toBlock: "latest",
+    });
+
+    return logs.map(log => ({
+      from: log.args.from as Address,
+      amount: log.args.value as bigint,
+    }));
+  }
+
+  private aggregateWalletData(
+    claims: ClaimEvent[],
+    burns: BurnEvent[]
+  ): EligibilityEntry[] {
+    const wallets = new Map<Address, EligibilityEntry>();
+
+    // Sum up claims
+    for (const claim of claims) {
+      const existing = wallets.get(claim.recipient) ?? {
+        address: claim.recipient,
+        bgt_claimed: 0n,
+        bgt_burned: 0n,
+        bgt_held: 0n,
+      };
+      existing.bgt_claimed += claim.amount;
+      existing.bgt_held = existing.bgt_claimed - existing.bgt_burned;
+      wallets.set(claim.recipient, existing);
+    }
+
+    // Sum up burns
+    for (const burn of burns) {
+      const existing = wallets.get(burn.from);
+      if (existing) {
+        existing.bgt_burned += burn.amount;
+        existing.bgt_held = existing.bgt_claimed - existing.bgt_burned;
+      }
+    }
+
+    return Array.from(wallets.values());
   }
 }
+
+export const chainService = new ChainService();
 ```
+
+**Note**: The Chain Service queries events directly from Berachain RPC. For improved performance with large historical ranges, consider:
+1. Using a block range limit and pagination
+2. Caching historical events locally
+3. Subscribing to new events for incremental updates
 
 ### 4.3 Discord Service
 
@@ -552,20 +640,23 @@ CREATE INDEX idx_wallet_mappings_address ON wallet_mappings(wallet_address);
 ### 5.2 Data Flow
 
 ```
-┌─────────────┐
-│  Dune API   │
-└──────┬──────┘
-       │ Raw query results
-       ▼
+┌─────────────────┐
+│  Berachain RPC  │
+│   (via viem)    │
+└────────┬────────┘
+         │ Event logs (RewardPaid, Transfer)
+         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Eligibility Processing                    │
 ├─────────────────────────────────────────────────────────────┤
-│  1. Parse Dune results into EligibilityEntry[]              │
-│  2. Apply admin overrides (add/remove entries)               │
-│  3. Sort by bgt_held descending                              │
-│  4. Assign ranks (1-69 or unranked)                         │
-│  5. Assign roles (naib: 1-7, fedaykin: 8-69, none: >69)     │
-│  6. Compute diff against previous snapshot                   │
+│  1. Fetch claim events from reward vaults                    │
+│  2. Fetch burn events (transfers to 0x0)                     │
+│  3. Aggregate by wallet, filter out burners                  │
+│  4. Apply admin overrides (add/remove entries)               │
+│  5. Sort by bgt_held descending                              │
+│  6. Assign ranks (1-69 or unranked)                         │
+│  7. Assign roles (naib: 1-7, fedaykin: 8-69, none: >69)     │
+│  8. Compute diff against previous snapshot                   │
 └──────┬──────────────────────────────────────────────────────┘
        │
        ├──▶ eligibility_snapshots (historical)
@@ -772,7 +863,7 @@ const adminRateLimiter = rateLimit({
 |--------|------------|--------|------------|
 | API abuse | Medium | Low | Rate limiting |
 | Data manipulation | Low | High | Read-only public API, admin audit log |
-| Dune data poisoning | Low | High | Cannot control, trust upstream |
+| RPC data manipulation | Very Low | High | Trust chain consensus, verify event signatures |
 | DDoS | Low | Medium | nginx rate limiting, CDN if needed |
 | Discord bot token leak | Low | High | Environment variables, minimal permissions |
 
@@ -780,22 +871,34 @@ const adminRateLimiter = rateLimit({
 
 ## 8. Integration Points
 
-### 8.1 Dune Analytics
+### 8.1 Berachain RPC
 
-**API**: Dune API v1
-**Authentication**: API key in header
-**Query**: Pre-saved query (query ID stored in config)
+**Client**: viem with Berachain chain config
+**Transport**: HTTP RPC endpoint
+**Events**: RewardPaid (reward vaults), Transfer (BGT token burns)
 
 ```typescript
 // src/config.ts
 export const config = {
-  dune: {
-    apiKey: process.env.DUNE_API_KEY,
-    queryId: process.env.DUNE_QUERY_ID,  // Pre-saved query on Dune
-    timeout: 120000,  // 2 minutes for query execution
+  chain: {
+    rpcUrl: process.env.BERACHAIN_RPC_URL ?? "https://rpc.berachain.com",
+    bgtAddress: process.env.BGT_ADDRESS as Address,
+    rewardVaultAddresses: (process.env.REWARD_VAULT_ADDRESSES ?? "")
+      .split(",")
+      .filter(Boolean) as Address[],
+  },
+  triggerDev: {
+    projectId: process.env.TRIGGER_PROJECT_ID,
+    secretKey: process.env.TRIGGER_SECRET_KEY,
   },
 };
 ```
+
+**Performance Considerations**:
+- RPC queries for historical events can be slow for large block ranges
+- Consider paginating by block range (e.g., 10,000 blocks at a time)
+- Cache historical events locally and only query new blocks incrementally
+- Use a dedicated RPC provider (Alchemy, QuickNode) for production reliability
 
 ### 8.2 Collab.Land
 
@@ -834,7 +937,7 @@ Collab.Land will be configured to:
 | Metric | Target | Approach |
 |--------|--------|----------|
 | API Response Time | < 100ms | SQLite cached data, minimal processing |
-| Eligibility Update | < 5 min | Dune query + processing (async) |
+| Eligibility Update | < 5 min | RPC event queries + processing (async via trigger.dev) |
 | Memory Usage | < 256MB | Small dataset (69 entries max) |
 | Database Size | < 100MB | Historical snapshots pruned after 30 days |
 
@@ -966,9 +1069,14 @@ echo "Deployed successfully"
 ```bash
 # /opt/sietch/.env
 
-# Dune Analytics
-DUNE_API_KEY=your_dune_api_key
-DUNE_QUERY_ID=12345
+# Berachain RPC
+BERACHAIN_RPC_URL=https://rpc.berachain.com
+BGT_ADDRESS=0x...  # BGT token contract address
+REWARD_VAULT_ADDRESSES=0x...,0x...,0x...  # Comma-separated vault addresses
+
+# trigger.dev
+TRIGGER_PROJECT_ID=sietch-service
+TRIGGER_SECRET_KEY=your_trigger_secret_key
 
 # Discord
 DISCORD_BOT_TOKEN=your_discord_bot_token
@@ -1135,7 +1243,8 @@ describe('EligibilityService', () => {
 | Check | Frequency | Alert Threshold |
 |-------|-----------|-----------------|
 | API responsiveness | 1 min | 3 consecutive failures |
-| Dune query success | 6 hours | 2 consecutive failures |
+| RPC query success | 6 hours | 2 consecutive failures |
+| trigger.dev task health | 6 hours | Task failure or timeout |
 | Database accessible | 1 min | 1 failure |
 | Discord bot connected | 1 min | Disconnection > 5 min |
 
@@ -1153,7 +1262,7 @@ const logger = pino({
 
 // Usage
 logger.info({ event: 'eligibility_update', count: 69 }, 'Eligibility updated');
-logger.error({ error, query_id: config.dune.queryId }, 'Dune query failed');
+logger.error({ error, rpcUrl: config.chain.rpcUrl }, 'RPC query failed');
 ```
 
 ### 12.3 Metrics (Optional Future)
@@ -1176,7 +1285,9 @@ const metrics = {
 
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
-| Dune API changes | Low | High | Pin to API v1, monitor deprecations |
+| RPC endpoint unavailable | Medium | High | Grace period + cached data, fallback RPC providers |
+| RPC rate limits | Medium | Medium | Pagination, request batching, dedicated RPC provider |
+| trigger.dev service issues | Low | Medium | Built-in retries, alerting, manual trigger fallback |
 | Collab.Land API changes | Low | High | Flexible design, document integration |
 | Discord API rate limits | Low | Medium | Batch operations, respect limits |
 | SQLite corruption | Very Low | High | Daily backups, WAL mode |
@@ -1211,7 +1322,8 @@ find "$BACKUP_DIR" -name "sietch-*.db" -mtime +7 -delete
 | Webhook notifications | Low | Medium | Notify external services on changes |
 | Historical analytics | Medium | Low | Track eligibility trends over time |
 | Multi-server support | High | Low | Out of scope per PRD |
-| Alternative data sources | Medium | High | Backup if Dune fails |
+| Subsquid indexer integration | Medium | High | Use existing mibera-squid for faster queries |
+| Real-time event subscriptions | Medium | Medium | WebSocket subscriptions for instant updates |
 
 ### 14.2 Technical Debt Awareness
 
