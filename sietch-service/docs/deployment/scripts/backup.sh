@@ -9,8 +9,25 @@
 #   - Environment configuration
 #   - Current release info
 #
+# Features:
+#   - AES-256 encryption (enabled by default)
+#   - Integrity verification
+#   - Automatic retention cleanup
+#
 # Schedule with cron:
-#   0 3 * * * /opt/sietch/scripts/backup.sh
+#   0 3 * * * /opt/sietch/scripts/backup.sh >> /opt/sietch/logs/backup.log 2>&1
+#
+# Encryption Setup (one-time):
+#   echo 'your-secure-passphrase' > /opt/sietch/.backup-passphrase
+#   chmod 600 /opt/sietch/.backup-passphrase
+#
+# Environment Variables:
+#   BACKUP_ENCRYPTION=true|false  (default: true)
+#   BACKUP_PASSPHRASE=string      (alternative to passphrase file)
+#   RETENTION_DAYS=7              (default: 7)
+#
+# Restore encrypted backup:
+#   gpg --decrypt backup.tar.gz.gpg | tar -xzf -
 #
 # Backup retention: 7 days (configurable)
 
@@ -35,6 +52,12 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="sietch_backup_$TIMESTAMP"
 BACKUP_PATH="$BACKUP_DIR/$BACKUP_NAME"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
+
+# Encryption configuration
+# Set BACKUP_ENCRYPTION=true and provide passphrase to enable
+BACKUP_ENCRYPTION="${BACKUP_ENCRYPTION:-true}"
+BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}"
+BACKUP_PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-$SIETCH_DIR/.backup-passphrase}"
 
 # Verify directories exist
 if [[ ! -d "$BACKUP_DIR" ]]; then
@@ -153,11 +176,52 @@ BACKUP_SIZE=$(du -h "$BACKUP_NAME.tar.gz" | cut -f1)
 log_info "Backup compressed: $BACKUP_NAME.tar.gz ($BACKUP_SIZE)"
 
 # =============================================================================
+# Encrypt Backup (Optional but recommended)
+# =============================================================================
+FINAL_BACKUP_FILE="$BACKUP_NAME.tar.gz"
+
+if [[ "$BACKUP_ENCRYPTION" == "true" ]]; then
+    log_info "Encrypting backup..."
+
+    # Get passphrase from file or environment
+    if [[ -n "$BACKUP_PASSPHRASE" ]]; then
+        PASSPHRASE="$BACKUP_PASSPHRASE"
+    elif [[ -f "$BACKUP_PASSPHRASE_FILE" ]]; then
+        PASSPHRASE=$(cat "$BACKUP_PASSPHRASE_FILE")
+    else
+        log_warn "Encryption enabled but no passphrase provided."
+        log_warn "Create passphrase file: echo 'your-secure-passphrase' > $BACKUP_PASSPHRASE_FILE && chmod 600 $BACKUP_PASSPHRASE_FILE"
+        log_warn "Skipping encryption for this backup."
+        BACKUP_ENCRYPTION="false"
+    fi
+
+    if [[ "$BACKUP_ENCRYPTION" == "true" && -n "$PASSPHRASE" ]]; then
+        # Encrypt using GPG with AES-256 symmetric encryption
+        echo "$PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 \
+            --output "$BACKUP_NAME.tar.gz.gpg" \
+            "$BACKUP_NAME.tar.gz"
+
+        if [[ -f "$BACKUP_NAME.tar.gz.gpg" ]]; then
+            # Remove unencrypted backup
+            rm -f "$BACKUP_NAME.tar.gz"
+            FINAL_BACKUP_FILE="$BACKUP_NAME.tar.gz.gpg"
+            BACKUP_SIZE=$(du -h "$FINAL_BACKUP_FILE" | cut -f1)
+            log_info "Backup encrypted: $FINAL_BACKUP_FILE ($BACKUP_SIZE)"
+        else
+            log_error "Encryption failed, keeping unencrypted backup"
+        fi
+    fi
+else
+    log_info "Encryption disabled (set BACKUP_ENCRYPTION=true to enable)"
+fi
+
+# =============================================================================
 # Cleanup Old Backups
 # =============================================================================
 log_info "Cleaning up old backups (retention: $RETENTION_DAYS days)..."
 
-# Find and remove backups older than retention period
+# Find and remove backups older than retention period (both encrypted and unencrypted)
 DELETED_COUNT=0
 while IFS= read -r old_backup; do
     if [[ -n "$old_backup" ]]; then
@@ -165,7 +229,7 @@ while IFS= read -r old_backup; do
         rm -f "$old_backup"
         ((DELETED_COUNT++))
     fi
-done < <(find "$BACKUP_DIR" -name "sietch_backup_*.tar.gz" -mtime +$RETENTION_DAYS -type f)
+done < <(find "$BACKUP_DIR" -name "sietch_backup_*.tar.gz*" -mtime +$RETENTION_DAYS -type f)
 
 if [[ $DELETED_COUNT -gt 0 ]]; then
     log_info "Removed $DELETED_COUNT old backup(s)"
@@ -181,16 +245,25 @@ echo "=============================================="
 echo -e "  ${GREEN}BACKUP COMPLETE${NC}"
 echo "=============================================="
 echo ""
-echo "Backup file: $BACKUP_DIR/$BACKUP_NAME.tar.gz"
+echo "Backup file: $BACKUP_DIR/$FINAL_BACKUP_FILE"
 echo "Backup size: $BACKUP_SIZE"
+echo "Encrypted: $BACKUP_ENCRYPTION"
 echo "Retention: $RETENTION_DAYS days"
 echo ""
 
 # List current backups
 echo "Current backups:"
-ls -lh "$BACKUP_DIR"/*.tar.gz 2>/dev/null | tail -10
+ls -lh "$BACKUP_DIR"/sietch_backup_*.tar.gz* 2>/dev/null | tail -10
 
 echo ""
+
+# Show restore instructions for encrypted backups
+if [[ "$FINAL_BACKUP_FILE" == *.gpg ]]; then
+    echo "To restore encrypted backup:"
+    echo "  gpg --decrypt $BACKUP_DIR/$FINAL_BACKUP_FILE | tar -xzf -"
+    echo ""
+fi
+
 log_info "Backup completed successfully!"
 
 # =============================================================================

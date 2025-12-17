@@ -59,7 +59,9 @@ apt-get install -y \
     python3-certbot-nginx \
     sqlite3 \
     ufw \
-    fail2ban
+    fail2ban \
+    gnupg \
+    jq
 
 # =============================================================================
 # Step 3: Install Node.js 20 LTS
@@ -235,13 +237,133 @@ systemctl restart fail2ban
 systemctl enable fail2ban
 
 # =============================================================================
-# Step 10: Setup PM2 Startup Script
+# Step 10: SSH Hardening (Key-Only Authentication)
+# =============================================================================
+log_info "Hardening SSH configuration..."
+
+# Backup original sshd_config
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+
+# Configure SSH for key-only authentication
+cat > /etc/ssh/sshd_config.d/99-sietch-hardening.conf << 'EOF'
+# Sietch SSH Hardening Configuration
+# Disable password authentication - use SSH keys only
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+
+# Disable root login
+PermitRootLogin prohibit-password
+
+# Use only SSH protocol 2
+Protocol 2
+
+# Limit authentication attempts
+MaxAuthTries 3
+MaxSessions 5
+
+# Set idle timeout (5 minutes)
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+# Disable X11 forwarding
+X11Forwarding no
+
+# Disable TCP forwarding (unless needed)
+AllowTcpForwarding no
+
+# Log level
+LogLevel VERBOSE
+EOF
+
+# Test SSH config before restarting
+if sshd -t; then
+    systemctl restart sshd
+    log_info "SSH hardened: password auth disabled, key-only authentication enabled"
+else
+    log_error "SSH config test failed, reverting..."
+    rm /etc/ssh/sshd_config.d/99-sietch-hardening.conf
+fi
+
+log_warn "IMPORTANT: Ensure you have SSH key access before disconnecting!"
+
+# =============================================================================
+# Step 11: Automatic Security Updates
+# =============================================================================
+log_info "Configuring automatic security updates..."
+
+apt-get install -y unattended-upgrades apt-listchanges
+
+# Configure unattended-upgrades
+cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
+// Automatically upgrade packages from these origins
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}";
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+
+// Remove unused kernel packages
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+// Remove unused dependencies
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+// Automatically reboot if required (at 3 AM)
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+
+// Email notifications (optional - configure if needed)
+// Unattended-Upgrade::Mail "admin@example.com";
+
+// Don't automatically reboot with users logged in
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+EOF
+
+# Enable automatic updates
+cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+
+systemctl enable unattended-upgrades
+systemctl start unattended-upgrades
+
+log_info "Automatic security updates enabled"
+
+# =============================================================================
+# Step 12: nginx Log Rotation
+# =============================================================================
+log_info "Configuring nginx log rotation..."
+
+cat > /etc/logrotate.d/nginx-sietch << 'EOF'
+/var/log/nginx/sietch-*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 www-data adm
+    sharedscripts
+    postrotate
+        [ -f /var/run/nginx.pid ] && kill -USR1 `cat /var/run/nginx.pid`
+    endscript
+}
+EOF
+
+log_info "nginx log rotation configured (14 days retention)"
+
+# =============================================================================
+# Step 13: Setup PM2 Startup Script
 # =============================================================================
 log_info "Configuring PM2 startup..."
 pm2 startup systemd -u "$SIETCH_USER" --hp "/home/$SIETCH_USER"
 
 # =============================================================================
-# Step 11: Create Useful Scripts
+# Step 14: Create Useful Scripts
 # =============================================================================
 log_info "Creating utility scripts..."
 
@@ -291,7 +413,7 @@ chmod +x "$SIETCH_DIR/scripts/logs.sh"
 chown -R "$SIETCH_USER:$SIETCH_USER" "$SIETCH_DIR/scripts"
 
 # =============================================================================
-# Step 12: Summary
+# Step 15: Summary
 # =============================================================================
 log_info "VPS setup complete!"
 echo ""
