@@ -17,8 +17,8 @@ This guide documents the manual setup required for the Sietch Discord server.
 
 | Role | Color | Purpose |
 |------|-------|---------|
-| `Naib` | Gold/Yellow | Top 20 BGT holders (ranks 1-20) |
-| `Fedaykin` | Blue | BGT holders ranked 21-69 |
+| `Naib` | Gold/Yellow | Top 7 BGT holders (ranks 1-7) |
+| `Fedaykin` | Blue | BGT holders ranked 8-69 |
 | `Bot` | Gray | Bot service role |
 
 ## Bot Application Setup

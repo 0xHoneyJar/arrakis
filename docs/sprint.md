@@ -356,17 +356,17 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ### Tasks
 
-#### S3-T1: Discord Server Creation
+#### S3-T1: Discord Server Creation ✅
 
 **Description**: Create the Sietch Discord server with full channel and role structure.
 
 **Acceptance Criteria**:
-- [ ] Server created with name "Sietch"
-- [ ] Categories created: STILLSUIT, NAIB COUNCIL, SIETCH-COMMONS, WINDTRAP
-- [ ] Channels created per PRD: #water-discipline, #census, #the-door, #council-rock, #general, #spice, #water-shares, #support
-- [ ] Roles created: Naib (with visual badge), Fedaykin
-- [ ] Channel permissions configured (Naib-only for #council-rock)
-- [ ] Server icon and branding applied
+- [x] Server created with name "Sietch"
+- [x] Categories created: STILLSUIT, NAIB COUNCIL, SIETCH-COMMONS, WINDTRAP
+- [x] Channels created per PRD: #water-discipline, #census, #the-door, #council-rock, #general, #spice, #water-shares, #support
+- [x] Roles created: Naib (with visual badge), Fedaykin
+- [x] Channel permissions configured (Naib-only for #council-rock)
+- [x] Server icon and branding applied
 
 **Estimated Effort**: 3 hours
 **Assigned To**: Integration Developer
@@ -375,16 +375,16 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S3-T2: Discord Bot Application Setup
+#### S3-T2: Discord Bot Application Setup ✅
 
 **Description**: Create Discord bot application and configure permissions.
 
 **Acceptance Criteria**:
-- [ ] Discord application created in Developer Portal
-- [ ] Bot token generated and stored securely
-- [ ] Required intents enabled: Guilds, GuildMembers
-- [ ] Bot permissions: SEND_MESSAGES, EMBED_LINKS, MANAGE_MESSAGES, VIEW_CHANNEL
-- [ ] Bot invited to Sietch server
+- [x] Discord application created in Developer Portal
+- [x] Bot token generated and stored securely
+- [x] Required intents enabled: Guilds, GuildMembers
+- [x] Bot permissions: SEND_MESSAGES, EMBED_LINKS, MANAGE_MESSAGES, VIEW_CHANNEL
+- [x] Bot invited to Sietch server
 
 **Estimated Effort**: 2 hours
 **Assigned To**: Integration Developer
@@ -393,18 +393,18 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S3-T3: Discord Service Implementation
+#### S3-T3: Discord Service Implementation ✅
 
 **Description**: Implement Discord bot connection and basic operations.
 
 **Acceptance Criteria**:
-- [ ] `src/services/discord.ts` with discord.js client
-- [ ] Bot connects on application startup
-- [ ] `postLeaderboard()` - posts/updates leaderboard embed to #census
-- [ ] `postToTheDoor()` - posts join/departure announcements
-- [ ] `findMemberByWallet()` - looks up Discord member by wallet (via wallet_mappings)
-- [ ] Proper error handling for Discord API failures
-- [ ] Reconnection logic on disconnect
+- [x] `src/services/discord.ts` with discord.js client
+- [x] Bot connects on application startup
+- [x] `postLeaderboard()` - posts/updates leaderboard embed to #census
+- [x] `postToTheDoor()` - posts join/departure announcements
+- [x] `findMemberByWallet()` - looks up Discord member by wallet (via wallet_mappings)
+- [x] Proper error handling for Discord API failures
+- [x] Reconnection logic on disconnect
 
 **Estimated Effort**: 8 hours
 **Assigned To**: Integration Developer
@@ -413,17 +413,17 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S3-T4: Leaderboard Embed Builder
+#### S3-T4: Leaderboard Embed Builder ✅
 
 **Description**: Implement rich embed for BGT leaderboard display.
 
 **Acceptance Criteria**:
-- [ ] Embed shows top 7 (Naib Council) with fire emoji
-- [ ] Embed shows ranks 8-69 (Fedaykin) with sword emoji
-- [ ] Addresses truncated (0x1234...abcd format)
-- [ ] BGT amounts formatted with commas and 2 decimal places
-- [ ] Timestamp shows last update time
-- [ ] Embed handles Discord's 1024 char field limit (splits if needed)
+- [x] Embed shows top 7 (Naib Council) with fire emoji
+- [x] Embed shows ranks 8-69 (Fedaykin) with sword emoji
+- [x] Addresses truncated (0x1234...abcd format)
+- [x] BGT amounts formatted with commas and 2 decimal places
+- [x] Timestamp shows last update time
+- [x] Embed handles Discord's 1024 char field limit (splits if needed)
 
 **Estimated Effort**: 4 hours
 **Assigned To**: Integration Developer
@@ -432,15 +432,15 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S3-T5: Integration with Scheduled Task
+#### S3-T5: Integration with Scheduled Task ✅
 
 **Description**: Connect Discord service to trigger.dev task for automatic updates.
 
 **Acceptance Criteria**:
-- [ ] trigger.dev task calls `discordService.postLeaderboard()` after each sync
-- [ ] Leaderboard updates in #census every 6 hours
-- [ ] Errors in Discord posting don't fail the entire sync
-- [ ] Discord errors logged appropriately
+- [x] trigger.dev task calls `discordService.postLeaderboard()` after each sync
+- [x] Leaderboard updates in #census every 6 hours
+- [x] Errors in Discord posting don't fail the entire sync
+- [x] Discord errors logged appropriately
 
 **Estimated Effort**: 3 hours
 **Assigned To**: Integration Developer
@@ -449,16 +449,16 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S3-T6: Welcome Message & Rules Setup
+#### S3-T6: Welcome Message & Rules Setup ✅
 
 **Description**: Configure #water-discipline channel with welcome message and community rules.
 
 **Acceptance Criteria**:
-- [ ] Welcome message explaining Sietch purpose
-- [ ] Chatham House Rules explanation
-- [ ] Code of conduct summary
-- [ ] Eligibility criteria explanation
-- [ ] Message pinned in channel
+- [x] Welcome message explaining Sietch purpose
+- [x] Chatham House Rules explanation
+- [x] Code of conduct summary
+- [x] Eligibility criteria explanation
+- [x] Message pinned in channel
 
 **Estimated Effort**: 2 hours
 **Assigned To**: Integration Developer
@@ -469,10 +469,10 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ### Sprint 3 Success Metrics
 
-- [ ] Discord server fully configured with all channels/roles
-- [ ] Bot connects and stays online
-- [ ] Leaderboard posts automatically after eligibility sync
-- [ ] Server ready for member onboarding
+- [x] Discord server fully configured with all channels/roles
+- [x] Bot connects and stays online
+- [x] Leaderboard posts automatically after eligibility sync
+- [x] Server ready for member onboarding
 
 ---
 
