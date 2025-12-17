@@ -1,7 +1,7 @@
 # Sprint Plan: Sietch
 
-**Version**: 1.0
-**Date**: December 17, 2025
+**Version**: 2.0
+**Date**: December 18, 2025
 **PRD Reference**: `docs/prd.md`
 **SDD Reference**: `docs/sdd.md`
 
@@ -11,763 +11,1064 @@
 
 ### Project Summary
 
-Sietch is a token-gated Discord community for the top 69 BGT holders who have never redeemed their tokens. The system uses trigger.dev + viem to query Berachain RPC for eligibility data, caches results in SQLite, exposes a REST API for Collab.Land integration, and manages Discord notifications.
+Sietch is a privacy-first, token-gated Discord community for the top 69 BGT holders who have never redeemed their tokens. Version 2.0 introduces a comprehensive **Social Layer** with pseudonymous member profiles, badge system with demurrage-based activity tracking, member directory, and exclusive access perks.
 
-### Team Structure
+### Completed Work (v1.0)
+
+The v1.0 MVP is complete with:
+- Chain service fetching BGT data from Berachain RPC
+- SQLite database with eligibility snapshots
+- REST API for Collab.Land integration
+- Discord bot with leaderboard and notifications
+- trigger.dev scheduled tasks
+- Production deployment infrastructure
+
+### v2.0 Scope: Social Layer
+
+- Pseudonymous identity system (nym, PFP, bio)
+- DM-based onboarding wizard with mandatory gating
+- Badge and reputation system (10 badge types)
+- Demurrage-based activity tracking (decay every 6 hours)
+- Member directory with filters
+- Exclusive access tiers and dynamic role assignment
+- Leaderboard (rankings + badge counts)
+- Collab.Land configuration
+- All Discord slash commands and interactions
+
+### Team Configuration
 
 | Role | Responsibility |
 |------|----------------|
-| **Backend Developer** | Chain service, API, database, trigger.dev |
-| **Integration Developer** | Discord bot, Collab.Land, external services |
-| **DevOps/Infra** | Deployment, nginx, PM2, monitoring |
+| **AI-Assisted Developer** | Full-stack implementation with Claude Code |
 
 ### Sprint Configuration
 
 - **Sprint Duration**: 1 week
-- **Total Sprints**: 4 sprints (MVP) + 1 sprint (polish/docs)
+- **Total Sprints**: 5 sprints
 - **Review Cadence**: End of each sprint
 
-### MVP Definition
+---
 
-**Phase 1 (Sprints 1-3)**: Core Eligibility System
-- Chain service fetching BGT data from Berachain RPC
-- SQLite database with eligibility snapshots
-- REST API for Collab.Land integration
-- Basic Discord bot (connection only)
-- trigger.dev scheduled task
+## v2.0 Sprint Summary
 
-**Phase 2 (Sprint 4)**: Discord Integration
-- Discord server setup with channel structure
-- Collab.Land token gating configuration
-- Basic leaderboard posting to #census
-
-**Phase 3 (Sprint 5)**: Polish & Documentation
-- DM notifications for access changes
-- #the-door announcements
-- Operational documentation
-- Handover materials
+| Sprint | Focus | Key Deliverables |
+|--------|-------|------------------|
+| **Sprint 6** | Foundation & Database | Schema extensions, migrations, Profile service, Avatar service |
+| **Sprint 7** | Onboarding & Core Identity | Onboarding wizard, profile CRUD, Discord slash commands |
+| **Sprint 8** | Activity & Badges | Activity service with demurrage, Badge service, scheduled tasks |
+| **Sprint 9** | Directory & Leaderboard | Directory browsing, filters, leaderboard, API endpoints |
+| **Sprint 10** | Integration & Polish | Collab.Land integration, role automation, testing, deployment |
 
 ---
 
-## Sprint 1: Foundation & Chain Service
+## Sprint 6: Foundation & Database
 
-**Goal**: Establish project foundation and implement chain data fetching
+**Goal**: Establish database schema, core services, and crypto-hash avatar generation
 
-**Duration**: 1 week
+**Duration**: Week 1
 
 ### Tasks
 
-#### S1-T1: Project Scaffolding ✅
+#### S6-T1: Database Schema Extension
 
-**Description**: Initialize the sietch-service project with TypeScript, Express, and all necessary dependencies.
+**Description**: Extend SQLite schema with new tables for member profiles, badges, activity tracking, and perks.
 
 **Acceptance Criteria**:
-- [x] `sietch-service/` directory created with proper structure per SDD
-- [x] `package.json` with all dependencies (express, better-sqlite3, discord.js, viem, pino, zod)
-- [x] `tsconfig.json` configured for Node.js 20
-- [x] `.env.example` with all required environment variables
-- [x] ESLint + Prettier configured
-- [x] Basic `npm run dev`, `npm run build`, `npm test` scripts working
+- [ ] Create `member_profiles` table with privacy-separated fields
+- [ ] Create `badges` table with seed data for all 10 badge types
+- [ ] Create `member_badges` junction table
+- [ ] Create `member_activity` table with demurrage fields
+- [ ] Create `member_perks` table
+- [ ] All tables have proper indexes for query performance
+- [ ] Foreign key constraints properly reference existing tables
 
-**Estimated Effort**: 4 hours
-**Assigned To**: Backend Developer
+**Files to Create/Modify**:
+- `sietch-service/src/db/migrations/002_social_layer.ts`
+- `sietch-service/src/db/schema.ts` (extend)
+
 **Dependencies**: None
-**Testing**: `npm run build` succeeds, `npm test` runs (empty suite)
+**Estimated Effort**: Medium
+**Testing**: Schema creation tests, migration up/down tests
 
 ---
 
-#### S1-T2: Configuration Module ✅
+#### S6-T2: TypeScript Type Definitions
 
-**Description**: Implement centralized configuration with environment variable loading and validation.
+**Description**: Define TypeScript interfaces for all new domain objects.
 
 **Acceptance Criteria**:
-- [x] `src/config.ts` loads all environment variables
-- [x] Zod schema validates configuration at startup
-- [x] Clear error messages for missing/invalid config
-- [x] Supports `.env.local` for development
-- [x] All config values typed (no `any`)
+- [ ] `MemberProfile` interface with public/private field separation
+- [ ] `PublicProfile` interface (privacy-filtered view)
+- [ ] `Badge` and `MemberBadge` interfaces
+- [ ] `MemberActivity` interface with demurrage fields
+- [ ] `OnboardingState` interface
+- [ ] `DirectoryFilters` interface
+- [ ] All interfaces exported from `types/index.ts`
 
-**Estimated Effort**: 3 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T1
-**Testing**: Unit tests for config validation
+**Files to Create/Modify**:
+- `sietch-service/src/types/index.ts` (extend)
+
+**Dependencies**: S6-T1
+**Estimated Effort**: Low
+**Testing**: TypeScript compilation
 
 ---
 
-#### S1-T3: SQLite Database Layer ✅
+#### S6-T3: Database Query Layer Extension
 
-**Description**: Implement SQLite database with schema and query layer using better-sqlite3.
+**Description**: Add database query functions for new tables.
 
 **Acceptance Criteria**:
-- [x] `src/db/schema.ts` with all tables per SDD (eligibility_snapshots, current_eligibility, admin_overrides, audit_log, health_status, wallet_mappings)
-- [x] `src/db/migrations/` with initial migration
-- [x] `src/db/queries.ts` with typed query functions
-- [x] Database auto-creates on first run
-- [x] WAL mode enabled for concurrent reads
+- [ ] Profile CRUD queries (create, read by ID/nym/discordId, update)
+- [ ] Badge queries (get all, get by ID, get member badges)
+- [ ] Badge award/revoke queries
+- [ ] Activity queries (get, upsert, update balance)
+- [ ] Directory queries with pagination and filtering
+- [ ] All queries use prepared statements
+- [ ] Proper error handling for constraint violations
 
-**Estimated Effort**: 6 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T1, S1-T2
-**Testing**: Integration tests for all query functions
+**Files to Create/Modify**:
+- `sietch-service/src/db/queries.ts` (extend)
+
+**Dependencies**: S6-T1, S6-T2
+**Estimated Effort**: Medium
+**Testing**: Unit tests for each query function
 
 ---
 
-#### S1-T4: Chain Service - viem Client Setup ✅
+#### S6-T4: Profile Service Implementation
 
-**Description**: Implement the Chain Service to query Berachain RPC for BGT events.
+**Description**: Implement ProfileService with strict privacy separation.
 
 **Acceptance Criteria**:
-- [x] `src/services/chain.ts` with viem public client
-- [x] Configurable RPC URL from environment
-- [x] `fetchClaimEvents()` - fetches RewardPaid events from reward vaults
-- [x] `fetchBurnEvents()` - fetches Transfer events to 0x0
-- [x] `aggregateWalletData()` - combines claims and burns per wallet
-- [x] `fetchEligibilityData()` - returns sorted, filtered eligibility list
-- [x] Proper error handling for RPC failures
+- [ ] `createProfile()` - validates nym uniqueness and format
+- [ ] `getPublicProfile()` - returns privacy-filtered profile (NO wallet, NO discord ID)
+- [ ] `getOwnProfile()` - returns full profile for owner
+- [ ] `updateProfile()` - updates nym/bio with validation
+- [ ] `nymExists()` - check nym availability
+- [ ] `isValidNym()` - validate nym format (3-32 chars, alphanumeric + limited special)
+- [ ] `stripUrls()` - remove URLs from bio (privacy protection)
+- [ ] `calculateTenureCategory()` - derive OG/Veteran/Elder from membership duration
+- [ ] Profile updates never expose wallet-nym correlation
 
-**Estimated Effort**: 8 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T1, S1-T2
-**Testing**: Unit tests with mocked RPC responses
+**Files to Create**:
+- `sietch-service/src/services/profile.ts`
+
+**Dependencies**: S6-T3
+**Estimated Effort**: Medium
+**Testing**: Unit tests for validation, privacy filtering tests
 
 ---
 
-#### S1-T5: Eligibility Service ✅
+#### S6-T5: Avatar Service Implementation
 
-**Description**: Implement core eligibility logic for computing diffs and assigning roles.
+**Description**: Implement crypto-hash based avatar generation using drunken bishop algorithm.
 
 **Acceptance Criteria**:
-- [x] `src/services/eligibility.ts` with eligibility processing logic
-- [x] `computeDiff()` - compares previous and current snapshots
-- [x] Correctly identifies: added, removed, promotedToNaib, demotedFromNaib
-- [x] `assignRoles()` - determines naib (1-7), fedaykin (8-69), none (>69)
-- [x] `applyAdminOverrides()` - applies manual adds/removes
+- [ ] `generateAvatar()` - creates ASCII art from SHA-256 hash of member ID
+- [ ] `generateAvatarImage()` - renders hash as 256x256 PNG using sharp
+- [ ] Deterministic output - same member ID always produces same avatar
+- [ ] Color palette derived from hash bytes for uniqueness
+- [ ] Avatar generation never uses wallet address (uses internal UUID)
+- [ ] Performance: generate avatar in <100ms
 
-**Estimated Effort**: 5 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T3, S1-T4
-**Testing**: Comprehensive unit tests for all diff scenarios
+**Files to Create**:
+- `sietch-service/src/services/avatar.ts`
 
----
-
-#### S1-T6: Logger Setup ✅
-
-**Description**: Implement structured logging with pino.
-
-**Acceptance Criteria**:
-- [x] `src/utils/logger.ts` with pino configuration
-- [x] Log level configurable via environment
-- [x] ISO timestamps, JSON format
-- [x] No PII or sensitive data in logs
-- [x] Exported logger instance used throughout codebase
-
-**Estimated Effort**: 2 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T1
-**Testing**: Manual verification of log output
-
----
-
-### Sprint 1 Success Metrics
-
-- [x] Chain service successfully fetches events from Berachain RPC
-- [x] Database stores and retrieves eligibility snapshots
-- [x] Eligibility diff computation passes all test cases
-- [x] Project builds without errors
-
----
-
-## Sprint 2: REST API & Scheduled Task
-
-**Goal**: Implement REST API and trigger.dev scheduled task
-
-**Duration**: 1 week
-
-### Tasks
-
-#### S2-T1: Express API Setup ✅
-
-**Description**: Set up Express server with middleware and route structure.
-
-**Acceptance Criteria**:
-- [x] `src/index.ts` starts Express server
-- [x] `src/api/routes.ts` with route definitions
-- [x] `src/api/middleware.ts` with error handling, rate limiting
-- [x] CORS configured for expected origins
-- [x] Request logging via pino-http
-- [x] Graceful shutdown handling
-
-**Estimated Effort**: 4 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T1, S1-T6
-**Testing**: Server starts and responds to requests
-
----
-
-#### S2-T2: Public API Endpoints ✅
-
-**Description**: Implement `/eligibility` and `/health` endpoints.
-
-**Acceptance Criteria**:
-- [x] `GET /eligibility` returns top_69 and top_7 arrays per SDD spec
-- [x] `GET /health` returns service health status
-- [x] Response includes `updated_at` and `grace_period` fields
-- [x] Rate limiting: 100 req/min per IP
-- [x] Cache-Control headers set (max-age=300)
-- [x] Input validation with Zod
-
-**Estimated Effort**: 5 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S2-T1, S1-T3
-**Testing**: Integration tests for all endpoints
-
----
-
-#### S2-T3: Admin API Endpoints ✅
-
-**Description**: Implement protected admin endpoints for overrides and audit log.
-
-**Acceptance Criteria**:
-- [x] `POST /admin/override` creates admin override
-- [x] `GET /admin/overrides` lists active overrides
-- [x] `DELETE /admin/override/:id` deactivates override
-- [x] `GET /admin/audit-log` returns audit entries
-- [x] API key authentication via `X-API-Key` header
-- [x] Rate limiting: 30 req/min per API key
-- [x] All admin actions logged to audit_log
-
-**Estimated Effort**: 5 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S2-T1, S1-T3
-**Testing**: Integration tests with valid/invalid API keys
-
----
-
-#### S2-T4: trigger.dev Setup ✅
-
-**Description**: Configure trigger.dev project and implement scheduled task.
-
-**Acceptance Criteria**:
-- [x] `trigger.config.ts` with project configuration
-- [x] trigger.dev project created and linked
-- [x] `trigger/syncEligibility.ts` with scheduled task
-- [x] Cron schedule: every 6 hours (0 */6 * * *)
-- [x] Task calls chain service, computes diff, stores snapshot
-- [x] Retry configuration: 3 attempts with exponential backoff
-- [x] Task logs progress via trigger.dev logger
-
-**Estimated Effort**: 6 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T4, S1-T5, S1-T3
-**Testing**: Manual trigger via trigger.dev dashboard
-
----
-
-#### S2-T5: Grace Period Logic ✅
-
-**Description**: Implement grace period handling for RPC outages.
-
-**Acceptance Criteria**:
-- [x] `health_status` table tracks consecutive failures
-- [x] After 24 hours without successful query, enter grace period
-- [x] During grace period: serve cached data, no revocations
-- [x] `/health` endpoint reports `status: degraded` during grace period
-- [x] Grace period flag included in `/eligibility` response
-
-**Estimated Effort**: 4 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S2-T4, S1-T3
-**Testing**: Unit tests simulating extended outage
-
----
-
-#### S2-T6: Collab.Land Integration Research ✅
-
-**Description**: Investigate Collab.Land custom API token gating capabilities and document integration approach.
-
-**Acceptance Criteria**:
-- [x] Research Collab.Land subscription tiers and API capabilities
-- [x] Determine if custom API token gating is available
-- [x] Document integration approach or identify alternatives
-- [x] Create spike document: `docs/research/collabland-integration.md`
-- [x] Decision made on integration path (Collab.Land vs direct role management)
-
-**Estimated Effort**: 4 hours
-**Assigned To**: Integration Developer
 **Dependencies**: None
-**Testing**: N/A (research task)
+**Estimated Effort**: Medium
+**Testing**: Determinism tests, performance tests
 
 ---
 
-#### S2-T7: RPC Resilience - Multiple Endpoints ✅
+#### S6-T6: Image Processing Utilities
 
-**Description**: Add support for multiple RPC endpoints with automatic fallback for improved reliability.
+**Description**: Create utilities for profile picture upload processing.
 
 **Acceptance Criteria**:
-- [x] Configuration supports comma-separated list of RPC URLs
-- [x] Chain service attempts primary RPC first, falls back to secondary on failure
-- [x] Failed endpoints tracked and temporarily deprioritized
-- [x] Health check tests all configured endpoints
-- [x] Logging indicates which endpoint is being used
+- [ ] `processProfileImage()` - validates and compresses uploaded images
+- [ ] Validates file type (PNG, JPG, GIF, WebP only)
+- [ ] Resizes to 256x256 with center crop
+- [ ] Compresses to under 1MB for Discord CDN
+- [ ] Strips EXIF metadata (privacy)
+- [ ] Throws typed errors for invalid input
 
-**Estimated Effort**: 4 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T4
-**Testing**: Unit tests simulating primary RPC failure
-**Source**: Sprint 1 Security Audit Recommendation
+**Files to Create**:
+- `sietch-service/src/utils/image.ts`
+
+**Dependencies**: sharp package
+**Estimated Effort**: Low
+**Testing**: Unit tests with sample images
 
 ---
 
-#### S2-T8: Historical Event Caching ✅
+#### S6-T7: Configuration Extension
 
-**Description**: Implement caching for historical blockchain events to improve sync performance.
+**Description**: Extend config to include all v2.0 environment variables.
 
 **Acceptance Criteria**:
-- [x] Cache historical claim/burn events in database
-- [x] Sync task only queries new blocks since last cached block
-- [x] `last_synced_block` tracked in health_status table
-- [x] Full resync capability via admin endpoint or flag
-- [x] Significant performance improvement on subsequent syncs
+- [ ] Add Discord channel IDs (general, bot-commands, deep-desert, stillsuit-lounge)
+- [ ] Add Discord role IDs (onboarded, engaged, veteran, trusted, inner-circle)
+- [ ] Add tracked channels array for activity tracking
+- [ ] Add Sietch launch date for OG badge calculation
+- [ ] Add activity decay configuration (rate, interval)
+- [ ] Add session configuration (secret, expiry)
+- [ ] Update `.env.example` with all new variables
 
-**Estimated Effort**: 5 hours
-**Assigned To**: Backend Developer
-**Dependencies**: S1-T3, S1-T4
-**Testing**: Performance comparison before/after caching
-**Source**: Sprint 1 Security Audit Recommendation
+**Files to Modify**:
+- `sietch-service/src/config.ts`
+- `sietch-service/.env.example`
 
----
-
-### Sprint 2 Success Metrics
-
-- [x] API endpoints return correct data
-- [x] trigger.dev task runs successfully on schedule
-- [x] Grace period logic activates correctly
-- [x] Collab.Land integration path documented
-- [x] RPC fallback working with multiple endpoints
-- [x] Historical event caching reduces sync time
-
----
-
-## Sprint 3: Discord Bot & Server Setup
-
-**Goal**: Implement Discord bot and create server structure
-
-**Duration**: 1 week
-
-### Tasks
-
-#### S3-T1: Discord Server Creation ✅
-
-**Description**: Create the Sietch Discord server with full channel and role structure.
-
-**Acceptance Criteria**:
-- [x] Server created with name "Sietch"
-- [x] Categories created: STILLSUIT, NAIB COUNCIL, SIETCH-COMMONS, WINDTRAP
-- [x] Channels created per PRD: #water-discipline, #census, #the-door, #council-rock, #general, #spice, #water-shares, #support
-- [x] Roles created: Naib (with visual badge), Fedaykin
-- [x] Channel permissions configured (Naib-only for #council-rock)
-- [x] Server icon and branding applied
-
-**Estimated Effort**: 3 hours
-**Assigned To**: Integration Developer
 **Dependencies**: None
-**Testing**: Manual verification of server structure
+**Estimated Effort**: Low
+**Testing**: Config loading tests
 
 ---
 
-#### S3-T2: Discord Bot Application Setup ✅
+### Sprint 6 Success Criteria
 
-**Description**: Create Discord bot application and configure permissions.
-
-**Acceptance Criteria**:
-- [x] Discord application created in Developer Portal
-- [x] Bot token generated and stored securely
-- [x] Required intents enabled: Guilds, GuildMembers
-- [x] Bot permissions: SEND_MESSAGES, EMBED_LINKS, MANAGE_MESSAGES, VIEW_CHANNEL
-- [x] Bot invited to Sietch server
-
-**Estimated Effort**: 2 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S3-T1
-**Testing**: Bot appears online in server
+- [ ] All database migrations run successfully
+- [ ] Profile service creates and retrieves profiles with privacy separation
+- [ ] Avatar service generates deterministic avatars from member IDs
+- [ ] All unit tests pass
+- [ ] No TypeScript compilation errors
 
 ---
 
-#### S3-T3: Discord Service Implementation ✅
+## Sprint 7: Onboarding & Core Identity
 
-**Description**: Implement Discord bot connection and basic operations.
+**Goal**: Implement DM-based onboarding wizard and Discord slash commands for profile management
 
-**Acceptance Criteria**:
-- [x] `src/services/discord.ts` with discord.js client
-- [x] Bot connects on application startup
-- [x] `postLeaderboard()` - posts/updates leaderboard embed to #census
-- [x] `postToTheDoor()` - posts join/departure announcements
-- [x] `findMemberByWallet()` - looks up Discord member by wallet (via wallet_mappings)
-- [x] Proper error handling for Discord API failures
-- [x] Reconnection logic on disconnect
-
-**Estimated Effort**: 8 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S3-T2, S1-T3
-**Testing**: Manual verification of bot posting to channels
-
----
-
-#### S3-T4: Leaderboard Embed Builder ✅
-
-**Description**: Implement rich embed for BGT leaderboard display.
-
-**Acceptance Criteria**:
-- [x] Embed shows top 7 (Naib Council) with fire emoji
-- [x] Embed shows ranks 8-69 (Fedaykin) with sword emoji
-- [x] Addresses truncated (0x1234...abcd format)
-- [x] BGT amounts formatted with commas and 2 decimal places
-- [x] Timestamp shows last update time
-- [x] Embed handles Discord's 1024 char field limit (splits if needed)
-
-**Estimated Effort**: 4 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S3-T3
-**Testing**: Visual verification of embed appearance
-
----
-
-#### S3-T5: Integration with Scheduled Task ✅
-
-**Description**: Connect Discord service to trigger.dev task for automatic updates.
-
-**Acceptance Criteria**:
-- [x] trigger.dev task calls `discordService.postLeaderboard()` after each sync
-- [x] Leaderboard updates in #census every 6 hours
-- [x] Errors in Discord posting don't fail the entire sync
-- [x] Discord errors logged appropriately
-
-**Estimated Effort**: 3 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S3-T3, S2-T4
-**Testing**: End-to-end test of scheduled sync updating Discord
-
----
-
-#### S3-T6: Welcome Message & Rules Setup ✅
-
-**Description**: Configure #water-discipline channel with welcome message and community rules.
-
-**Acceptance Criteria**:
-- [x] Welcome message explaining Sietch purpose
-- [x] Chatham House Rules explanation
-- [x] Code of conduct summary
-- [x] Eligibility criteria explanation
-- [x] Message pinned in channel
-
-**Estimated Effort**: 2 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S3-T1
-**Testing**: Manual verification of channel content
-
----
-
-### Sprint 3 Success Metrics
-
-- [x] Discord server fully configured with all channels/roles
-- [x] Bot connects and stays online
-- [x] Leaderboard posts automatically after eligibility sync
-- [x] Server ready for member onboarding
-
----
-
-## Sprint 4: Collab.Land Integration & Deployment
-
-**Goal**: Complete Collab.Land integration and deploy to production
-
-**Duration**: 1 week
+**Duration**: Week 2
 
 ### Tasks
 
-#### S4-T1: Collab.Land Configuration ✅
+#### S7-T1: Discord.js Slash Command Registration
 
-**Description**: Configure Collab.Land token gating based on research from S2-T6.
-
-**Acceptance Criteria**:
-- [x] Collab.Land bot added to Sietch server
-- [x] Custom API token gate configured pointing to `/eligibility` endpoint
-- [x] Role mapping configured: top_7 → Naib, top_69 → Fedaykin
-- [x] Verification flow tested with test wallet
-- [x] Documentation of Collab.Land configuration
-
-**Estimated Effort**: 6 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S2-T6, S2-T2, S3-T1
-**Testing**: End-to-end verification with real wallet
-
----
-
-#### S4-T2: VPS Environment Setup ✅
-
-**Description**: Prepare OVH VPS for Sietch deployment.
+**Description**: Set up slash command infrastructure and register all profile-related commands.
 
 **Acceptance Criteria**:
-- [x] Node.js 20 LTS installed
-- [x] PM2 installed globally
-- [x] nginx installed and configured
-- [x] Let's Encrypt SSL certificate obtained
-- [x] Directory structure created: `/opt/sietch/{current,releases,data,logs,backups}`
-- [x] Environment file created at `/opt/sietch/.env`
-- [x] Firewall configured (80, 443 only)
+- [ ] Create command registration script
+- [ ] `/profile` command with `view` and `edit` subcommands
+- [ ] `/profile view [nym]` - optional nym parameter
+- [ ] `/profile edit` - triggers DM wizard
+- [ ] Commands registered with Discord API
+- [ ] Proper command option types and descriptions
 
-**Estimated Effort**: 4 hours
-**Assigned To**: DevOps/Infra
-**Dependencies**: None
-**Testing**: SSH access verified, directories exist
+**Files to Create**:
+- `sietch-service/src/discord/commands/profile.ts`
+- `sietch-service/src/discord/commands/index.ts`
+- `sietch-service/src/discord/registerCommands.ts`
+
+**Dependencies**: Sprint 6 complete
+**Estimated Effort**: Medium
+**Testing**: Command registration verification
 
 ---
 
-#### S4-T3: nginx Configuration ✅
+#### S7-T2: Onboarding Service Implementation
 
-**Description**: Configure nginx as reverse proxy with SSL and rate limiting.
+**Description**: Implement DM-based onboarding wizard with privacy assurances.
 
 **Acceptance Criteria**:
-- [x] nginx site config per SDD specification
-- [x] SSL termination with Let's Encrypt cert
-- [x] Rate limiting: 10 req/s with burst of 20
-- [x] Proxy to localhost:3000
-- [x] HTTP → HTTPS redirect
-- [x] Domain DNS configured (sietch-api.example.com)
+- [ ] `startOnboarding()` - initiates wizard for new members
+- [ ] Welcome message with privacy assurances
+- [ ] Step 1: Nym selection with validation (modal input)
+- [ ] Step 2: PFP selection (upload/generate/skip buttons)
+- [ ] Step 3: Bio input (optional, modal)
+- [ ] `completeOnboarding()` - creates profile, assigns Onboarded role
+- [ ] Tracks onboarding state in memory (Map)
+- [ ] Awards initial badges (OG, Founding Fedaykin if applicable)
+- [ ] DM fallback for users with DMs disabled (ephemeral in bot channel)
 
-**Estimated Effort**: 3 hours
-**Assigned To**: DevOps/Infra
-**Dependencies**: S4-T2
-**Testing**: curl to HTTPS endpoint returns response
+**Files to Create**:
+- `sietch-service/src/services/onboarding.ts`
+
+**Dependencies**: S6-T4, S6-T5
+**Estimated Effort**: High
+**Testing**: Integration tests with mock Discord client
 
 ---
 
-#### S4-T4: PM2 Configuration ✅
+#### S7-T3: Discord Interaction Handlers
 
-**Description**: Configure PM2 for process management.
+**Description**: Handle button clicks, modal submissions, and select menus for onboarding.
 
 **Acceptance Criteria**:
-- [x] `ecosystem.config.js` created per SDD specification
-- [x] Auto-restart on crash enabled
-- [x] Memory limit: 256MB
-- [x] Log rotation configured
-- [x] PM2 startup script installed (survives reboot)
+- [ ] Button handler for onboarding flow (start, pfp options, bio options)
+- [ ] Modal handler for nym input
+- [ ] Modal handler for bio input
+- [ ] Select menu handler for avatar style selection (if implemented)
+- [ ] Proper error handling with user-friendly messages
+- [ ] Interaction tokens don't expire during flow
 
-**Estimated Effort**: 2 hours
-**Assigned To**: DevOps/Infra
-**Dependencies**: S4-T2
-**Testing**: `pm2 list` shows sietch process
+**Files to Create**:
+- `sietch-service/src/discord/interactions/onboarding.ts`
+- `sietch-service/src/discord/interactions/index.ts`
+
+**Dependencies**: S7-T2
+**Estimated Effort**: Medium
+**Testing**: Interaction flow tests
 
 ---
 
-#### S4-T5: Deployment Script ✅
+#### S7-T4: Profile Embeds
 
-**Description**: Create deployment script for zero-downtime deploys.
+**Description**: Create Discord embed builders for profile display.
 
 **Acceptance Criteria**:
-- [x] `deploy.sh` script created per SDD specification
-- [x] Clone, build, symlink workflow
-- [x] Keeps last 5 releases for rollback
-- [x] PM2 reload (not restart) for zero-downtime
-- [x] Exit on any error (set -e)
+- [ ] Own profile embed (includes stats, full badge list)
+- [ ] Public profile embed (privacy-filtered, no stats)
+- [ ] Consistent styling with Sietch branding
+- [ ] Proper field layout (tier, tenure, badges)
+- [ ] Thumbnail with PFP or generated avatar
+- [ ] Color coding by tier (Naib: gold, Fedaykin: blue)
 
-**Estimated Effort**: 3 hours
-**Assigned To**: DevOps/Infra
-**Dependencies**: S4-T4
-**Testing**: Successful deployment from fresh clone
+**Files to Create**:
+- `sietch-service/src/discord/embeds/profile.ts`
+- `sietch-service/src/discord/embeds/index.ts`
+
+**Dependencies**: S6-T4
+**Estimated Effort**: Low
+**Testing**: Visual verification
 
 ---
 
-#### S4-T6: Initial Production Deployment ✅
+#### S7-T5: Profile Command Handler
 
-**Description**: Deploy Sietch service to production and verify operation.
+**Description**: Implement `/profile` command execution logic.
 
 **Acceptance Criteria**:
-- [x] Application deployed and running
-- [x] `/health` endpoint returns healthy status
-- [x] `/eligibility` endpoint returns data
-- [x] trigger.dev task registered and running
-- [x] Discord bot online and posting
-- [x] Collab.Land verification working
+- [ ] `/profile` (no args) - shows own profile (ephemeral)
+- [ ] `/profile view` (no nym) - shows own profile (ephemeral)
+- [ ] `/profile view [nym]` - shows target's public profile (public)
+- [ ] `/profile edit` - sends DM with edit wizard
+- [ ] Proper error messages for non-existent nyms
+- [ ] Onboarding check - prompts to complete if not done
 
-**Estimated Effort**: 4 hours
-**Assigned To**: DevOps/Infra + Integration Developer
-**Dependencies**: S4-T1, S4-T5
-**Testing**: Full end-to-end verification
+**Files to Modify**:
+- `sietch-service/src/discord/commands/profile.ts`
+
+**Dependencies**: S7-T1, S7-T4
+**Estimated Effort**: Medium
+**Testing**: Command execution tests
 
 ---
 
-#### S4-T7: Backup Script Setup ✅
+#### S7-T6: Profile Edit Wizard
 
-**Description**: Configure automated daily backups.
+**Description**: Implement edit flow for existing profiles (change nym, PFP, bio).
 
 **Acceptance Criteria**:
-- [x] `backup.sh` script created per SDD specification
-- [x] Cron job: daily at 3 AM
-- [x] SQLite online backup (safe while running)
-- [x] Retains last 7 days of backups
-- [x] Backup directory secured (700 permissions)
+- [ ] Edit wizard in DM (similar to onboarding but for updates)
+- [ ] Change nym (validates uniqueness, no cooldown per requirements)
+- [ ] Change PFP (upload new, regenerate, keep current)
+- [ ] Change bio (edit or clear)
+- [ ] Confirmation message after changes
+- [ ] History tracking (nymLastChanged timestamp)
 
-**Estimated Effort**: 2 hours
-**Assigned To**: DevOps/Infra
-**Dependencies**: S4-T6
-**Testing**: Manual backup run, verify restoration
+**Files to Modify**:
+- `sietch-service/src/services/onboarding.ts` (or create `edit.ts`)
+- `sietch-service/src/discord/interactions/profile.ts`
 
----
-
-### Sprint 4 Success Metrics
-
-- [x] Production deployment live and stable
-- [x] Collab.Land verification working end-to-end
-- [x] Backups running daily
-- [x] All monitoring checks passing
+**Dependencies**: S7-T2, S7-T3
+**Estimated Effort**: Medium
+**Testing**: Edit flow tests
 
 ---
 
-## Sprint 5: Notifications & Documentation
+#### S7-T7: Discord Service Extension
 
-**Goal**: Implement notifications and complete documentation
+**Description**: Extend existing Discord service with new capabilities.
 
-**Duration**: 1 week
+**Acceptance Criteria**:
+- [ ] `assignRole()` - assign role by name (onboarded, engaged, veteran, etc.)
+- [ ] `removeRole()` - remove role by name
+- [ ] `getMemberById()` - get guild member by Discord ID
+- [ ] `getBotChannel()` - get bot commands channel
+- [ ] `notifyBadgeAwarded()` - DM user about badge (implemented in Sprint 8)
+- [ ] Event handlers for new member detection (guildMemberUpdate)
+- [ ] Interaction client setup for slash commands
+
+**Files to Modify**:
+- `sietch-service/src/services/discord.ts`
+
+**Dependencies**: Sprint 6 config
+**Estimated Effort**: Medium
+**Testing**: Role assignment tests
+
+---
+
+#### S7-T8: Member Detection and Auto-Onboarding
+
+**Description**: Detect when Collab.Land assigns a role and trigger onboarding.
+
+**Acceptance Criteria**:
+- [ ] Listen for `guildMemberUpdate` events
+- [ ] Detect when Naib or Fedaykin role is added
+- [ ] Check if member has completed onboarding
+- [ ] If not onboarded, call `startOnboarding()`
+- [ ] Graceful handling of members with DMs disabled
+
+**Files to Modify**:
+- `sietch-service/src/services/discord.ts`
+- `sietch-service/src/index.ts` (event setup)
+
+**Dependencies**: S7-T2, S7-T7
+**Estimated Effort**: Medium
+**Testing**: Event trigger tests
+
+---
+
+### Sprint 7 Success Criteria
+
+- [ ] New members receive DM onboarding wizard
+- [ ] Onboarding creates profile and assigns Onboarded role
+- [ ] `/profile` command works for own and public views
+- [ ] `/profile edit` allows updating nym, PFP, bio
+- [ ] Privacy is maintained - no wallet/Discord correlation in public views
+- [ ] All unit and integration tests pass
+
+---
+
+## Sprint 8: Activity & Badges
+
+**Goal**: Implement demurrage-based activity tracking and badge award system
+
+**Duration**: Week 3
 
 ### Tasks
 
-#### S5-T1: DM Notifications ✅
+#### S8-T1: Activity Service Implementation
 
-**Description**: Implement direct message notifications for access changes.
+**Description**: Implement activity tracking with demurrage-based decay.
 
 **Acceptance Criteria**:
-- [x] `handleMemberRemoval()` sends DM to removed member
-- [x] DM includes: reason, previous rank, current rank, path to regain access
-- [x] Handles case where user has DMs disabled (log warning, continue)
-- [x] `handleNaibPromotion()` sends congratulatory DM
-- [x] `handleNaibDemotion()` sends notification DM
+- [ ] `recordMessage()` - track message activity (+1 point)
+- [ ] `recordReaction()` - track reactions (+0.5 given, +0.25 received)
+- [ ] `applyDecay()` - calculate decay based on time since last decay
+- [ ] `addActivity()` - apply pending decay, then add points
+- [ ] `getOwnStats()` - return current activity stats (self only)
+- [ ] `runDecayTask()` - batch decay for all members (scheduled task)
+- [ ] `isTrackedChannel()` - check if channel counts for activity
+- [ ] Decay rate: 0.9 (10% decay every 6 hours)
 
-**Estimated Effort**: 5 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S3-T3
-**Testing**: Manual test with test account
+**Files to Create**:
+- `sietch-service/src/services/activity.ts`
+
+**Dependencies**: S6-T3
+**Estimated Effort**: High
+**Testing**: Decay calculation tests, activity recording tests
 
 ---
 
-#### S5-T2: #the-door Announcements ✅
+#### S8-T2: Badge Service Implementation
 
-**Description**: Implement public announcements for member joins and departures.
+**Description**: Implement badge award logic for automatic and admin-granted badges.
 
 **Acceptance Criteria**:
-- [x] Post to #the-door when member becomes eligible
-- [x] Post to #the-door when member loses eligibility
-- [x] Post to #the-door on Naib promotion/demotion
-- [x] Messages include: truncated wallet, reason, previous role
-- [x] No PII exposed in announcements
+- [ ] `getMemberBadges()` - get all badges for a member
+- [ ] `checkTenureBadges()` - award OG/Veteran/Elder based on membership duration
+- [ ] `checkActivityBadges()` - award Consistent/Dedicated/Devoted based on activity balance
+- [ ] `awardBadge()` - award badge (automatic or manual)
+- [ ] `adminAwardBadge()` - admin awards contribution badge
+- [ ] `revokeBadge()` - admin revokes badge
+- [ ] `checkRoleUpgrades()` - check if badge count triggers role changes
+- [ ] Badges not removed when balance drops (once earned, kept)
 
-**Estimated Effort**: 4 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S3-T3
-**Testing**: Visual verification of posts
+**Files to Create**:
+- `sietch-service/src/services/badge.ts`
+
+**Dependencies**: S6-T3, S7-T7
+**Estimated Effort**: High
+**Testing**: Badge threshold tests, role upgrade tests
 
 ---
 
-#### S5-T3: Embed Builders for Notifications ✅
+#### S8-T3: Discord Event Handlers for Activity
 
-**Description**: Create rich embed templates for all notification types.
+**Description**: Track Discord activity (messages, reactions) for activity service.
 
 **Acceptance Criteria**:
-- [x] Removal DM embed per SDD example
-- [x] Departure announcement embed
-- [x] New eligible announcement embed
-- [x] Naib promotion/demotion embeds
-- [x] Consistent branding and color scheme
+- [ ] Listen for `messageCreate` events in tracked channels
+- [ ] Listen for `messageReactionAdd` events
+- [ ] Listen for `messageReactionRemove` events (for received reactions)
+- [ ] Map Discord user ID to member profile
+- [ ] Skip activity tracking for non-onboarded users
+- [ ] Rate limiting to prevent spam gaming (max 1 message/minute counted)
 
-**Estimated Effort**: 3 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S5-T1, S5-T2
-**Testing**: Visual verification of all embed types
+**Files to Modify**:
+- `sietch-service/src/services/discord.ts`
+- `sietch-service/src/index.ts`
+
+**Dependencies**: S8-T1
+**Estimated Effort**: Medium
+**Testing**: Event handling tests
 
 ---
 
-#### S5-T4: Server Administration Guide ✅
+#### S8-T4: Activity Decay Scheduled Task
 
-**Description**: Create operational documentation for server administration.
+**Description**: Create trigger.dev task for periodic activity decay.
 
 **Acceptance Criteria**:
-- [x] `docs/operations/server-admin.md` created
-- [x] Common administrative tasks documented
-- [x] Troubleshooting guide for common issues
-- [x] How to manually trigger eligibility sync
-- [x] How to add/remove admin overrides
-- [x] How to check service health
+- [ ] Runs every 6 hours (cron: `0 */6 * * *`)
+- [ ] Calls `activityService.runDecayTask()`
+- [ ] Logs number of members processed and decayed
+- [ ] Max duration: 2 minutes
+- [ ] Error handling with retries
 
-**Estimated Effort**: 4 hours
-**Assigned To**: DevOps/Infra
-**Dependencies**: S4-T6
-**Testing**: Review by team member
+**Files to Create**:
+- `sietch-service/src/trigger/activityDecay.ts`
+
+**Dependencies**: S8-T1
+**Estimated Effort**: Low
+**Testing**: Task execution test
 
 ---
 
-#### S5-T5: Deployment Runbook ✅
+#### S8-T5: Badge Check Scheduled Task
 
-**Description**: Create comprehensive deployment and maintenance runbook.
+**Description**: Create trigger.dev task for daily tenure badge checks.
 
 **Acceptance Criteria**:
-- [x] `docs/operations/deployment-runbook.md` created
-- [x] Deployment procedure documented
-- [x] Rollback procedure documented
-- [x] Log locations and interpretation
-- [x] How to restart services
-- [x] Backup restoration procedure
-- [x] Incident response checklist
+- [ ] Runs daily at midnight (cron: `0 0 * * *`)
+- [ ] Iterates all members, calls `checkTenureBadges()`
+- [ ] Logs badges awarded count
+- [ ] Max duration: 5 minutes
+- [ ] Error handling with retries
 
-**Estimated Effort**: 4 hours
-**Assigned To**: DevOps/Infra
-**Dependencies**: S4-T6
-**Testing**: Walkthrough by team member
+**Files to Create**:
+- `sietch-service/src/trigger/badgeCheck.ts`
+
+**Dependencies**: S8-T2
+**Estimated Effort**: Low
+**Testing**: Task execution test
 
 ---
 
-#### S5-T6: Member Onboarding Guide ✅
+#### S8-T6: Badge Slash Commands
 
-**Description**: Create documentation for community members.
+**Description**: Implement `/badges` and `/admin-badge` commands.
 
 **Acceptance Criteria**:
-- [x] `docs/community/onboarding.md` created
-- [x] How to verify wallet with Collab.Land
-- [x] Explanation of eligibility criteria
-- [x] Channel guide (what's each channel for)
-- [x] FAQ for common verification issues
-- [x] Chatham House Rules explanation
+- [ ] `/badges` - view own badges (ephemeral)
+- [ ] `/badges [nym]` - view another member's badges (public)
+- [ ] `/admin-badge award [nym] [badge]` - admin awards badge
+- [ ] `/admin-badge revoke [nym] [badge]` - admin revokes badge
+- [ ] Badge selection uses autocomplete with available badges
+- [ ] Admin commands check for admin role
 
-**Estimated Effort**: 3 hours
-**Assigned To**: Integration Developer
-**Dependencies**: S4-T1
-**Testing**: Review by non-technical team member
+**Files to Create**:
+- `sietch-service/src/discord/commands/badges.ts`
+- `sietch-service/src/discord/commands/admin-badge.ts`
+
+**Dependencies**: S8-T2
+**Estimated Effort**: Medium
+**Testing**: Command execution tests
 
 ---
 
-#### S5-T7: Handover Documentation ✅
+#### S8-T7: Stats Slash Command
 
-**Description**: Create comprehensive handover package for future maintainers.
+**Description**: Implement `/stats` command for personal activity stats.
 
 **Acceptance Criteria**:
-- [x] `docs/handover/README.md` with overview
-- [x] System architecture summary
-- [x] All credentials and access documented (in secure location)
-- [x] Known issues and workarounds
-- [x] Contact information for escalation
-- [x] Full list of external services and accounts
+- [ ] `/stats` - view own engagement statistics (ephemeral)
+- [ ] Shows current activity balance
+- [ ] Shows total messages, reactions given, reactions received
+- [ ] Shows last active timestamp
+- [ ] Privacy note in footer
 
-**Estimated Effort**: 4 hours
-**Assigned To**: All team members
-**Dependencies**: S5-T4, S5-T5
-**Testing**: Handover walkthrough
+**Files to Create**:
+- `sietch-service/src/discord/commands/stats.ts`
+
+**Dependencies**: S8-T1
+**Estimated Effort**: Low
+**Testing**: Command execution test
 
 ---
 
-### Sprint 5 Success Metrics
+#### S8-T8: Badge Embeds
 
-- [x] All notification types working correctly
-- [x] Complete operational documentation
-- [x] Complete member-facing documentation
-- [x] Handover package ready for transfer
+**Description**: Create embed builders for badge display.
+
+**Acceptance Criteria**:
+- [ ] Badge list embed (for `/badges`)
+- [ ] Badge award notification embed (for DM)
+- [ ] Badge icons displayed with emoji or thumbnails
+- [ ] Badge descriptions and award dates
+- [ ] Category grouping (Tenure, Streak, Contribution, Special)
+
+**Files to Create**:
+- `sietch-service/src/discord/embeds/badge.ts`
+
+**Dependencies**: S8-T2
+**Estimated Effort**: Low
+**Testing**: Visual verification
+
+---
+
+#### S8-T9: Badge Award Notifications
+
+**Description**: Send DM notifications when badges are awarded.
+
+**Acceptance Criteria**:
+- [ ] `notifyBadgeAwarded()` - send DM with badge info
+- [ ] Celebratory message with badge name and description
+- [ ] Link to profile to see all badges
+- [ ] Graceful handling of DM failures
+- [ ] Optionally post in #the-door for special badges
+
+**Files to Modify**:
+- `sietch-service/src/services/discord.ts`
+
+**Dependencies**: S8-T8
+**Estimated Effort**: Low
+**Testing**: Notification delivery test
+
+---
+
+### Sprint 8 Success Criteria
+
+- [ ] Activity is tracked for messages and reactions
+- [ ] Activity balance decays correctly every 6 hours
+- [ ] Tenure badges awarded automatically based on membership duration
+- [ ] Activity badges awarded when balance thresholds reached
+- [ ] Admin can award/revoke contribution badges
+- [ ] `/badges` and `/stats` commands work correctly
+- [ ] Badge notifications sent via DM
+- [ ] All tests pass
+
+---
+
+## Sprint 9: Directory & Leaderboard
+
+**Goal**: Implement member directory, leaderboard, and REST API endpoints
+
+**Duration**: Week 4
+
+### Tasks
+
+#### S9-T1: Directory Service Implementation
+
+**Description**: Implement directory browsing with pagination and filtering.
+
+**Acceptance Criteria**:
+- [ ] `getDirectory()` - paginated member list
+- [ ] Filter by tier (naib, fedaykin)
+- [ ] Filter by badge (has specific badge)
+- [ ] Filter by tenure category (OG, veteran, elder)
+- [ ] Sort by nym (alphabetical), tenure, badge count
+- [ ] Privacy filtering - only public fields returned
+- [ ] Efficient queries with proper indexing
+
+**Files to Create**:
+- `sietch-service/src/services/directory.ts`
+
+**Dependencies**: S6-T4
+**Estimated Effort**: Medium
+**Testing**: Pagination tests, filter tests
+
+---
+
+#### S9-T2: Leaderboard Service Implementation
+
+**Description**: Implement engagement leaderboard (rankings + badge counts only).
+
+**Acceptance Criteria**:
+- [ ] `getLeaderboard()` - top N members by badge count
+- [ ] Returns rank, nym, pfp, badge count, tier
+- [ ] Does NOT return activity stats (privacy)
+- [ ] Does NOT return wallet info
+- [ ] Tiebreaker: tenure (older members rank higher)
+
+**Files to Create**:
+- `sietch-service/src/services/leaderboard.ts`
+
+**Dependencies**: S8-T2
+**Estimated Effort**: Low
+**Testing**: Ranking tests
+
+---
+
+#### S9-T3: Directory Slash Command
+
+**Description**: Implement `/directory` command with interactive browsing.
+
+**Acceptance Criteria**:
+- [ ] `/directory` - opens interactive directory browser (ephemeral)
+- [ ] Pagination buttons (Previous, Next, page indicator)
+- [ ] Filter dropdown (All, Naib only, Fedaykin only, badge filters)
+- [ ] Members displayed in embed with nym, tier, badges preview
+- [ ] Click member to view full profile (button or mention)
+
+**Files to Create**:
+- `sietch-service/src/discord/commands/directory.ts`
+- `sietch-service/src/discord/interactions/directory.ts`
+
+**Dependencies**: S9-T1
+**Estimated Effort**: High
+**Testing**: Interaction flow tests
+
+---
+
+#### S9-T4: Leaderboard Slash Command
+
+**Description**: Implement `/leaderboard` command.
+
+**Acceptance Criteria**:
+- [ ] `/leaderboard` - shows engagement leaderboard (public)
+- [ ] Top 20 members by badge count
+- [ ] Rank, nym, badge count, tier shown
+- [ ] Color-coded by tier
+- [ ] No activity stats (privacy per SDD)
+
+**Files to Create**:
+- `sietch-service/src/discord/commands/leaderboard.ts`
+
+**Dependencies**: S9-T2
+**Estimated Effort**: Low
+**Testing**: Command execution test
+
+---
+
+#### S9-T5: Directory Embeds
+
+**Description**: Create embed builders for directory display.
+
+**Acceptance Criteria**:
+- [ ] Directory list embed (paginated)
+- [ ] Leaderboard embed
+- [ ] Consistent styling
+- [ ] Badge emoji display
+- [ ] Footer with pagination info
+
+**Files to Create**:
+- `sietch-service/src/discord/embeds/directory.ts`
+
+**Dependencies**: S9-T1, S9-T2
+**Estimated Effort**: Low
+**Testing**: Visual verification
+
+---
+
+#### S9-T6: REST API - Profile Endpoints
+
+**Description**: Implement REST API endpoints for profile operations.
+
+**Acceptance Criteria**:
+- [ ] `GET /api/profile` - own profile (session auth)
+- [ ] `PUT /api/profile` - update own profile (session auth)
+- [ ] `POST /api/profile/pfp` - upload PFP (multipart, session auth)
+- [ ] `GET /api/members/:nym` - public profile (no auth)
+- [ ] `GET /api/members/:nym/badges` - member badges (no auth)
+- [ ] Privacy filtering on public endpoints
+- [ ] Proper error responses (404, 400, 401)
+
+**Files to Create**:
+- `sietch-service/src/api/handlers/profile.ts`
+
+**Files to Modify**:
+- `sietch-service/src/api/routes.ts`
+
+**Dependencies**: S6-T4, Sprint 7
+**Estimated Effort**: Medium
+**Testing**: API integration tests
+
+---
+
+#### S9-T7: REST API - Directory & Badges Endpoints
+
+**Description**: Implement REST API endpoints for directory and badges.
+
+**Acceptance Criteria**:
+- [ ] `GET /api/directory` - paginated directory with filters
+- [ ] `GET /api/badges` - all available badges
+- [ ] `GET /api/leaderboard` - engagement leaderboard
+- [ ] Query params for pagination and filters
+- [ ] Response schemas match SDD
+
+**Files to Create**:
+- `sietch-service/src/api/handlers/directory.ts`
+- `sietch-service/src/api/handlers/badges.ts`
+
+**Files to Modify**:
+- `sietch-service/src/api/routes.ts`
+
+**Dependencies**: S9-T1, S9-T2
+**Estimated Effort**: Medium
+**Testing**: API integration tests
+
+---
+
+#### S9-T8: REST API - Admin Badge Endpoints
+
+**Description**: Implement admin endpoints for badge management.
+
+**Acceptance Criteria**:
+- [ ] `POST /api/admin/badges/award` - award badge (API key auth)
+- [ ] `DELETE /api/admin/badges/:memberId/:badgeId` - revoke badge (API key auth)
+- [ ] Request validation
+- [ ] Audit logging for badge operations
+- [ ] Error handling for non-existent members/badges
+
+**Files to Modify**:
+- `sietch-service/src/api/handlers/badges.ts`
+- `sietch-service/src/api/routes.ts`
+
+**Dependencies**: S8-T2
+**Estimated Effort**: Low
+**Testing**: API integration tests
+
+---
+
+#### S9-T9: API Rate Limiting Extension
+
+**Description**: Add rate limiting for new endpoints.
+
+**Acceptance Criteria**:
+- [ ] Directory endpoint: 50 req/min
+- [ ] Public profile: 100 req/min
+- [ ] Own profile: 30 req/min
+- [ ] Profile update: 10 req/min
+- [ ] PFP upload: 3 req/min
+- [ ] Admin badge: 30 req/min
+
+**Files to Modify**:
+- `sietch-service/src/api/middleware.ts`
+
+**Dependencies**: S9-T6, S9-T7
+**Estimated Effort**: Low
+**Testing**: Rate limit tests
+
+---
+
+### Sprint 9 Success Criteria
+
+- [ ] `/directory` command shows paginated member list with filters
+- [ ] `/leaderboard` shows top members by badge count
+- [ ] All REST API endpoints functional and documented
+- [ ] Privacy maintained across all endpoints
+- [ ] Rate limiting in place
+- [ ] All tests pass
+
+---
+
+## Sprint 10: Integration & Polish
+
+**Goal**: Collab.Land integration, role automation, testing, and deployment preparation
+
+**Duration**: Week 5
+
+### Tasks
+
+#### S10-T1: Collab.Land Configuration
+
+**Description**: Configure Collab.Land for token gating with Sietch API.
+
+**Acceptance Criteria**:
+- [ ] Collab.Land bot added to Sietch server
+- [ ] Custom API token gate configured pointing to `/eligibility` endpoint
+- [ ] Role mapping configured: top_7 → Naib, top_69 → Fedaykin
+- [ ] Role assignment triggers onboarding flow
+- [ ] Existing eligibility sync task works with Collab.Land
+- [ ] Documentation for Collab.Land setup
+
+**Files to Modify**:
+- Collab.Land configuration (external)
+- `sietch-service/src/api/handlers/eligibility.ts` (if needed)
+
+**Dependencies**: Sprint 7 (onboarding)
+**Estimated Effort**: Medium
+**Testing**: End-to-end verification
+
+---
+
+#### S10-T2: Dynamic Role Management
+
+**Description**: Implement automatic role assignment/removal based on badges and tenure.
+
+**Acceptance Criteria**:
+- [ ] Auto-assign @Engaged when 5+ badges OR activity balance > 200
+- [ ] Auto-assign @Veteran when 90+ days tenure
+- [ ] Auto-assign @Trusted when 10+ badges OR has Helper badge
+- [ ] Role check runs on badge award and periodically
+- [ ] Remove role if conditions no longer met (except tenure)
+- [ ] Roles grant channel access (#deep-desert, #stillsuit-lounge)
+
+**Files to Modify**:
+- `sietch-service/src/services/badge.ts`
+- `sietch-service/src/services/discord.ts`
+
+**Dependencies**: S8-T2
+**Estimated Effort**: Medium
+**Testing**: Role assignment tests
+
+---
+
+#### S10-T3: Channel Access Setup
+
+**Description**: Configure Discord channels with proper role permissions.
+
+**Acceptance Criteria**:
+- [ ] Main channels require @Onboarded role to view
+- [ ] #deep-desert requires @Engaged role
+- [ ] #stillsuit-lounge requires @Veteran role
+- [ ] #council-rock requires @Naib role
+- [ ] Bot commands channel accessible to all verified members
+- [ ] Channel permissions documented
+
+**Dependencies**: S10-T2
+**Estimated Effort**: Low
+**Testing**: Permission verification
+
+---
+
+#### S10-T4: Migration Script for Existing Members
+
+**Description**: Create migration to handle existing v1.0 members.
+
+**Acceptance Criteria**:
+- [ ] Identify existing wallet_mappings with current_eligibility
+- [ ] Create placeholder profiles (onboarding_complete = 0)
+- [ ] Generate temporary nyms (Member_XXXXXX)
+- [ ] Preserve original verified_at as created_at
+- [ ] Send DM prompting them to complete onboarding
+- [ ] Reversible migration
+
+**Files to Modify**:
+- `sietch-service/src/db/migrations/002_social_layer.ts`
+
+**Dependencies**: Sprint 6, Sprint 7
+**Estimated Effort**: Medium
+**Testing**: Migration up/down tests
+
+---
+
+#### S10-T5: Comprehensive Testing
+
+**Description**: Write integration tests for full user flows.
+
+**Acceptance Criteria**:
+- [ ] New member onboarding flow test (end-to-end)
+- [ ] Profile edit flow test
+- [ ] Activity tracking and decay test
+- [ ] Badge award and notification test
+- [ ] Directory browsing test
+- [ ] API endpoint tests
+- [ ] Privacy leak detection tests (no wallet in public responses)
+- [ ] Test coverage > 80%
+
+**Files to Create**:
+- `sietch-service/tests/integration/onboarding.test.ts`
+- `sietch-service/tests/integration/activity.test.ts`
+- `sietch-service/tests/integration/badges.test.ts`
+- `sietch-service/tests/integration/directory.test.ts`
+- `sietch-service/tests/integration/api.test.ts`
+- `sietch-service/tests/integration/privacy.test.ts`
+
+**Dependencies**: All previous sprints
+**Estimated Effort**: High
+**Testing**: Test runner
+
+---
+
+#### S10-T6: Error Handling & Edge Cases
+
+**Description**: Ensure robust error handling throughout the application.
+
+**Acceptance Criteria**:
+- [ ] Graceful handling of Discord API failures
+- [ ] Retry logic for transient errors
+- [ ] User-friendly error messages in Discord
+- [ ] Proper HTTP status codes in API
+- [ ] Logging for debugging without exposing private data
+- [ ] DM fallback when DMs disabled
+
+**Files to Modify**:
+- Various service files
+- `sietch-service/src/utils/errors.ts`
+
+**Dependencies**: All previous sprints
+**Estimated Effort**: Medium
+**Testing**: Error scenario tests
+
+---
+
+#### S10-T7: Deployment Documentation Update
+
+**Description**: Update deployment documentation for v2.0.
+
+**Acceptance Criteria**:
+- [ ] Update PRE_DEPLOYMENT_CHECKLIST.md with new env vars
+- [ ] Update DEPLOYMENT_RUNBOOK.md with v2.0 steps
+- [ ] Document Discord role and channel setup
+- [ ] Document Collab.Land configuration
+- [ ] Update backup script for new tables
+- [ ] Create rollback procedure
+
+**Files to Modify**:
+- `sietch-service/docs/deployment/PRE_DEPLOYMENT_CHECKLIST.md`
+- `sietch-service/docs/deployment/DEPLOYMENT_RUNBOOK.md`
+
+**Dependencies**: All previous sprints
+**Estimated Effort**: Medium
+**Testing**: Documentation review
+
+---
+
+#### S10-T8: Performance Optimization
+
+**Description**: Optimize queries and caching for production load.
+
+**Acceptance Criteria**:
+- [ ] Index optimization for common queries
+- [ ] In-memory caching for badge definitions
+- [ ] Profile cache with TTL
+- [ ] Efficient batch operations in scheduled tasks
+- [ ] Response time < 200ms for API endpoints
+- [ ] Bot response time < 1s for slash commands
+
+**Files to Modify**:
+- Various service and query files
+
+**Dependencies**: All previous sprints
+**Estimated Effort**: Medium
+**Testing**: Performance benchmarks
+
+---
+
+#### S10-T9: Final Integration & Smoke Testing
+
+**Description**: End-to-end testing of complete system on staging.
+
+**Acceptance Criteria**:
+- [ ] Deploy to staging environment
+- [ ] Test complete new member flow
+- [ ] Test profile management
+- [ ] Test activity tracking over time
+- [ ] Test badge awards (automatic and manual)
+- [ ] Test directory and leaderboard
+- [ ] Test API endpoints with real data
+- [ ] Verify privacy (no wallet leaks)
+- [ ] Performance under load
+
+**Dependencies**: All previous tasks
+**Estimated Effort**: High
+**Testing**: Staging verification
+
+---
+
+### Sprint 10 Success Criteria
+
+- [ ] Collab.Land integration working end-to-end
+- [ ] Dynamic role assignment functioning
+- [ ] All channel permissions configured
+- [ ] Existing members can complete onboarding
+- [ ] All integration tests pass
+- [ ] Performance meets requirements
+- [ ] Ready for production deployment
 
 ---
 
@@ -775,39 +1076,60 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
-| Collab.Land doesn't support custom API | Medium | High | Research in Sprint 2; fallback to direct role management |
-| RPC query performance issues | Medium | Medium | Implement pagination, consider caching historical events |
-| Discord rate limits | Low | Medium | Batch operations, implement backoff |
-| trigger.dev reliability | Low | Medium | Built-in retries, monitoring, manual fallback |
-| Team availability | Low | Medium | Cross-train on critical components |
+| Discord API rate limits | Medium | Medium | Implement proper rate limiting, queue operations |
+| Collab.Land integration complexity | Medium | High | Early testing, fallback manual verification |
+| Privacy leak in edge cases | Low | Critical | Comprehensive privacy tests, code review |
+| Demurrage tuning | Medium | Low | Make decay rate configurable, monitor in production |
+| User confusion with onboarding | Low | Medium | Clear instructions, helpful error messages |
+| DM delivery failures | Medium | Medium | Implement fallback to ephemeral channel messages |
 
 ---
 
-## Definition of Done
+## Dependencies
 
-A task is complete when:
+### External Dependencies
+- Collab.Land configuration and access
+- Discord server with proper permissions
+- Berachain RPC access (existing)
+- trigger.dev project (existing)
 
-1. Code is written and passes linting
-2. Unit tests pass (where applicable)
-3. Integration tests pass (where applicable)
-4. Code reviewed by at least one team member
-5. Deployed to staging/production (as applicable)
-6. Documentation updated (if behavior changes)
-7. Acceptance criteria verified
+### Sprint Dependencies
+- Sprint 7 depends on Sprint 6 (database, services)
+- Sprint 8 depends on Sprint 7 (onboarding, Discord setup)
+- Sprint 9 depends on Sprint 6-8 (all services)
+- Sprint 10 depends on Sprint 6-9 (integration)
 
 ---
 
-## Post-MVP Enhancements (Backlog)
+## Success Metrics
 
-These items are out of scope for MVP but documented for future consideration:
+| Metric | Target | Measurement Point |
+|--------|--------|------------------|
+| Onboarding completion | >90% | End of Sprint 7 |
+| Test coverage | >80% | End of Sprint 10 |
+| API response time | <200ms | End of Sprint 10 |
+| Bot response time | <1s | End of Sprint 10 |
+| Zero privacy leaks | 0 | Continuous |
+| All slash commands functional | 100% | End of Sprint 9 |
 
-| Enhancement | Description | Priority |
-|-------------|-------------|----------|
-| Subsquid integration | Use existing mibera-squid for faster event queries | High |
-| Real-time event subscriptions | WebSocket subscriptions for instant updates | Medium |
-| Historical analytics dashboard | Track eligibility trends over time | Low |
-| Webhook notifications | Notify external services on changes | Low |
-| Multi-server support | Support multiple Discord servers | Low |
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-12-17 | Initial MVP sprint plan (Sprints 1-5) |
+| 2.0 | 2025-12-18 | Social Layer sprint plan (Sprints 6-10) |
+
+---
+
+## Completed Sprints (v1.0)
+
+### Sprint 1: Foundation & Chain Service ✅
+### Sprint 2: REST API & Scheduled Task ✅
+### Sprint 3: Discord Bot & Server Setup ✅
+### Sprint 4: Collab.Land Integration & Deployment ✅
+### Sprint 5: Notifications & Documentation ✅
 
 ---
 
