@@ -299,12 +299,52 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
+#### S2-T7: RPC Resilience - Multiple Endpoints
+
+**Description**: Add support for multiple RPC endpoints with automatic fallback for improved reliability.
+
+**Acceptance Criteria**:
+- [ ] Configuration supports comma-separated list of RPC URLs
+- [ ] Chain service attempts primary RPC first, falls back to secondary on failure
+- [ ] Failed endpoints tracked and temporarily deprioritized
+- [ ] Health check tests all configured endpoints
+- [ ] Logging indicates which endpoint is being used
+
+**Estimated Effort**: 4 hours
+**Assigned To**: Backend Developer
+**Dependencies**: S1-T4
+**Testing**: Unit tests simulating primary RPC failure
+**Source**: Sprint 1 Security Audit Recommendation
+
+---
+
+#### S2-T8: Historical Event Caching
+
+**Description**: Implement caching for historical blockchain events to improve sync performance.
+
+**Acceptance Criteria**:
+- [ ] Cache historical claim/burn events in database
+- [ ] Sync task only queries new blocks since last cached block
+- [ ] `last_synced_block` tracked in health_status table
+- [ ] Full resync capability via admin endpoint or flag
+- [ ] Significant performance improvement on subsequent syncs
+
+**Estimated Effort**: 5 hours
+**Assigned To**: Backend Developer
+**Dependencies**: S1-T3, S1-T4
+**Testing**: Performance comparison before/after caching
+**Source**: Sprint 1 Security Audit Recommendation
+
+---
+
 ### Sprint 2 Success Metrics
 
 - [ ] API endpoints return correct data
 - [ ] trigger.dev task runs successfully on schedule
 - [ ] Grace period logic activates correctly
 - [ ] Collab.Land integration path documented
+- [ ] RPC fallback working with multiple endpoints
+- [ ] Historical event caching reduces sync time
 
 ---
 
