@@ -57,17 +57,17 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ### Tasks
 
-#### S1-T1: Project Scaffolding
+#### S1-T1: Project Scaffolding ✅
 
 **Description**: Initialize the sietch-service project with TypeScript, Express, and all necessary dependencies.
 
 **Acceptance Criteria**:
-- [ ] `sietch-service/` directory created with proper structure per SDD
-- [ ] `package.json` with all dependencies (express, better-sqlite3, discord.js, viem, pino, zod)
-- [ ] `tsconfig.json` configured for Node.js 20
-- [ ] `.env.example` with all required environment variables
-- [ ] ESLint + Prettier configured
-- [ ] Basic `npm run dev`, `npm run build`, `npm test` scripts working
+- [x] `sietch-service/` directory created with proper structure per SDD
+- [x] `package.json` with all dependencies (express, better-sqlite3, discord.js, viem, pino, zod)
+- [x] `tsconfig.json` configured for Node.js 20
+- [x] `.env.example` with all required environment variables
+- [x] ESLint + Prettier configured
+- [x] Basic `npm run dev`, `npm run build`, `npm test` scripts working
 
 **Estimated Effort**: 4 hours
 **Assigned To**: Backend Developer
@@ -76,16 +76,16 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S1-T2: Configuration Module
+#### S1-T2: Configuration Module ✅
 
 **Description**: Implement centralized configuration with environment variable loading and validation.
 
 **Acceptance Criteria**:
-- [ ] `src/config.ts` loads all environment variables
-- [ ] Zod schema validates configuration at startup
-- [ ] Clear error messages for missing/invalid config
-- [ ] Supports `.env.local` for development
-- [ ] All config values typed (no `any`)
+- [x] `src/config.ts` loads all environment variables
+- [x] Zod schema validates configuration at startup
+- [x] Clear error messages for missing/invalid config
+- [x] Supports `.env.local` for development
+- [x] All config values typed (no `any`)
 
 **Estimated Effort**: 3 hours
 **Assigned To**: Backend Developer
@@ -94,16 +94,16 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S1-T3: SQLite Database Layer
+#### S1-T3: SQLite Database Layer ✅
 
 **Description**: Implement SQLite database with schema and query layer using better-sqlite3.
 
 **Acceptance Criteria**:
-- [ ] `src/db/schema.ts` with all tables per SDD (eligibility_snapshots, current_eligibility, admin_overrides, audit_log, health_status, wallet_mappings)
-- [ ] `src/db/migrations/` with initial migration
-- [ ] `src/db/queries.ts` with typed query functions
-- [ ] Database auto-creates on first run
-- [ ] WAL mode enabled for concurrent reads
+- [x] `src/db/schema.ts` with all tables per SDD (eligibility_snapshots, current_eligibility, admin_overrides, audit_log, health_status, wallet_mappings)
+- [x] `src/db/migrations/` with initial migration
+- [x] `src/db/queries.ts` with typed query functions
+- [x] Database auto-creates on first run
+- [x] WAL mode enabled for concurrent reads
 
 **Estimated Effort**: 6 hours
 **Assigned To**: Backend Developer
@@ -112,18 +112,18 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S1-T4: Chain Service - viem Client Setup
+#### S1-T4: Chain Service - viem Client Setup ✅
 
 **Description**: Implement the Chain Service to query Berachain RPC for BGT events.
 
 **Acceptance Criteria**:
-- [ ] `src/services/chain.ts` with viem public client
-- [ ] Configurable RPC URL from environment
-- [ ] `fetchClaimEvents()` - fetches RewardPaid events from reward vaults
-- [ ] `fetchBurnEvents()` - fetches Transfer events to 0x0
-- [ ] `aggregateWalletData()` - combines claims and burns per wallet
-- [ ] `fetchEligibilityData()` - returns sorted, filtered eligibility list
-- [ ] Proper error handling for RPC failures
+- [x] `src/services/chain.ts` with viem public client
+- [x] Configurable RPC URL from environment
+- [x] `fetchClaimEvents()` - fetches RewardPaid events from reward vaults
+- [x] `fetchBurnEvents()` - fetches Transfer events to 0x0
+- [x] `aggregateWalletData()` - combines claims and burns per wallet
+- [x] `fetchEligibilityData()` - returns sorted, filtered eligibility list
+- [x] Proper error handling for RPC failures
 
 **Estimated Effort**: 8 hours
 **Assigned To**: Backend Developer
@@ -132,16 +132,16 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S1-T5: Eligibility Service
+#### S1-T5: Eligibility Service ✅
 
 **Description**: Implement core eligibility logic for computing diffs and assigning roles.
 
 **Acceptance Criteria**:
-- [ ] `src/services/eligibility.ts` with eligibility processing logic
-- [ ] `computeDiff()` - compares previous and current snapshots
-- [ ] Correctly identifies: added, removed, promotedToNaib, demotedFromNaib
-- [ ] `assignRoles()` - determines naib (1-7), fedaykin (8-69), none (>69)
-- [ ] `applyAdminOverrides()` - applies manual adds/removes
+- [x] `src/services/eligibility.ts` with eligibility processing logic
+- [x] `computeDiff()` - compares previous and current snapshots
+- [x] Correctly identifies: added, removed, promotedToNaib, demotedFromNaib
+- [x] `assignRoles()` - determines naib (1-7), fedaykin (8-69), none (>69)
+- [x] `applyAdminOverrides()` - applies manual adds/removes
 
 **Estimated Effort**: 5 hours
 **Assigned To**: Backend Developer
@@ -150,16 +150,16 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ---
 
-#### S1-T6: Logger Setup
+#### S1-T6: Logger Setup ✅
 
 **Description**: Implement structured logging with pino.
 
 **Acceptance Criteria**:
-- [ ] `src/utils/logger.ts` with pino configuration
-- [ ] Log level configurable via environment
-- [ ] ISO timestamps, JSON format
-- [ ] No PII or sensitive data in logs
-- [ ] Exported logger instance used throughout codebase
+- [x] `src/utils/logger.ts` with pino configuration
+- [x] Log level configurable via environment
+- [x] ISO timestamps, JSON format
+- [x] No PII or sensitive data in logs
+- [x] Exported logger instance used throughout codebase
 
 **Estimated Effort**: 2 hours
 **Assigned To**: Backend Developer
@@ -170,10 +170,10 @@ Sietch is a token-gated Discord community for the top 69 BGT holders who have ne
 
 ### Sprint 1 Success Metrics
 
-- [ ] Chain service successfully fetches events from Berachain RPC
-- [ ] Database stores and retrieves eligibility snapshots
-- [ ] Eligibility diff computation passes all test cases
-- [ ] Project builds without errors
+- [x] Chain service successfully fetches events from Berachain RPC
+- [x] Database stores and retrieves eligibility snapshots
+- [x] Eligibility diff computation passes all test cases
+- [x] Project builds without errors
 
 ---
 
