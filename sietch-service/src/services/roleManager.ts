@@ -236,3 +236,114 @@ export async function onActivityUpdated(memberId: string): Promise<void> {
     logger.error({ error, memberId }, 'Failed to sync roles after activity update');
   }
 }
+
+// =============================================================================
+// Naib Role Management (v2.1 - Sprint 11)
+// =============================================================================
+
+/**
+ * Assign @Naib role to a member (removes @Fedaykin)
+ * Called when a member takes a Naib seat
+ */
+export async function assignNaibRole(discordUserId: string): Promise<boolean> {
+  const naibRoleId = config.discord.roles.naib;
+  const fedaykinRoleId = config.discord.roles.fedaykin;
+
+  // Assign @Naib
+  const naibSuccess = await discordService.assignRole(discordUserId, naibRoleId);
+  if (!naibSuccess) {
+    logger.error({ discordUserId }, 'Failed to assign Naib role');
+    return false;
+  }
+
+  // Remove @Fedaykin (Naib is exclusive)
+  await discordService.removeRole(discordUserId, fedaykinRoleId);
+
+  logger.info({ discordUserId }, 'Assigned Naib role, removed Fedaykin');
+  logAuditEvent('role_assigned', {
+    discordUserId,
+    roleName: 'naib',
+    reason: 'naib_seat_taken',
+  });
+
+  return true;
+}
+
+/**
+ * Assign @Former Naib role to a member (adds @Fedaykin, removes @Naib)
+ * Called when a Naib member is bumped from their seat
+ */
+export async function assignFormerNaibRole(discordUserId: string): Promise<boolean> {
+  const naibRoleId = config.discord.roles.naib;
+  const fedaykinRoleId = config.discord.roles.fedaykin;
+  const formerNaibRoleId = config.discord.roles.formerNaib;
+
+  // Remove @Naib first
+  await discordService.removeRole(discordUserId, naibRoleId);
+
+  // Add @Fedaykin (they're still eligible, just not in top 7)
+  const fedaykinSuccess = await discordService.assignRole(discordUserId, fedaykinRoleId);
+  if (!fedaykinSuccess) {
+    logger.warn({ discordUserId }, 'Failed to assign Fedaykin role to former Naib');
+  }
+
+  // Add @Former Naib if configured
+  if (formerNaibRoleId) {
+    const formerNaibSuccess = await discordService.assignRole(discordUserId, formerNaibRoleId);
+    if (!formerNaibSuccess) {
+      logger.warn({ discordUserId }, 'Failed to assign Former Naib role (role may not exist)');
+    }
+  } else {
+    logger.debug('Former Naib role not configured, skipping');
+  }
+
+  logger.info({ discordUserId }, 'Assigned Former Naib + Fedaykin roles, removed Naib');
+  logAuditEvent('role_assigned', {
+    discordUserId,
+    roleName: 'former_naib',
+    reason: 'naib_seat_bumped',
+  });
+
+  return true;
+}
+
+/**
+ * Remove @Naib role from a member (adds @Fedaykin)
+ * Called for non-bump demotions (e.g., left server, became ineligible)
+ */
+export async function removeNaibRole(discordUserId: string): Promise<boolean> {
+  const naibRoleId = config.discord.roles.naib;
+  const fedaykinRoleId = config.discord.roles.fedaykin;
+
+  // Remove @Naib
+  const removeSuccess = await discordService.removeRole(discordUserId, naibRoleId);
+  if (!removeSuccess) {
+    logger.warn({ discordUserId }, 'Failed to remove Naib role');
+  }
+
+  // Add @Fedaykin (if they're still eligible)
+  await discordService.assignRole(discordUserId, fedaykinRoleId);
+
+  logger.info({ discordUserId }, 'Removed Naib role, added Fedaykin');
+  logAuditEvent('role_removed', {
+    discordUserId,
+    roleName: 'naib',
+    reason: 'naib_seat_lost',
+  });
+
+  return true;
+}
+
+/**
+ * Check if Naib roles are properly configured
+ */
+export function isNaibRolesConfigured(): boolean {
+  return !!(config.discord.roles.naib && config.discord.roles.fedaykin);
+}
+
+/**
+ * Check if Former Naib role is configured
+ */
+export function isFormerNaibRoleConfigured(): boolean {
+  return !!config.discord.roles.formerNaib;
+}

@@ -43,6 +43,7 @@ import {
   handleDirectoryButton,
   handleDirectorySelect,
   handleLeaderboardCommand,
+  handleNaibCommand,
   DIRECTORY_INTERACTIONS,
 } from '../discord/commands/index.js';
 import {
@@ -282,6 +283,9 @@ class DiscordService {
         break;
       case 'leaderboard':
         await handleLeaderboardCommand(interaction);
+        break;
+      case 'naib':
+        await handleNaibCommand(interaction);
         break;
       default:
         logger.warn({ commandName }, 'Unknown slash command');

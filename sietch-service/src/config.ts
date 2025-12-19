@@ -81,6 +81,8 @@ const configSchema = z.object({
       engaged: z.string().optional(),
       veteran: z.string().optional(),
       trusted: z.string().optional(),
+      // Naib dynamics roles (v2.1) - assigned based on Naib seat status
+      formerNaib: z.string().optional(),
     }),
   }),
 
@@ -183,6 +185,8 @@ function parseConfig() {
         engaged: process.env.DISCORD_ROLE_ENGAGED,
         veteran: process.env.DISCORD_ROLE_VETERAN,
         trusted: process.env.DISCORD_ROLE_TRUSTED,
+        // Naib dynamics roles (v2.1)
+        formerNaib: process.env.DISCORD_ROLE_FORMER_NAIB,
       },
     },
     api: {
@@ -273,6 +277,8 @@ export interface Config {
       engaged?: string;
       veteran?: string;
       trusted?: string;
+      // Naib dynamics roles (v2.1)
+      formerNaib?: string;
     };
   };
   api: {

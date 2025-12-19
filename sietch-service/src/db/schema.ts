@@ -148,3 +148,6 @@ WHERE created_at < datetime('now', '-30 days');
 
 // Re-export social layer schema for v2.0
 export { SOCIAL_LAYER_SCHEMA_SQL, SOCIAL_LAYER_ROLLBACK_SQL } from './migrations/002_social_layer.js';
+
+// Re-export Naib/Threshold schema for v2.1
+export { NAIB_THRESHOLD_SCHEMA_SQL, NAIB_THRESHOLD_ROLLBACK_SQL } from './migrations/005_naib_threshold.js';

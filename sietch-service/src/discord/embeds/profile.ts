@@ -258,8 +258,32 @@ export function buildBioPromptEmbed(nym: string): EmbedBuilder {
 /**
  * Build onboarding complete embed
  */
-export function buildOnboardingCompleteEmbed(nym: string, tier: 'naib' | 'fedaykin'): EmbedBuilder {
+export function buildOnboardingCompleteEmbed(
+  nym: string,
+  tier: 'naib' | 'fedaykin',
+  becameNaib: boolean = false
+): EmbedBuilder {
   const tierConfig = TIER_CONFIG[tier];
+
+  // Special message for new Naib members
+  if (becameNaib) {
+    return new EmbedBuilder()
+      .setTitle('👑 Welcome to the Naib Council!')
+      .setDescription(
+        `Your profile is ready, **${nym}**!\n\n` +
+        `You've claimed a seat on the **Naib Council** as one of the top 7 BGT holders!\n\n` +
+        `**Your Privileges:**\n` +
+        `• Access to exclusive Naib Council channels\n` +
+        `• Founding Naib recognition if among the first 7\n` +
+        `• Voting rights on community decisions\n\n` +
+        `**What's Next:**\n` +
+        `• Use \`/naib\` to see your fellow council members\n` +
+        `• Use \`/profile\` to view your profile\n` +
+        `• Defend your seat by maintaining your BGT holdings!\n`
+      )
+      .setColor(COLORS.GOLD)
+      .setFooter({ text: 'May your reign be prosperous!' });
+  }
 
   return new EmbedBuilder()
     .setTitle('🎉 Welcome to Sietch!')

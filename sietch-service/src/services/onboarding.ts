@@ -554,9 +554,54 @@ class OnboardingService {
     // Complete onboarding
     profileService.completeOnboarding(profile.memberId);
 
-    // Assign @Onboarded role and sync dynamic roles (async, don't wait)
-    import('./roleManager.js').then(async ({ assignOnboardedRole, syncMemberRoles }) => {
+    // Evaluate for Naib seat (Sprint 11)
+    let becameNaib = false;
+    try {
+      const { naibService } = await import('./naib.js');
+      const naibResult = naibService.evaluateNewMember(profile.memberId);
+
+      if (naibResult.becameNaib) {
+        becameNaib = true;
+        logger.info(
+          {
+            memberId: profile.memberId,
+            nym: session.nym,
+            seatNumber: naibResult.seatNumber,
+            causedBump: naibResult.causedBump,
+          },
+          'New member became Naib during onboarding'
+        );
+
+        // Handle bump notification if someone was displaced
+        if (naibResult.causedBump && naibResult.bumpResult?.bumpedMember) {
+          const bumpedMember = naibResult.bumpResult.bumpedMember;
+          logger.info(
+            {
+              bumpedMemberId: bumpedMember.profile.memberId,
+              bumpedNym: bumpedMember.profile.nym,
+              newNaibNym: session.nym,
+            },
+            'Naib member was bumped by new member'
+          );
+        }
+      }
+    } catch (error) {
+      logger.error({ error, memberId: profile.memberId }, 'Failed to evaluate Naib seat during onboarding');
+    }
+
+    // Assign roles based on Naib status (async, don't wait)
+    import('./roleManager.js').then(async ({
+      assignOnboardedRole,
+      syncMemberRoles,
+      assignNaibRole,
+    }) => {
       await assignOnboardedRole(discordUserId);
+
+      // If they became Naib, assign Naib role instead of letting syncMemberRoles handle it
+      if (becameNaib) {
+        await assignNaibRole(discordUserId);
+      }
+
       await syncMemberRoles(profile.memberId);
     }).catch((error) => {
       logger.error({ error, discordUserId }, 'Failed to assign roles after onboarding');
@@ -565,12 +610,12 @@ class OnboardingService {
     // Clean up session
     this.sessions.delete(discordUserId);
 
-    // Send completion message
-    const completeEmbed = buildOnboardingCompleteEmbed(session.nym!, profile.tier);
+    // Send completion message (enhanced for Naib)
+    const completeEmbed = buildOnboardingCompleteEmbed(session.nym!, profile.tier, becameNaib);
     await user.send({ embeds: [completeEmbed] });
 
     logger.info(
-      { discordUserId, memberId: profile.memberId, nym: session.nym },
+      { discordUserId, memberId: profile.memberId, nym: session.nym, becameNaib },
       'Onboarding completed'
     );
   }

@@ -46,6 +46,12 @@ export {
   onBadgeAwarded,
   onActivityUpdated,
   isDynamicRolesEnabled,
+  // Sprint 11: Naib role management
+  assignNaibRole,
+  assignFormerNaibRole,
+  removeNaibRole,
+  isNaibRolesConfigured,
+  isFormerNaibRoleConfigured,
 } from './roleManager.js';
 
 // Sprint 10: Member Migration
@@ -55,3 +61,6 @@ export {
   runMigrationPromptTask,
   getMigrationStatus,
 } from './memberMigration.js';
+
+// Sprint 11: Naib Dynamics
+export { naibService } from './naib.js';

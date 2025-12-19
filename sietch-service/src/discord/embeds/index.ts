@@ -17,3 +17,11 @@ export {
   buildLeaderboardEntryEmbed,
   buildFilterOptionsEmbed,
 } from './directory.js';
+
+// Sprint 11: Naib Council embeds
+export {
+  buildNaibCouncilEmbed,
+  buildFormerNaibEmbed,
+  buildNaibOverviewEmbed,
+  buildNaibSeatEmbed,
+} from './naib.js';

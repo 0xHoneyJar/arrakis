@@ -11,6 +11,7 @@ import { statsCommand } from './stats.js';
 import { adminBadgeCommand } from './admin-badge.js';
 import { directoryCommand } from './directory.js';
 import { leaderboardCommand } from './leaderboard.js';
+import { naibCommand } from './naib.js';
 
 /**
  * All registered slash commands
@@ -22,6 +23,7 @@ export const commands: RESTPostAPIChatInputApplicationCommandsJSONBody[] = [
   adminBadgeCommand.toJSON(),
   directoryCommand.toJSON(),
   leaderboardCommand.toJSON(),
+  naibCommand.toJSON(),
 ];
 
 /**
@@ -40,6 +42,9 @@ export {
   DIRECTORY_INTERACTIONS,
 } from './directory.js';
 export { handleLeaderboardCommand } from './leaderboard.js';
+
+// Sprint 11: Naib Council command
+export { handleNaibCommand } from './naib.js';
 
 /**
  * Register slash commands with Discord API
