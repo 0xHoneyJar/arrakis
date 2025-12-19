@@ -161,7 +161,7 @@ Current Naib (by BGT):
 New member Hank joins with 6,200 BGT:
 → Hank's BGT (6,200) > Grace's BGT (5,500)
 → Grace is bumped → Former Naib + Fedaykin
-→ Hank takes Naib seat #7
+→ New ranking: Hank takes #6 (6,200), Frank drops to #7 (6,000)
 ```
 
 #### 3.1.3 Naib Roles & Permissions
