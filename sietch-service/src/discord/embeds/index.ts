@@ -25,3 +25,13 @@ export {
   buildNaibOverviewEmbed,
   buildNaibSeatEmbed,
 } from './naib.js';
+
+// Sprint 12: Cave Entrance embeds
+export {
+  buildThresholdEmbed,
+  buildThresholdCompactEmbed,
+  buildWaitlistRegistrationEmbed,
+  buildWaitlistErrorEmbed,
+  buildWaitlistUnregisterEmbed,
+  buildWaitlistStatusEmbed,
+} from './threshold.js';

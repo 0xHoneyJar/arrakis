@@ -7,6 +7,8 @@ This directory contains sprint-specific documentation for the A2A workflow.
 | Sprint | Name | Status | Last Updated |
 |--------|------|--------|--------------|
 | sprint-11 | Naib Foundation | COMPLETED | 2025-12-20 |
+| sprint-12 | Cave Entrance | COMPLETED | 2025-12-20 |
+| sprint-13 | Notification System | COMPLETED | 2025-12-20 |
 
 ## Sprint Documentation Structure
 

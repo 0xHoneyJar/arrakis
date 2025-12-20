@@ -347,3 +347,74 @@ export function isNaibRolesConfigured(): boolean {
 export function isFormerNaibRoleConfigured(): boolean {
   return !!config.discord.roles.formerNaib;
 }
+
+// =============================================================================
+// Taqwa Role Management (v2.1 - Sprint 12: Cave Entrance)
+// =============================================================================
+
+/**
+ * Assign @Taqwa role to a user (waitlist registrant)
+ * This role grants access to Cave Entrance channels only
+ * Called when a user registers for waitlist alerts
+ */
+export async function assignTaqwaRole(discordUserId: string): Promise<boolean> {
+  const taqwaRoleId = config.discord.roles.taqwa;
+
+  if (!taqwaRoleId) {
+    logger.debug('Taqwa role not configured, skipping assignment');
+    return false;
+  }
+
+  const success = await discordService.assignRole(discordUserId, taqwaRoleId);
+  if (!success) {
+    logger.warn({ discordUserId }, 'Failed to assign Taqwa role (role may not exist)');
+    return false;
+  }
+
+  logger.info({ discordUserId }, 'Assigned Taqwa role for waitlist registration');
+  logAuditEvent('role_assigned', {
+    discordUserId,
+    roleName: 'taqwa',
+    reason: 'waitlist_registration',
+  });
+
+  return true;
+}
+
+/**
+ * Remove @Taqwa role from a user
+ * Called when:
+ * - User unregisters from waitlist
+ * - User becomes eligible (position <= 69)
+ * - User completes onboarding (gets Fedaykin role instead)
+ */
+export async function removeTaqwaRole(discordUserId: string): Promise<boolean> {
+  const taqwaRoleId = config.discord.roles.taqwa;
+
+  if (!taqwaRoleId) {
+    logger.debug('Taqwa role not configured, skipping removal');
+    return false;
+  }
+
+  const success = await discordService.removeRole(discordUserId, taqwaRoleId);
+  if (!success) {
+    logger.warn({ discordUserId }, 'Failed to remove Taqwa role');
+    return false;
+  }
+
+  logger.info({ discordUserId }, 'Removed Taqwa role');
+  logAuditEvent('role_removed', {
+    discordUserId,
+    roleName: 'taqwa',
+    reason: 'waitlist_exit',
+  });
+
+  return true;
+}
+
+/**
+ * Check if Taqwa role is configured
+ */
+export function isTaqwaRoleConfigured(): boolean {
+  return !!config.discord.roles.taqwa;
+}

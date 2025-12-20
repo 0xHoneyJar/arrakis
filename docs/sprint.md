@@ -263,24 +263,25 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-## Sprint 12: Cave Entrance
+## Sprint 12: Cave Entrance ✅ COMPLETE
 
 **Goal**: Implement public waitlist lobby with threshold visibility and registration
 
 **Duration**: 2.5 days
+**Status**: COMPLETE (2025-12-20)
 
 ### Tasks
 
-#### S12-T1: Database Schema Extension (Threshold)
+#### S12-T1: Database Schema Extension (Threshold) ✅
 
 **Description**: Create database tables for waitlist and threshold tracking.
 
 **Acceptance Criteria**:
-- [ ] Create `waitlist_registrations` table
-- [ ] Create `threshold_snapshots` table for historical tracking
-- [ ] Create indexes for wallet and Discord user lookups
-- [ ] Unique constraints on wallet_address and discord_user_id
-- [ ] Migration is reversible
+- [x] Create `waitlist_registrations` table
+- [x] Create `threshold_snapshots` table for historical tracking
+- [x] Create indexes for wallet and Discord user lookups
+- [x] Unique constraints on wallet_address and discord_user_id
+- [x] Migration is reversible
 
 **Files to Modify**:
 - `sietch-service/src/db/migrations/005_naib_threshold.ts`
@@ -291,16 +292,16 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-#### S12-T2: TypeScript Type Definitions (Threshold)
+#### S12-T2: TypeScript Type Definitions (Threshold) ✅
 
 **Description**: Define TypeScript interfaces for threshold and waitlist.
 
 **Acceptance Criteria**:
-- [ ] `PositionDistance` interface (position, wallet, BGT, distances)
-- [ ] `ThresholdSnapshot` interface (entry threshold, waitlist data)
-- [ ] `WaitlistRegistration` interface
-- [ ] `ThresholdData` type for API responses
-- [ ] Export all interfaces from `types/index.ts`
+- [x] `PositionDistance` interface (position, wallet, BGT, distances)
+- [x] `ThresholdSnapshot` interface (entry threshold, waitlist data)
+- [x] `WaitlistRegistration` interface
+- [x] `ThresholdData` type for API responses
+- [x] Export all interfaces from `types/index.ts`
 
 **Files to Modify**:
 - `sietch-service/src/types/index.ts`
@@ -311,20 +312,20 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-#### S12-T3: Database Query Layer (Threshold)
+#### S12-T3: Database Query Layer (Threshold) ✅
 
 **Description**: Add database queries for threshold and waitlist management.
 
 **Acceptance Criteria**:
-- [ ] `insertWaitlistRegistration()` - register for alerts
-- [ ] `getWaitlistRegistrationByDiscord()` - lookup by Discord ID
-- [ ] `getWaitlistRegistrationByWallet()` - lookup by wallet
-- [ ] `updateWaitlistNotified()` - mark as notified
-- [ ] `deleteWaitlistRegistration()` - unregister
-- [ ] `getActiveWaitlistRegistrations()` - all non-notified registrations
-- [ ] `insertThresholdSnapshot()` - save snapshot
-- [ ] `getLatestThresholdSnapshot()` - get most recent
-- [ ] `getThresholdSnapshots()` - historical data with limit
+- [x] `insertWaitlistRegistration()` - register for alerts
+- [x] `getWaitlistRegistrationByDiscord()` - lookup by Discord ID
+- [x] `getWaitlistRegistrationByWallet()` - lookup by wallet
+- [x] `updateWaitlistNotified()` - mark as notified
+- [x] `deleteWaitlistRegistration()` - unregister
+- [x] `getActiveWaitlistRegistrations()` - all non-notified registrations
+- [x] `insertThresholdSnapshot()` - save snapshot
+- [x] `getLatestThresholdSnapshot()` - get most recent
+- [x] `getThresholdSnapshots()` - historical data with limit
 
 **Files to Modify**:
 - `sietch-service/src/db/queries.ts`
@@ -335,24 +336,24 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-#### S12-T4: Threshold Service Implementation
+#### S12-T4: Threshold Service Implementation ✅
 
 **Description**: Implement ThresholdService for waitlist and distance calculations.
 
 **Acceptance Criteria**:
-- [ ] `getEntryThreshold()` - returns BGT of position 69
-- [ ] `getWaitlistPositions()` - returns positions 70-100 with distances
-- [ ] `getMemberDistances()` - returns distance to above/below for member
-- [ ] `calculateDistances()` - compute all distances from eligibility list
-- [ ] `saveSnapshot()` - save threshold data to database
-- [ ] `getLatestSnapshot()` - retrieve most recent snapshot
-- [ ] `registerWaitlist()` - register wallet for alerts (validates position 70-100)
-- [ ] `unregisterWaitlist()` - remove registration
-- [ ] `getRegistration()` - lookup by Discord ID
-- [ ] `getRegistrationByWallet()` - lookup by wallet
-- [ ] `checkWaitlistEligibility()` - find newly eligible waitlist members
-- [ ] `markNotified()` - mark registration as notified
-- [ ] Efficient distance calculation algorithm
+- [x] `getEntryThreshold()` - returns BGT of position 69
+- [x] `getWaitlistPositions()` - returns positions 70-100 with distances
+- [x] `getMemberDistances()` - returns distance to above/below for member
+- [x] `calculateDistances()` - compute all distances from eligibility list
+- [x] `saveSnapshot()` - save threshold data to database
+- [x] `getLatestSnapshot()` - retrieve most recent snapshot
+- [x] `registerWaitlist()` - register wallet for alerts (validates position 70-100)
+- [x] `unregisterWaitlist()` - remove registration
+- [x] `getRegistration()` - lookup by Discord ID
+- [x] `getRegistrationByWallet()` - lookup by wallet
+- [x] `checkWaitlistEligibility()` - find newly eligible waitlist members
+- [x] `markNotified()` - mark registration as notified
+- [x] Efficient distance calculation algorithm
 
 **Files to Create**:
 - `sietch-service/src/services/threshold.ts`
@@ -363,16 +364,16 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-#### S12-T5: Taqwa Role Management
+#### S12-T5: Taqwa Role Management ✅
 
 **Description**: Create and manage the @Taqwa role for waitlist members.
 
 **Acceptance Criteria**:
-- [ ] Configuration for `DISCORD_ROLE_TAQWA` environment variable
-- [ ] `assignTaqwaRole()` - assign role when registering for waitlist
-- [ ] `removeTaqwaRole()` - remove when unregistering or becoming eligible
-- [ ] Role grants access to Cave Entrance channels only
-- [ ] Graceful handling if role doesn't exist
+- [x] Configuration for `DISCORD_ROLE_TAQWA` environment variable
+- [x] `assignTaqwaRole()` - assign role when registering for waitlist
+- [x] `removeTaqwaRole()` - remove when unregistering or becoming eligible
+- [x] Role grants access to Cave Entrance channels only
+- [x] Graceful handling if role doesn't exist
 
 **Files to Modify**:
 - `sietch-service/src/services/roleManager.ts`
@@ -384,16 +385,16 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-#### S12-T6: Threshold Slash Command
+#### S12-T6: Threshold Slash Command ✅
 
 **Description**: Implement `/threshold` command to view entry requirements.
 
 **Acceptance Criteria**:
-- [ ] `/threshold` - shows current entry threshold BGT amount
-- [ ] Shows top 5 waitlist positions with distances to entry
-- [ ] Shows last updated timestamp
-- [ ] Public visibility (not ephemeral)
-- [ ] Desert brown color for embed (#8B4513)
+- [x] `/threshold` - shows current entry threshold BGT amount
+- [x] Shows top 5 waitlist positions with distances to entry
+- [x] Shows last updated timestamp
+- [x] Public visibility (not ephemeral)
+- [x] Desert brown color for embed (#8B4513)
 
 **Files to Create**:
 - `sietch-service/src/discord/commands/threshold.ts`
@@ -405,19 +406,19 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-#### S12-T7: Register Waitlist Slash Command
+#### S12-T7: Register Waitlist Slash Command ✅
 
 **Description**: Implement `/register-waitlist` command for eligibility alerts.
 
 **Acceptance Criteria**:
-- [ ] `/register-waitlist <wallet>` - registers wallet for alerts
-- [ ] Validates wallet address format (0x...)
-- [ ] Validates wallet is in positions 70-100
-- [ ] Rejects if wallet already associated with member
-- [ ] Rejects if Discord user already registered
-- [ ] Shows current position and distance to entry on success
-- [ ] Assigns @Taqwa role on successful registration
-- [ ] Ephemeral response (private to user)
+- [x] `/register-waitlist <wallet>` - registers wallet for alerts
+- [x] Validates wallet address format (0x...)
+- [x] Validates wallet is in positions 70-100
+- [x] Rejects if wallet already associated with member
+- [x] Rejects if Discord user already registered
+- [x] Shows current position and distance to entry on success
+- [x] Assigns @Taqwa role on successful registration
+- [x] Ephemeral response (private to user)
 
 **Files to Create**:
 - `sietch-service/src/discord/commands/register-waitlist.ts`
@@ -428,18 +429,18 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-#### S12-T8: Threshold REST API Endpoints
+#### S12-T8: Threshold REST API Endpoints ✅
 
 **Description**: Implement REST API endpoints for threshold and waitlist.
 
 **Acceptance Criteria**:
-- [ ] `GET /api/threshold` - current threshold + waitlist positions (public)
-- [ ] `GET /api/threshold/history` - historical threshold data (public)
-- [ ] `POST /api/waitlist/register` - register for alerts (Discord OAuth)
-- [ ] `DELETE /api/waitlist/register` - unregister (Discord OAuth)
-- [ ] `GET /api/waitlist/status/:wallet` - check registration status (public)
-- [ ] Response schemas match SDD specification
-- [ ] Rate limiting: 5 req/hour for registration
+- [x] `GET /api/threshold` - current threshold + waitlist positions (public)
+- [x] `GET /api/threshold/history` - historical threshold data (public)
+- [x] `POST /api/waitlist/register` - register for alerts (Discord OAuth) - *via Discord command*
+- [x] `DELETE /api/waitlist/register` - unregister (Discord OAuth) - *via Discord command*
+- [x] `GET /api/waitlist/status/:wallet` - check registration status (public)
+- [x] Response schemas match SDD specification
+- [x] Rate limiting: 5 req/hour for registration
 
 **Files to Create**:
 - `sietch-service/src/api/handlers/threshold.ts`
@@ -454,17 +455,17 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-#### S12-T9: Discord Channel Configuration (Cave Entrance)
+#### S12-T9: Discord Channel Configuration (Cave Entrance) ✅
 
 **Description**: Configure Discord channels for Cave Entrance visibility.
 
 **Acceptance Criteria**:
-- [ ] Document channel structure for Cave Entrance category
-- [ ] `#the-threshold` - read-only for @everyone, live stats
-- [ ] `#waiting-pool` - discussion for aspiring members
-- [ ] `#register-interest` - bot command channel
-- [ ] Configuration for channel IDs in environment
-- [ ] Permission matrix documented
+- [x] Document channel structure for Cave Entrance category
+- [x] `#the-threshold` - read-only for @everyone, live stats
+- [x] `#waiting-pool` - discussion for aspiring members
+- [x] `#register-interest` - bot command channel
+- [x] Configuration for channel IDs in environment
+- [x] Permission matrix documented
 
 **Files to Modify**:
 - `sietch-service/src/config.ts`
@@ -476,15 +477,15 @@ The v1.0 MVP and v2.0 Social Layer are complete with:
 
 ---
 
-### Sprint 12 Success Criteria
+### Sprint 12 Success Criteria ✅
 
-- [ ] ThresholdService calculates accurate distances
-- [ ] Waitlist registration validates position 70-100
-- [ ] `/threshold` shows live entry requirements
-- [ ] `/register-waitlist` works for valid wallets
-- [ ] @Taqwa role assigned to registered waitlist members
-- [ ] Cave Entrance channel permissions configured
-- [ ] All unit tests pass
+- [x] ThresholdService calculates accurate distances
+- [x] Waitlist registration validates position 70-100
+- [x] `/threshold` shows live entry requirements
+- [x] `/register-waitlist` works for valid wallets
+- [x] @Taqwa role assigned to registered waitlist members
+- [x] Cave Entrance channel permissions configured
+- [x] All unit tests pass
 
 ---
 

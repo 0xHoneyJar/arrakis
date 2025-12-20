@@ -118,7 +118,13 @@ export interface AuditLogEntry {
     | 'admin_badge_revoke'
     | 'role_assigned'
     | 'role_removed'
-    | 'migration_prompt_sent';
+    | 'migration_prompt_sent'
+    | 'waitlist_registration'
+    | 'waitlist_unregistration'
+    | 'waitlist_eligible'
+    | 'alert_sent'
+    | 'admin_test_alert'
+    | 'admin_reset_alert_counters';
   /** Event-specific data */
   eventData: Record<string, unknown>;
   /** When the event occurred */
@@ -630,4 +636,455 @@ export interface NaibHistoryResponse {
   }>;
   /** Total number of changes */
   total: number;
+}
+
+// =============================================================================
+// Threshold & Waitlist Types (v2.1 - Sprint 12: Cave Entrance)
+// =============================================================================
+
+/**
+ * Waitlist registration record from database
+ */
+export interface WaitlistRegistration {
+  /** Auto-incrementing ID */
+  id: number;
+  /** Discord user ID (not necessarily a Sietch member) */
+  discordUserId: string;
+  /** Wallet address being tracked */
+  walletAddress: string;
+  /** Position (70-100) at time of registration */
+  positionAtRegistration: number;
+  /** BGT holdings at registration (wei as string) */
+  bgtAtRegistration: string;
+  /** When they registered */
+  registeredAt: Date;
+  /** Whether they've been notified of eligibility */
+  notified: boolean;
+  /** When they were notified (if notified) */
+  notifiedAt: Date | null;
+  /** Whether registration is active */
+  active: boolean;
+}
+
+/**
+ * Threshold snapshot record from database
+ */
+export interface ThresholdSnapshot {
+  /** Auto-incrementing ID */
+  id: number;
+  /** BGT required to enter top 69 (position 69's holdings, wei as string) */
+  entryThresholdBgt: string;
+  /** Total wallets in positions 1-69 */
+  eligibleCount: number;
+  /** Total wallets in positions 70-100 */
+  waitlistCount: number;
+  /** Position 70's BGT (first waitlist position, wei as string) */
+  waitlistTopBgt: string | null;
+  /** Position 100's BGT (last tracked position, wei as string) */
+  waitlistBottomBgt: string | null;
+  /** Gap between position 69 and 70 (distance to entry, wei as string) */
+  gapToEntry: string | null;
+  /** When this snapshot was taken */
+  snapshotAt: Date;
+}
+
+/**
+ * Position distance information for a wallet
+ * Used for showing how far a wallet is from entry or from being bumped
+ */
+export interface PositionDistance {
+  /** Wallet address */
+  address: string;
+  /** Current position in eligibility ranking */
+  position: number;
+  /** Current BGT holdings (wei as string) */
+  bgt: string;
+  /** BGT needed to move up one position (wei as string, null if position 1) */
+  distanceToAbove: string | null;
+  /** BGT buffer before being passed by position below (wei as string, null if last) */
+  distanceToBelow: string | null;
+  /** BGT needed to enter top 69 (wei as string, null if already eligible) */
+  distanceToEntry: string | null;
+}
+
+/**
+ * Threshold data for API responses and embeds
+ */
+export interface ThresholdData {
+  /** BGT required to enter top 69 (human-readable number) */
+  entryThreshold: number;
+  /** BGT required to enter top 69 (wei as string for precision) */
+  entryThresholdWei: string;
+  /** Total eligible members (positions 1-69) */
+  eligibleCount: number;
+  /** Total waitlist positions (70-100) */
+  waitlistCount: number;
+  /** Gap from position 70 to entry (human-readable) */
+  gapToEntry: number | null;
+  /** When data was last updated */
+  updatedAt: Date;
+}
+
+/**
+ * Waitlist position with distance info for display
+ */
+export interface WaitlistPosition {
+  /** Position (70-100) */
+  position: number;
+  /** Wallet address (truncated for display: 0x1234...5678) */
+  addressDisplay: string;
+  /** Full wallet address */
+  address: string;
+  /** Current BGT holdings (human-readable) */
+  bgt: number;
+  /** BGT needed to enter top 69 (human-readable) */
+  distanceToEntry: number;
+  /** Whether this wallet is registered for alerts */
+  isRegistered: boolean;
+}
+
+/**
+ * Result of registering for waitlist
+ */
+export interface WaitlistRegistrationResult {
+  /** Whether registration was successful */
+  success: boolean;
+  /** Registration record (if successful) */
+  registration: WaitlistRegistration | null;
+  /** Error message (if failed) */
+  error: string | null;
+  /** Current position info (if successful) */
+  position: WaitlistPosition | null;
+}
+
+/**
+ * Result of checking waitlist for newly eligible members
+ */
+export interface WaitlistEligibilityCheck {
+  /** Registrations that are now eligible */
+  newlyEligible: WaitlistRegistration[];
+  /** Registrations that are no longer in 70-100 range (dropped out) */
+  droppedOut: WaitlistRegistration[];
+}
+
+/**
+ * API response for GET /api/threshold
+ */
+export interface ThresholdResponse {
+  /** Entry threshold BGT (human-readable) */
+  entry_threshold: number;
+  /** Number of eligible members (in top 69) */
+  eligible_count: number;
+  /** Number in waitlist range (70-100) */
+  waitlist_count: number;
+  /** Gap from position 70 to entry */
+  gap_to_entry: number | null;
+  /** Top waitlist positions */
+  top_waitlist: Array<{
+    position: number;
+    address_display: string;
+    bgt: number;
+    distance_to_entry: number;
+    is_registered: boolean;
+  }>;
+  /** When data was last updated */
+  updated_at: string;
+}
+
+/**
+ * API response for GET /api/threshold/history
+ */
+export interface ThresholdHistoryResponse {
+  /** Historical snapshots */
+  snapshots: Array<{
+    id: number;
+    entry_threshold: number;
+    eligible_count: number;
+    waitlist_count: number;
+    created_at: string;
+  }>;
+  /** Number of snapshots returned */
+  count: number;
+}
+
+/**
+ * API response for GET /api/waitlist/status/:address
+ */
+export interface WaitlistStatusResponse {
+  /** Wallet address */
+  address: string;
+  /** Whether wallet is in positions 70-100 */
+  is_in_waitlist_range: boolean;
+  /** Current position (if in 70-100 range) */
+  position: number | null;
+  /** Current BGT (human-readable) */
+  bgt: number | null;
+  /** Distance to entry (if applicable) */
+  distance_to_entry: number | null;
+  /** Whether registered for alerts */
+  is_registered: boolean;
+  /** When registered (if applicable) */
+  registered_at: string | null;
+}
+
+// =============================================================================
+// Notification Types (v2.1 - Sprint 13: Notification System)
+// =============================================================================
+
+/**
+ * Types of alerts that can be sent
+ */
+export type AlertType =
+  | 'position_update'     // Regular position distance update
+  | 'at_risk_warning'     // Bottom 10% warning (positions 63-69)
+  | 'naib_threat'         // Naib seat at risk from challenger
+  | 'naib_bump'           // Naib member was bumped
+  | 'naib_seated'         // Member just got Naib seat
+  | 'waitlist_eligible';  // Waitlist member became eligible
+
+/**
+ * Alert frequency preferences
+ */
+export type AlertFrequency = '1_per_week' | '2_per_week' | '3_per_week' | 'daily';
+
+/**
+ * Notification preferences record from database
+ */
+export interface NotificationPreferences {
+  /** Auto-incrementing ID */
+  id: number;
+  /** Member this preference belongs to */
+  memberId: string;
+  /** Enable position distance updates */
+  positionUpdates: boolean;
+  /** Enable at-risk warnings (bottom 10%) */
+  atRiskWarnings: boolean;
+  /** Enable Naib-specific alerts (seat threats) */
+  naibAlerts: boolean;
+  /** How many alerts per week */
+  frequency: AlertFrequency;
+  /** Number of alerts sent this week */
+  alertsSentThisWeek: number;
+  /** Start of current week for rate limiting */
+  weekStartTimestamp: Date;
+  /** When preferences were created */
+  createdAt: Date;
+  /** When preferences were last updated */
+  updatedAt: Date;
+}
+
+/**
+ * Alert history record from database
+ */
+export interface AlertRecord {
+  /** Auto-incrementing ID */
+  id: number;
+  /** Recipient ID (member_id or discord_user_id) */
+  recipientId: string;
+  /** Type of recipient */
+  recipientType: 'member' | 'waitlist';
+  /** Type of alert sent */
+  alertType: AlertType;
+  /** Alert data (JSON parsed) */
+  alertData: AlertData;
+  /** Whether alert was successfully delivered */
+  delivered: boolean;
+  /** Error message if delivery failed */
+  deliveryError: string | null;
+  /** When alert was sent */
+  sentAt: Date;
+}
+
+/**
+ * Data payload for different alert types
+ */
+export type AlertData =
+  | PositionUpdateAlertData
+  | AtRiskWarningAlertData
+  | NaibThreatAlertData
+  | NaibBumpAlertData
+  | NaibSeatedAlertData
+  | WaitlistEligibleAlertData;
+
+/**
+ * Position update alert data
+ */
+export interface PositionUpdateAlertData {
+  type: 'position_update';
+  position: number;
+  bgt: number;
+  distanceToAbove: number | null;
+  distanceToBelow: number | null;
+  distanceToEntry: number | null;
+  isNaib: boolean;
+  isFedaykin: boolean;
+}
+
+/**
+ * At-risk warning alert data (bottom 10% - positions 63-69)
+ */
+export interface AtRiskWarningAlertData {
+  type: 'at_risk_warning';
+  position: number;
+  bgt: number;
+  distanceToBelow: number;
+  positionsAtRisk: number; // How many positions until safe (out of bottom 10%)
+}
+
+/**
+ * Naib threat alert data (someone challenging your seat)
+ */
+export interface NaibThreatAlertData {
+  type: 'naib_threat';
+  seatNumber: number;
+  currentBgt: number;
+  challengerBgt: number;
+  deficit: number; // How much more BGT you need to stay safe
+}
+
+/**
+ * Naib bump alert data (you were bumped from Naib)
+ */
+export interface NaibBumpAlertData {
+  type: 'naib_bump';
+  seatNumber: number;
+  bgtAtBump: number;
+  bumpedByBgt: number;
+  deficit: number;
+}
+
+/**
+ * Naib seated alert data (congratulations, you're now Naib)
+ */
+export interface NaibSeatedAlertData {
+  type: 'naib_seated';
+  seatNumber: number;
+  bgt: number;
+  bumpedPreviousHolder: boolean;
+}
+
+/**
+ * Waitlist eligible alert data
+ */
+export interface WaitlistEligibleAlertData {
+  type: 'waitlist_eligible';
+  previousPosition: number;
+  currentPosition: number;
+  bgt: number;
+}
+
+/**
+ * Result of checking if alert can be sent
+ */
+export interface CanSendAlertResult {
+  /** Whether alert can be sent */
+  canSend: boolean;
+  /** Reason if cannot send */
+  reason: string | null;
+  /** Current alerts sent this week */
+  alertsSentThisWeek: number;
+  /** Max alerts allowed per week based on frequency */
+  maxAlertsPerWeek: number;
+}
+
+/**
+ * Result of sending an alert
+ */
+export interface SendAlertResult {
+  /** Whether alert was successfully sent */
+  success: boolean;
+  /** Alert record ID */
+  alertId: number | null;
+  /** Error message if failed */
+  error: string | null;
+}
+
+/**
+ * API response for GET /api/notifications/preferences
+ */
+export interface NotificationPreferencesResponse {
+  /** Position updates enabled */
+  position_updates: boolean;
+  /** At-risk warnings enabled */
+  at_risk_warnings: boolean;
+  /** Naib alerts enabled */
+  naib_alerts: boolean;
+  /** Alert frequency */
+  frequency: AlertFrequency;
+  /** Alerts sent this week */
+  alerts_sent_this_week: number;
+  /** Max alerts based on frequency */
+  max_alerts_per_week: number;
+}
+
+/**
+ * API request for PUT /api/notifications/preferences
+ */
+export interface UpdateNotificationPreferencesRequest {
+  /** Position updates enabled */
+  position_updates?: boolean;
+  /** At-risk warnings enabled */
+  at_risk_warnings?: boolean;
+  /** Naib alerts enabled */
+  naib_alerts?: boolean;
+  /** Alert frequency */
+  frequency?: AlertFrequency;
+}
+
+/**
+ * API response for GET /api/notifications/history
+ */
+export interface NotificationHistoryResponse {
+  /** Alert history records */
+  alerts: Array<{
+    id: number;
+    alert_type: AlertType;
+    delivered: boolean;
+    sent_at: string;
+    alert_data: AlertData;
+  }>;
+  /** Total count */
+  total: number;
+}
+
+/**
+ * API response for GET /api/position
+ */
+export interface PositionResponse {
+  /** Current position in eligibility ranking */
+  position: number;
+  /** Current BGT holdings (human-readable) */
+  bgt: number;
+  /** BGT needed to move up one position */
+  distance_to_above: number | null;
+  /** BGT buffer before being passed */
+  distance_to_below: number | null;
+  /** BGT needed to enter top 69 (null if already eligible) */
+  distance_to_entry: number | null;
+  /** Whether member is Naib */
+  is_naib: boolean;
+  /** Whether member is Fedaykin */
+  is_fedaykin: boolean;
+  /** Whether member is at risk (bottom 10%) */
+  is_at_risk: boolean;
+}
+
+/**
+ * Admin stats response for GET /admin/alerts/stats
+ */
+export interface AlertStatsResponse {
+  /** Total alerts sent (all time) */
+  total_sent: number;
+  /** Alerts sent this week */
+  sent_this_week: number;
+  /** Breakdown by alert type */
+  by_type: Record<AlertType, number>;
+  /** Delivery success rate (0-1) */
+  delivery_rate: number;
+  /** Percentage of members with alerts disabled */
+  opt_out_rate: number;
+  /** Members with position_updates disabled */
+  position_updates_disabled: number;
+  /** Members with at_risk_warnings disabled */
+  at_risk_warnings_disabled: number;
 }

@@ -27,6 +27,20 @@ import { directoryService } from '../services/directory.js';
 import { leaderboardService } from '../services/leaderboard.js';
 import { getAllBadgeDefinitions, adminAwardBadge, revokeBadge } from '../services/badge.js';
 import { naibService } from '../services/naib.js';
+import { thresholdService } from '../services/threshold.js';
+import { notificationService } from '../services/notification.js';
+import { getMemberProfileByDiscordId, getWalletPosition, getCurrentEligibility as getEligibilityList, getWalletByDiscordId } from '../db/queries.js';
+import type {
+  ThresholdResponse,
+  ThresholdHistoryResponse,
+  WaitlistStatusResponse,
+  NotificationPreferencesResponse,
+  UpdateNotificationPreferencesRequest,
+  NotificationHistoryResponse,
+  PositionResponse,
+  AlertStatsResponse,
+  AlertFrequency,
+} from '../types/index.js';
 
 /**
  * Public routes (rate limited, no auth required)
@@ -578,6 +592,103 @@ adminRouter.delete('/badges/:memberId/:badgeId', (req: AuthenticatedRequest, res
 });
 
 // =============================================================================
+// Sprint 13: Admin Alert Endpoints
+// =============================================================================
+
+/**
+ * GET /admin/alerts/stats
+ * Get alert delivery statistics
+ */
+adminRouter.get('/alerts/stats', (_req: AuthenticatedRequest, res: Response) => {
+  const stats = notificationService.getStats();
+
+  const response: AlertStatsResponse = {
+    total_sent: stats.totalSent,
+    sent_this_week: stats.sentThisWeek,
+    by_type: stats.byType as Record<any, number>,
+    delivery_rate: stats.deliveryRate,
+    opt_out_rate: stats.prefStats.total > 0
+      ? (stats.prefStats.total - stats.prefStats.positionUpdatesEnabled) / stats.prefStats.total
+      : 0,
+    position_updates_disabled: stats.prefStats.total - stats.prefStats.positionUpdatesEnabled,
+    at_risk_warnings_disabled: stats.prefStats.total - stats.prefStats.atRiskWarningsEnabled,
+  };
+
+  res.json(response);
+});
+
+/**
+ * POST /admin/alerts/test/:memberId
+ * Send a test alert to a member (for testing notification delivery)
+ */
+adminRouter.post('/alerts/test/:memberId', async (req: AuthenticatedRequest, res: Response) => {
+  const { memberId } = req.params;
+
+  if (!memberId) {
+    throw new ValidationError('Member ID is required');
+  }
+
+  // Validate UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(memberId)) {
+    throw new ValidationError('Invalid member ID format');
+  }
+
+  try {
+    // Send a test position update
+    const result = await notificationService.sendPositionUpdate(memberId, {
+      position: 42,
+      bgt: 1234.5678,
+      distanceToAbove: 10.5,
+      distanceToBelow: 5.25,
+      distanceToEntry: null,
+      isNaib: false,
+      isFedaykin: true,
+    });
+
+    logAuditEvent('admin_test_alert', {
+      memberId,
+      success: result.success,
+      alertId: result.alertId,
+      error: result.error,
+      triggeredBy: req.adminName,
+    });
+
+    res.json({
+      success: result.success,
+      alert_id: result.alertId,
+      error: result.error,
+      message: result.success
+        ? 'Test alert sent successfully'
+        : `Failed to send test alert: ${result.error}`,
+    });
+  } catch (error) {
+    throw new ValidationError(
+      error instanceof Error ? error.message : 'Failed to send test alert'
+    );
+  }
+});
+
+/**
+ * POST /admin/alerts/reset-counters
+ * Reset weekly alert counters for all members
+ * Normally done by scheduled task, but exposed for admin override
+ */
+adminRouter.post('/alerts/reset-counters', (req: AuthenticatedRequest, res: Response) => {
+  const count = notificationService.resetWeeklyCounters();
+
+  logAuditEvent('admin_reset_alert_counters', {
+    membersReset: count,
+    triggeredBy: req.adminName,
+  });
+
+  res.json({
+    message: 'Weekly alert counters reset',
+    members_reset: count,
+  });
+});
+
+// =============================================================================
 // Sprint 11: Naib Council API Routes
 // =============================================================================
 
@@ -711,4 +822,329 @@ memberRouter.get('/naib/member/:memberId', (req: Request, res: Response) => {
       bgt_at_unseating: seat.bgtAtUnseating,
     })),
   });
+});
+
+// =============================================================================
+// Sprint 12: Cave Entrance API Routes (Threshold & Waitlist)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// S12-T8: Threshold Endpoints
+// -----------------------------------------------------------------------------
+
+/**
+ * GET /api/threshold
+ * Get current entry threshold data
+ */
+memberRouter.get('/threshold', (_req: Request, res: Response) => {
+  const data = thresholdService.getThresholdData();
+  const topWaitlist = thresholdService.getTopWaitlistPositions(5);
+
+  const response: ThresholdResponse = {
+    entry_threshold: data.entryThreshold,
+    eligible_count: data.eligibleCount,
+    waitlist_count: data.waitlistCount,
+    gap_to_entry: data.gapToEntry,
+    top_waitlist: topWaitlist.map(p => ({
+      position: p.position,
+      address_display: p.addressDisplay,
+      bgt: p.bgt,
+      distance_to_entry: p.distanceToEntry,
+      is_registered: p.isRegistered,
+    })),
+    updated_at: data.updatedAt.toISOString(),
+  };
+
+  // Set cache headers (1 minute - threshold data changes frequently)
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.json(response);
+});
+
+/**
+ * Zod schema for threshold history query
+ */
+const thresholdHistorySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(24),
+  since: z.string().datetime().optional(),
+});
+
+/**
+ * GET /api/threshold/history
+ * Get threshold snapshot history
+ */
+memberRouter.get('/threshold/history', (req: Request, res: Response) => {
+  const result = thresholdHistorySchema.safeParse(req.query);
+
+  if (!result.success) {
+    const errors = result.error.issues.map(i => i.message).join(', ');
+    throw new ValidationError(errors);
+  }
+
+  const { limit, since } = result.data;
+  const sinceDate = since ? new Date(since) : undefined;
+
+  const snapshots = thresholdService.getSnapshotHistory(limit, sinceDate);
+
+  const response: ThresholdHistoryResponse = {
+    snapshots: snapshots.map(s => ({
+      id: s.id,
+      entry_threshold: Number(BigInt(s.entryThresholdBgt)) / 1e18,
+      eligible_count: s.eligibleCount,
+      waitlist_count: s.waitlistCount,
+      created_at: s.snapshotAt.toISOString(),
+    })),
+    count: snapshots.length,
+  };
+
+  res.json(response);
+});
+
+/**
+ * GET /api/waitlist/status/:address
+ * Check waitlist registration status for an address
+ */
+memberRouter.get('/waitlist/status/:address', (req: Request, res: Response) => {
+  const address = req.params.address;
+
+  if (!address) {
+    throw new ValidationError('Address parameter is required');
+  }
+
+  // Validate address format
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    throw new ValidationError('Invalid Ethereum address format');
+  }
+
+  const normalizedAddress = address.toLowerCase();
+
+  // Check if wallet is in the waitlist range (70-100)
+  const position = thresholdService.getWalletPosition(normalizedAddress);
+
+  // Get registration if any (by wallet)
+  const registrations = thresholdService.getActiveRegistrations();
+  const registration = registrations.find(
+    r => r.walletAddress.toLowerCase() === normalizedAddress
+  );
+
+  const response: WaitlistStatusResponse = {
+    address: normalizedAddress,
+    is_in_waitlist_range: position !== null,
+    position: position?.position ?? null,
+    bgt: position?.bgt ?? null,
+    distance_to_entry: position?.distanceToEntry ?? null,
+    is_registered: registration !== undefined,
+    registered_at: registration?.registeredAt?.toISOString() ?? null,
+  };
+
+  res.json(response);
+});
+
+// =============================================================================
+// Notification Endpoints (Sprint 13: Notification System)
+// =============================================================================
+
+/**
+ * GET /api/notifications/preferences
+ * Get notification preferences for authenticated member
+ * Note: In a real implementation, this would use Discord OAuth
+ * For now, requires discordUserId header for testing
+ */
+memberRouter.get('/notifications/preferences', (req: Request, res: Response) => {
+  const discordUserId = req.headers['x-discord-user-id'] as string;
+
+  if (!discordUserId) {
+    throw new ValidationError('Discord user ID required in x-discord-user-id header');
+  }
+
+  const member = getMemberProfileByDiscordId(discordUserId);
+  if (!member) {
+    throw new NotFoundError('Member not found');
+  }
+
+  const prefs = notificationService.getPreferences(member.memberId);
+  const maxAlerts = notificationService.getMaxAlertsPerWeek(prefs.frequency);
+
+  const response: NotificationPreferencesResponse = {
+    position_updates: prefs.positionUpdates,
+    at_risk_warnings: prefs.atRiskWarnings,
+    naib_alerts: prefs.naibAlerts,
+    frequency: prefs.frequency,
+    alerts_sent_this_week: prefs.alertsSentThisWeek,
+    max_alerts_per_week: maxAlerts,
+  };
+
+  res.json(response);
+});
+
+/**
+ * PUT /api/notifications/preferences
+ * Update notification preferences for authenticated member
+ */
+const updatePreferencesSchema = z.object({
+  position_updates: z.boolean().optional(),
+  at_risk_warnings: z.boolean().optional(),
+  naib_alerts: z.boolean().optional(),
+  frequency: z.enum(['1_per_week', '2_per_week', '3_per_week', 'daily']).optional(),
+});
+
+memberRouter.put('/notifications/preferences', (req: Request, res: Response) => {
+  const discordUserId = req.headers['x-discord-user-id'] as string;
+
+  if (!discordUserId) {
+    throw new ValidationError('Discord user ID required in x-discord-user-id header');
+  }
+
+  const member = getMemberProfileByDiscordId(discordUserId);
+  if (!member) {
+    throw new NotFoundError('Member not found');
+  }
+
+  const validation = updatePreferencesSchema.safeParse(req.body);
+  if (!validation.success) {
+    throw new ValidationError(validation.error.message);
+  }
+
+  const updates = validation.data;
+
+  const prefs = notificationService.updatePreferences(member.memberId, {
+    positionUpdates: updates.position_updates,
+    atRiskWarnings: updates.at_risk_warnings,
+    naibAlerts: updates.naib_alerts,
+    frequency: updates.frequency as AlertFrequency | undefined,
+  });
+
+  const maxAlerts = notificationService.getMaxAlertsPerWeek(prefs.frequency);
+
+  const response: NotificationPreferencesResponse = {
+    position_updates: prefs.positionUpdates,
+    at_risk_warnings: prefs.atRiskWarnings,
+    naib_alerts: prefs.naibAlerts,
+    frequency: prefs.frequency,
+    alerts_sent_this_week: prefs.alertsSentThisWeek,
+    max_alerts_per_week: maxAlerts,
+  };
+
+  res.json(response);
+});
+
+/**
+ * GET /api/notifications/history
+ * Get alert history for authenticated member
+ */
+const historyQuerySchema = z.object({
+  limit: z.coerce.number().min(1).max(100).default(50),
+  alert_type: z.string().optional(),
+});
+
+memberRouter.get('/notifications/history', (req: Request, res: Response) => {
+  const discordUserId = req.headers['x-discord-user-id'] as string;
+
+  if (!discordUserId) {
+    throw new ValidationError('Discord user ID required in x-discord-user-id header');
+  }
+
+  const member = getMemberProfileByDiscordId(discordUserId);
+  if (!member) {
+    throw new NotFoundError('Member not found');
+  }
+
+  const validation = historyQuerySchema.safeParse(req.query);
+  if (!validation.success) {
+    throw new ValidationError(validation.error.message);
+  }
+
+  const { limit, alert_type } = validation.data;
+
+  const alerts = notificationService.getHistory(member.memberId, {
+    limit,
+    alertType: alert_type as any,
+  });
+
+  const response: NotificationHistoryResponse = {
+    alerts: alerts.map((a) => ({
+      id: a.id,
+      alert_type: a.alertType,
+      delivered: a.delivered,
+      sent_at: a.sentAt.toISOString(),
+      alert_data: a.alertData,
+    })),
+    total: alerts.length,
+  };
+
+  res.json(response);
+});
+
+/**
+ * GET /api/position
+ * Get own position in eligibility ranking
+ */
+memberRouter.get('/position', (req: Request, res: Response) => {
+  const discordUserId = req.headers['x-discord-user-id'] as string;
+
+  if (!discordUserId) {
+    throw new ValidationError('Discord user ID required in x-discord-user-id header');
+  }
+
+  const member = getMemberProfileByDiscordId(discordUserId);
+  if (!member) {
+    throw new NotFoundError('Member not found');
+  }
+
+  const walletAddress = getWalletByDiscordId(discordUserId);
+  if (!walletAddress) {
+    throw new ValidationError('Member has no wallet address linked');
+  }
+
+  const walletPos = getWalletPosition(walletAddress);
+  if (!walletPos) {
+    throw new NotFoundError('Wallet not found in eligibility rankings');
+  }
+
+  const position = walletPos.position;
+  const bgt = Number(BigInt(walletPos.bgt)) / 1e18;
+
+  // Calculate distances
+  const eligibility = getEligibilityList();
+  let distanceToAbove: number | null = null;
+  let distanceToBelow: number | null = null;
+
+  const currentIndex = eligibility.findIndex((e) => e.rank === position);
+  if (currentIndex > 0) {
+    const above = eligibility[currentIndex - 1];
+    if (above) {
+      const aboveBgt = Number(BigInt(above.bgtHeld)) / 1e18;
+      distanceToAbove = aboveBgt - bgt;
+    }
+  }
+  if (currentIndex < eligibility.length - 1 && currentIndex >= 0) {
+    const below = eligibility[currentIndex + 1];
+    if (below) {
+      const belowBgt = Number(BigInt(below.bgtHeld)) / 1e18;
+      distanceToBelow = bgt - belowBgt;
+    }
+  }
+
+  // Distance to entry
+  let distanceToEntry: number | null = null;
+  const entryThreshold = thresholdService.getEntryThreshold();
+  if (position > 69 && entryThreshold) {
+    distanceToEntry = entryThreshold.human - bgt;
+  }
+
+  const isNaib = naibService.isCurrentNaib(member.memberId);
+  const isFedaykin = position <= 69;
+  const isAtRisk = notificationService.isAtRisk(position);
+
+  const response: PositionResponse = {
+    position,
+    bgt,
+    distance_to_above: distanceToAbove,
+    distance_to_below: distanceToBelow,
+    distance_to_entry: distanceToEntry,
+    is_naib: isNaib,
+    is_fedaykin: isFedaykin,
+    is_at_risk: isAtRisk,
+  };
+
+  res.json(response);
 });

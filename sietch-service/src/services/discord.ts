@@ -44,6 +44,8 @@ import {
   handleDirectorySelect,
   handleLeaderboardCommand,
   handleNaibCommand,
+  handleThresholdCommand,
+  handleRegisterWaitlistCommand,
   DIRECTORY_INTERACTIONS,
 } from '../discord/commands/index.js';
 import {
@@ -286,6 +288,12 @@ class DiscordService {
         break;
       case 'naib':
         await handleNaibCommand(interaction);
+        break;
+      case 'threshold':
+        await handleThresholdCommand(interaction);
+        break;
+      case 'register-waitlist':
+        await handleRegisterWaitlistCommand(interaction);
         break;
       default:
         logger.warn({ commandName }, 'Unknown slash command');

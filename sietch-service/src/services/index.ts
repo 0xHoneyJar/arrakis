@@ -52,6 +52,10 @@ export {
   removeNaibRole,
   isNaibRolesConfigured,
   isFormerNaibRoleConfigured,
+  // Sprint 12: Taqwa role management
+  assignTaqwaRole,
+  removeTaqwaRole,
+  isTaqwaRoleConfigured,
 } from './roleManager.js';
 
 // Sprint 10: Member Migration
@@ -64,3 +68,9 @@ export {
 
 // Sprint 11: Naib Dynamics
 export { naibService } from './naib.js';
+
+// Sprint 12: Cave Entrance (Threshold & Waitlist)
+export { thresholdService } from './threshold.js';
+
+// Sprint 13: Notification System
+export { notificationService } from './notification.js';

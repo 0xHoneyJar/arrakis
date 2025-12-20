@@ -20,6 +20,13 @@ import type {
   DirectoryFilters,
   DirectoryResult,
   ProfileUpdateRequest,
+  WaitlistRegistration,
+  ThresholdSnapshot,
+  NotificationPreferences,
+  AlertFrequency,
+  AlertRecord,
+  AlertType,
+  AlertData,
 } from '../types/index.js';
 
 let db: Database.Database | null = null;
@@ -2064,4 +2071,791 @@ export function getMemberEligibilityRank(memberId: string): number | null {
   `).get(memberId) as { rank: number } | undefined;
 
   return row?.rank ?? null;
+}
+
+// =============================================================================
+// Waitlist Registration Queries (Sprint 12: Cave Entrance)
+// =============================================================================
+
+/**
+ * Database row type for waitlist_registrations
+ */
+interface WaitlistRegistrationRow {
+  id: number;
+  discord_user_id: string;
+  wallet_address: string;
+  position_at_registration: number;
+  bgt_at_registration: string;
+  registered_at: string;
+  notified: number;
+  notified_at: string | null;
+  active: number;
+}
+
+/**
+ * Convert database row to WaitlistRegistration type
+ */
+function rowToWaitlistRegistration(row: WaitlistRegistrationRow): WaitlistRegistration {
+  return {
+    id: row.id,
+    discordUserId: row.discord_user_id,
+    walletAddress: row.wallet_address,
+    positionAtRegistration: row.position_at_registration,
+    bgtAtRegistration: row.bgt_at_registration,
+    registeredAt: new Date(row.registered_at),
+    notified: row.notified === 1,
+    notifiedAt: row.notified_at ? new Date(row.notified_at) : null,
+    active: row.active === 1,
+  };
+}
+
+/**
+ * Insert a new waitlist registration
+ */
+export function insertWaitlistRegistration(data: {
+  discordUserId: string;
+  walletAddress: string;
+  position: number;
+  bgt: string;
+}): WaitlistRegistration {
+  const database = getDatabase();
+
+  const result = database.prepare(`
+    INSERT INTO waitlist_registrations (
+      discord_user_id,
+      wallet_address,
+      position_at_registration,
+      bgt_at_registration
+    ) VALUES (?, ?, ?, ?)
+  `).run(
+    data.discordUserId,
+    data.walletAddress.toLowerCase(),
+    data.position,
+    data.bgt
+  );
+
+  const row = database.prepare(`
+    SELECT * FROM waitlist_registrations WHERE id = ?
+  `).get(result.lastInsertRowid) as WaitlistRegistrationRow;
+
+  return rowToWaitlistRegistration(row);
+}
+
+/**
+ * Get waitlist registration by Discord user ID
+ */
+export function getWaitlistRegistrationByDiscord(discordUserId: string): WaitlistRegistration | null {
+  const database = getDatabase();
+
+  const row = database.prepare(`
+    SELECT * FROM waitlist_registrations
+    WHERE discord_user_id = ? AND active = 1
+  `).get(discordUserId) as WaitlistRegistrationRow | undefined;
+
+  return row ? rowToWaitlistRegistration(row) : null;
+}
+
+/**
+ * Get waitlist registration by wallet address
+ */
+export function getWaitlistRegistrationByWallet(walletAddress: string): WaitlistRegistration | null {
+  const database = getDatabase();
+
+  const row = database.prepare(`
+    SELECT * FROM waitlist_registrations
+    WHERE wallet_address = ? AND active = 1
+  `).get(walletAddress.toLowerCase()) as WaitlistRegistrationRow | undefined;
+
+  return row ? rowToWaitlistRegistration(row) : null;
+}
+
+/**
+ * Update waitlist registration as notified
+ */
+export function updateWaitlistNotified(registrationId: number): boolean {
+  const database = getDatabase();
+
+  const result = database.prepare(`
+    UPDATE waitlist_registrations
+    SET notified = 1, notified_at = datetime('now')
+    WHERE id = ? AND active = 1
+  `).run(registrationId);
+
+  return result.changes > 0;
+}
+
+/**
+ * Delete (deactivate) a waitlist registration
+ */
+export function deleteWaitlistRegistration(discordUserId: string): boolean {
+  const database = getDatabase();
+
+  const result = database.prepare(`
+    UPDATE waitlist_registrations
+    SET active = 0
+    WHERE discord_user_id = ? AND active = 1
+  `).run(discordUserId);
+
+  return result.changes > 0;
+}
+
+/**
+ * Get all active, non-notified waitlist registrations
+ */
+export function getActiveWaitlistRegistrations(): WaitlistRegistration[] {
+  const database = getDatabase();
+
+  const rows = database.prepare(`
+    SELECT * FROM waitlist_registrations
+    WHERE active = 1 AND notified = 0
+    ORDER BY position_at_registration ASC
+  `).all() as WaitlistRegistrationRow[];
+
+  return rows.map(rowToWaitlistRegistration);
+}
+
+/**
+ * Get all active waitlist registrations (including notified)
+ */
+export function getAllActiveWaitlistRegistrations(): WaitlistRegistration[] {
+  const database = getDatabase();
+
+  const rows = database.prepare(`
+    SELECT * FROM waitlist_registrations
+    WHERE active = 1
+    ORDER BY position_at_registration ASC
+  `).all() as WaitlistRegistrationRow[];
+
+  return rows.map(rowToWaitlistRegistration);
+}
+
+/**
+ * Check if a wallet is already associated with a member
+ */
+export function isWalletAssociatedWithMember(walletAddress: string): boolean {
+  const database = getDatabase();
+
+  const row = database.prepare(`
+    SELECT 1 FROM wallet_mappings
+    WHERE wallet_address = ?
+    LIMIT 1
+  `).get(walletAddress.toLowerCase());
+
+  return row !== undefined;
+}
+
+// =============================================================================
+// Threshold Snapshot Queries (Sprint 12: Cave Entrance)
+// =============================================================================
+
+/**
+ * Database row type for threshold_snapshots
+ */
+interface ThresholdSnapshotRow {
+  id: number;
+  entry_threshold_bgt: string;
+  eligible_count: number;
+  waitlist_count: number;
+  waitlist_top_bgt: string | null;
+  waitlist_bottom_bgt: string | null;
+  gap_to_entry: string | null;
+  snapshot_at: string;
+}
+
+/**
+ * Convert database row to ThresholdSnapshot type
+ */
+function rowToThresholdSnapshot(row: ThresholdSnapshotRow): ThresholdSnapshot {
+  return {
+    id: row.id,
+    entryThresholdBgt: row.entry_threshold_bgt,
+    eligibleCount: row.eligible_count,
+    waitlistCount: row.waitlist_count,
+    waitlistTopBgt: row.waitlist_top_bgt,
+    waitlistBottomBgt: row.waitlist_bottom_bgt,
+    gapToEntry: row.gap_to_entry,
+    snapshotAt: new Date(row.snapshot_at),
+  };
+}
+
+/**
+ * Insert a new threshold snapshot
+ */
+export function insertThresholdSnapshot(data: {
+  entryThresholdBgt: string;
+  eligibleCount: number;
+  waitlistCount: number;
+  waitlistTopBgt: string | null;
+  waitlistBottomBgt: string | null;
+  gapToEntry: string | null;
+}): ThresholdSnapshot {
+  const database = getDatabase();
+
+  const result = database.prepare(`
+    INSERT INTO threshold_snapshots (
+      entry_threshold_bgt,
+      eligible_count,
+      waitlist_count,
+      waitlist_top_bgt,
+      waitlist_bottom_bgt,
+      gap_to_entry
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    data.entryThresholdBgt,
+    data.eligibleCount,
+    data.waitlistCount,
+    data.waitlistTopBgt,
+    data.waitlistBottomBgt,
+    data.gapToEntry
+  );
+
+  const row = database.prepare(`
+    SELECT * FROM threshold_snapshots WHERE id = ?
+  `).get(result.lastInsertRowid) as ThresholdSnapshotRow;
+
+  return rowToThresholdSnapshot(row);
+}
+
+/**
+ * Get the most recent threshold snapshot
+ */
+export function getLatestThresholdSnapshot(): ThresholdSnapshot | null {
+  const database = getDatabase();
+
+  const row = database.prepare(`
+    SELECT * FROM threshold_snapshots
+    ORDER BY snapshot_at DESC
+    LIMIT 1
+  `).get() as ThresholdSnapshotRow | undefined;
+
+  return row ? rowToThresholdSnapshot(row) : null;
+}
+
+/**
+ * Get threshold snapshots with pagination
+ */
+export function getThresholdSnapshots(options: {
+  limit?: number;
+  since?: Date;
+} = {}): ThresholdSnapshot[] {
+  const database = getDatabase();
+
+  const limit = options.limit ?? 24; // Default to 24 hours of snapshots (hourly)
+
+  if (options.since) {
+    const rows = database.prepare(`
+      SELECT * FROM threshold_snapshots
+      WHERE snapshot_at >= ?
+      ORDER BY snapshot_at DESC
+      LIMIT ?
+    `).all(options.since.toISOString(), limit) as ThresholdSnapshotRow[];
+
+    return rows.map(rowToThresholdSnapshot);
+  }
+
+  const rows = database.prepare(`
+    SELECT * FROM threshold_snapshots
+    ORDER BY snapshot_at DESC
+    LIMIT ?
+  `).all(limit) as ThresholdSnapshotRow[];
+
+  return rows.map(rowToThresholdSnapshot);
+}
+
+/**
+ * Get positions 70-100 from current_eligibility for waitlist display
+ * Returns wallets ranked 70-100 with their BGT holdings
+ */
+export function getWaitlistPositions(): Array<{
+  address: string;
+  position: number;
+  bgt: string;
+}> {
+  const database = getDatabase();
+
+  const rows = database.prepare(`
+    SELECT address, rank as position, bgt_held as bgt
+    FROM current_eligibility
+    WHERE rank >= 70 AND rank <= 100
+    ORDER BY rank ASC
+  `).all() as Array<{ address: string; position: number; bgt: string }>;
+
+  return rows;
+}
+
+/**
+ * Get position 69's BGT (entry threshold)
+ */
+export function getEntryThresholdBgt(): string | null {
+  const database = getDatabase();
+
+  const row = database.prepare(`
+    SELECT bgt_held FROM current_eligibility
+    WHERE rank = 69
+    LIMIT 1
+  `).get() as { bgt_held: string } | undefined;
+
+  return row?.bgt_held ?? null;
+}
+
+/**
+ * Get a wallet's current position and BGT from eligibility
+ */
+export function getWalletPosition(walletAddress: string): {
+  position: number;
+  bgt: string;
+} | null {
+  const database = getDatabase();
+
+  const row = database.prepare(`
+    SELECT rank as position, bgt_held as bgt
+    FROM current_eligibility
+    WHERE address = ?
+  `).get(walletAddress.toLowerCase()) as { position: number; bgt: string } | undefined;
+
+  return row ?? null;
+}
+
+// =============================================================================
+// Notification Preferences Queries (Sprint 13: Notification System)
+// =============================================================================
+
+/**
+ * Database row type for notification_preferences table
+ */
+interface NotificationPreferencesRow {
+  id: number;
+  member_id: string;
+  position_updates: number;
+  at_risk_warnings: number;
+  naib_alerts: number;
+  frequency: string;
+  alerts_sent_this_week: number;
+  week_start_timestamp: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Convert database row to NotificationPreferences interface
+ */
+function rowToNotificationPreferences(row: NotificationPreferencesRow): NotificationPreferences {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    positionUpdates: row.position_updates === 1,
+    atRiskWarnings: row.at_risk_warnings === 1,
+    naibAlerts: row.naib_alerts === 1,
+    frequency: row.frequency as AlertFrequency,
+    alertsSentThisWeek: row.alerts_sent_this_week,
+    weekStartTimestamp: new Date(row.week_start_timestamp),
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
+}
+
+/**
+ * Get notification preferences for a member
+ * Returns null if member has no preferences set
+ */
+export function getNotificationPreferences(memberId: string): NotificationPreferences | null {
+  const database = getDatabase();
+
+  const row = database.prepare(`
+    SELECT * FROM notification_preferences
+    WHERE member_id = ?
+  `).get(memberId) as NotificationPreferencesRow | undefined;
+
+  return row ? rowToNotificationPreferences(row) : null;
+}
+
+/**
+ * Create or update notification preferences for a member
+ * Uses upsert pattern (INSERT OR REPLACE)
+ */
+export function upsertNotificationPreferences(
+  memberId: string,
+  prefs: {
+    positionUpdates?: boolean;
+    atRiskWarnings?: boolean;
+    naibAlerts?: boolean;
+    frequency?: AlertFrequency;
+  }
+): NotificationPreferences {
+  const database = getDatabase();
+
+  // Get existing preferences to merge with new values
+  const existing = getNotificationPreferences(memberId);
+
+  const positionUpdates = prefs.positionUpdates ?? existing?.positionUpdates ?? true;
+  const atRiskWarnings = prefs.atRiskWarnings ?? existing?.atRiskWarnings ?? true;
+  const naibAlerts = prefs.naibAlerts ?? existing?.naibAlerts ?? true;
+  const frequency = prefs.frequency ?? existing?.frequency ?? '3_per_week';
+  const alertsSentThisWeek = existing?.alertsSentThisWeek ?? 0;
+  const weekStartTimestamp = existing?.weekStartTimestamp?.toISOString() ?? new Date().toISOString();
+
+  if (existing) {
+    // Update existing
+    database.prepare(`
+      UPDATE notification_preferences
+      SET position_updates = ?,
+          at_risk_warnings = ?,
+          naib_alerts = ?,
+          frequency = ?,
+          updated_at = datetime('now')
+      WHERE member_id = ?
+    `).run(
+      positionUpdates ? 1 : 0,
+      atRiskWarnings ? 1 : 0,
+      naibAlerts ? 1 : 0,
+      frequency,
+      memberId
+    );
+  } else {
+    // Insert new
+    database.prepare(`
+      INSERT INTO notification_preferences (
+        member_id,
+        position_updates,
+        at_risk_warnings,
+        naib_alerts,
+        frequency,
+        alerts_sent_this_week,
+        week_start_timestamp
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      memberId,
+      positionUpdates ? 1 : 0,
+      atRiskWarnings ? 1 : 0,
+      naibAlerts ? 1 : 0,
+      frequency,
+      alertsSentThisWeek,
+      weekStartTimestamp
+    );
+  }
+
+  return getNotificationPreferences(memberId)!;
+}
+
+/**
+ * Increment the alert counter for a member
+ */
+export function incrementAlertCounter(memberId: string): void {
+  const database = getDatabase();
+
+  database.prepare(`
+    UPDATE notification_preferences
+    SET alerts_sent_this_week = alerts_sent_this_week + 1,
+        updated_at = datetime('now')
+    WHERE member_id = ?
+  `).run(memberId);
+}
+
+/**
+ * Reset weekly alert counters for all members
+ * Should be called at the start of each week
+ */
+export function resetWeeklyAlertCounters(): number {
+  const database = getDatabase();
+
+  const result = database.prepare(`
+    UPDATE notification_preferences
+    SET alerts_sent_this_week = 0,
+        week_start_timestamp = datetime('now'),
+        updated_at = datetime('now')
+  `).run();
+
+  return result.changes;
+}
+
+/**
+ * Get all members eligible for position alerts
+ * Returns members with position_updates enabled who haven't reached their weekly limit
+ */
+export function getMembersForPositionAlerts(): NotificationPreferences[] {
+  const database = getDatabase();
+
+  const rows = database.prepare(`
+    SELECT * FROM notification_preferences
+    WHERE position_updates = 1
+    AND (
+      (frequency = 'daily') OR
+      (frequency = '3_per_week' AND alerts_sent_this_week < 3) OR
+      (frequency = '2_per_week' AND alerts_sent_this_week < 2) OR
+      (frequency = '1_per_week' AND alerts_sent_this_week < 1)
+    )
+  `).all() as NotificationPreferencesRow[];
+
+  return rows.map(rowToNotificationPreferences);
+}
+
+/**
+ * Get all members eligible for at-risk warnings
+ * Returns members with at_risk_warnings enabled
+ */
+export function getMembersForAtRiskAlerts(): NotificationPreferences[] {
+  const database = getDatabase();
+
+  const rows = database.prepare(`
+    SELECT * FROM notification_preferences
+    WHERE at_risk_warnings = 1
+  `).all() as NotificationPreferencesRow[];
+
+  return rows.map(rowToNotificationPreferences);
+}
+
+/**
+ * Get notification preferences count by setting
+ */
+export function getNotificationPreferencesStats(): {
+  total: number;
+  positionUpdatesEnabled: number;
+  atRiskWarningsEnabled: number;
+  naibAlertsEnabled: number;
+} {
+  const database = getDatabase();
+
+  const row = database.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN position_updates = 1 THEN 1 ELSE 0 END) as position_updates_enabled,
+      SUM(CASE WHEN at_risk_warnings = 1 THEN 1 ELSE 0 END) as at_risk_warnings_enabled,
+      SUM(CASE WHEN naib_alerts = 1 THEN 1 ELSE 0 END) as naib_alerts_enabled
+    FROM notification_preferences
+  `).get() as {
+    total: number;
+    position_updates_enabled: number;
+    at_risk_warnings_enabled: number;
+    naib_alerts_enabled: number;
+  };
+
+  return {
+    total: row.total,
+    positionUpdatesEnabled: row.position_updates_enabled,
+    atRiskWarningsEnabled: row.at_risk_warnings_enabled,
+    naibAlertsEnabled: row.naib_alerts_enabled,
+  };
+}
+
+// =============================================================================
+// Alert History Queries (Sprint 13: Notification System)
+// =============================================================================
+
+/**
+ * Database row type for alert_history table
+ */
+interface AlertHistoryRow {
+  id: number;
+  recipient_id: string;
+  recipient_type: string;
+  alert_type: string;
+  alert_data: string;
+  delivered: number;
+  delivery_error: string | null;
+  sent_at: string;
+}
+
+/**
+ * Convert database row to AlertRecord interface
+ */
+function rowToAlertRecord(row: AlertHistoryRow): AlertRecord {
+  return {
+    id: row.id,
+    recipientId: row.recipient_id,
+    recipientType: row.recipient_type as 'member' | 'waitlist',
+    alertType: row.alert_type as AlertType,
+    alertData: JSON.parse(row.alert_data) as AlertData,
+    delivered: row.delivered === 1,
+    deliveryError: row.delivery_error,
+    sentAt: new Date(row.sent_at),
+  };
+}
+
+/**
+ * Insert a new alert record
+ */
+export function insertAlertRecord(data: {
+  recipientId: string;
+  recipientType: 'member' | 'waitlist';
+  alertType: AlertType;
+  alertData: AlertData;
+  delivered: boolean;
+  deliveryError?: string;
+}): AlertRecord {
+  const database = getDatabase();
+
+  const result = database.prepare(`
+    INSERT INTO alert_history (
+      recipient_id,
+      recipient_type,
+      alert_type,
+      alert_data,
+      delivered,
+      delivery_error
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    data.recipientId,
+    data.recipientType,
+    data.alertType,
+    JSON.stringify(data.alertData),
+    data.delivered ? 1 : 0,
+    data.deliveryError ?? null
+  );
+
+  const row = database.prepare(`
+    SELECT * FROM alert_history WHERE id = ?
+  `).get(result.lastInsertRowid) as AlertHistoryRow;
+
+  return rowToAlertRecord(row);
+}
+
+/**
+ * Update alert delivery status
+ */
+export function updateAlertDeliveryStatus(
+  alertId: number,
+  delivered: boolean,
+  deliveryError?: string
+): void {
+  const database = getDatabase();
+
+  database.prepare(`
+    UPDATE alert_history
+    SET delivered = ?,
+        delivery_error = ?
+    WHERE id = ?
+  `).run(delivered ? 1 : 0, deliveryError ?? null, alertId);
+}
+
+/**
+ * Get alert history for a recipient
+ */
+export function getAlertHistory(
+  recipientId: string,
+  options: {
+    limit?: number;
+    alertType?: AlertType;
+  } = {}
+): AlertRecord[] {
+  const database = getDatabase();
+
+  const limit = options.limit ?? 50;
+
+  if (options.alertType) {
+    const rows = database.prepare(`
+      SELECT * FROM alert_history
+      WHERE recipient_id = ? AND alert_type = ?
+      ORDER BY sent_at DESC
+      LIMIT ?
+    `).all(recipientId, options.alertType, limit) as AlertHistoryRow[];
+
+    return rows.map(rowToAlertRecord);
+  }
+
+  const rows = database.prepare(`
+    SELECT * FROM alert_history
+    WHERE recipient_id = ?
+    ORDER BY sent_at DESC
+    LIMIT ?
+  `).all(recipientId, limit) as AlertHistoryRow[];
+
+  return rows.map(rowToAlertRecord);
+}
+
+/**
+ * Count alerts sent to a recipient this week
+ */
+export function countAlertsThisWeek(recipientId: string): number {
+  const database = getDatabase();
+
+  // Get start of current week (Sunday)
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - dayOfWeek);
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const row = database.prepare(`
+    SELECT COUNT(*) as count
+    FROM alert_history
+    WHERE recipient_id = ? AND sent_at >= ?
+  `).get(recipientId, startOfWeek.toISOString()) as { count: number };
+
+  return row.count;
+}
+
+/**
+ * Get alert statistics
+ */
+export function getAlertStats(): {
+  totalSent: number;
+  sentThisWeek: number;
+  byType: Record<string, number>;
+  deliveryRate: number;
+} {
+  const database = getDatabase();
+
+  // Total sent
+  const totalRow = database.prepare(`
+    SELECT COUNT(*) as count FROM alert_history
+  `).get() as { count: number };
+
+  // Sent this week
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - dayOfWeek);
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const weekRow = database.prepare(`
+    SELECT COUNT(*) as count
+    FROM alert_history
+    WHERE sent_at >= ?
+  `).get(startOfWeek.toISOString()) as { count: number };
+
+  // By type
+  const typeRows = database.prepare(`
+    SELECT alert_type, COUNT(*) as count
+    FROM alert_history
+    GROUP BY alert_type
+  `).all() as Array<{ alert_type: string; count: number }>;
+
+  const byType: Record<string, number> = {};
+  for (const row of typeRows) {
+    byType[row.alert_type] = row.count;
+  }
+
+  // Delivery rate
+  const deliveryRow = database.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN delivered = 1 THEN 1 ELSE 0 END) as delivered
+    FROM alert_history
+  `).get() as { total: number; delivered: number };
+
+  const deliveryRate = deliveryRow.total > 0
+    ? deliveryRow.delivered / deliveryRow.total
+    : 1;
+
+  return {
+    totalSent: totalRow.count,
+    sentThisWeek: weekRow.count,
+    byType,
+    deliveryRate,
+  };
+}
+
+/**
+ * Get recent alerts across all recipients (for admin)
+ */
+export function getRecentAlerts(limit: number = 50): AlertRecord[] {
+  const database = getDatabase();
+
+  const rows = database.prepare(`
+    SELECT * FROM alert_history
+    ORDER BY sent_at DESC
+    LIMIT ?
+  `).all(limit) as AlertHistoryRow[];
+
+  return rows.map(rowToAlertRecord);
 }

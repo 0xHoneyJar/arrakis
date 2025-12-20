@@ -72,6 +72,8 @@ const configSchema = z.object({
       sietchLounge: z.string().optional(),
       naibCouncil: z.string().optional(),
       introductions: z.string().optional(),
+      // Cave Entrance channel (v2.1) - for aspiring members in positions 70-100
+      caveEntrance: z.string().optional(),
     }),
     roles: z.object({
       naib: z.string().min(1),
@@ -83,6 +85,8 @@ const configSchema = z.object({
       trusted: z.string().optional(),
       // Naib dynamics roles (v2.1) - assigned based on Naib seat status
       formerNaib: z.string().optional(),
+      // Cave Entrance role (v2.1) - assigned to waitlist registrations
+      taqwa: z.string().optional(),
     }),
   }),
 
@@ -176,6 +180,8 @@ function parseConfig() {
         sietchLounge: process.env.DISCORD_CHANNEL_SIETCH_LOUNGE,
         naibCouncil: process.env.DISCORD_CHANNEL_NAIB_COUNCIL,
         introductions: process.env.DISCORD_CHANNEL_INTRODUCTIONS,
+        // Cave Entrance channel (v2.1)
+        caveEntrance: process.env.DISCORD_CHANNEL_CAVE_ENTRANCE,
       },
       roles: {
         naib: process.env.DISCORD_ROLE_NAIB ?? '',
@@ -187,6 +193,8 @@ function parseConfig() {
         trusted: process.env.DISCORD_ROLE_TRUSTED,
         // Naib dynamics roles (v2.1)
         formerNaib: process.env.DISCORD_ROLE_FORMER_NAIB,
+        // Cave Entrance role (v2.1)
+        taqwa: process.env.DISCORD_ROLE_TAQWA,
       },
     },
     api: {
@@ -268,6 +276,8 @@ export interface Config {
       sietchLounge?: string;
       naibCouncil?: string;
       introductions?: string;
+      // Cave Entrance channel (v2.1)
+      caveEntrance?: string;
     };
     roles: {
       naib: string;
@@ -279,6 +289,8 @@ export interface Config {
       trusted?: string;
       // Naib dynamics roles (v2.1)
       formerNaib?: string;
+      // Cave Entrance role (v2.1)
+      taqwa?: string;
     };
   };
   api: {
