@@ -21,11 +21,13 @@ Sietch v3.0 transforms from an exclusive 69-member community into a layered sanc
 **Key Capabilities**:
 1. **9-Tier Membership** - Hajra (6.9 BGT) through Naib (Top 7)
 2. **Automatic Tier Assignment** - BGT balance and rank-based calculation
-3. **Sponsor Invites** - Water Sharer badge enables sponsorship
-4. **Tier Notifications** - DM alerts on promotion
-5. **Weekly Digest** - Community pulse posted to announcements
-6. **Story Fragments** - Cryptic narratives for elite joins
-7. **Analytics Dashboard** - Admin visibility into community health
+3. **Dynamic Naib System** - 7 competitive seats with BGT-based bumping (retained from v2.1)
+4. **Position Alert System** - At-risk warnings, Naib threats, relative standings (retained from v2.1)
+5. **Sponsor Invites** - Water Sharer badge enables sponsorship
+6. **Tier Notifications** - DM alerts on promotion
+7. **Weekly Digest** - Community pulse posted to announcements
+8. **Story Fragments** - Cryptic narratives for elite joins
+9. **Analytics Dashboard** - Admin visibility into community health
 
 ### 1.3 Key Architectural Decisions
 
@@ -80,7 +82,7 @@ Sietch v3.0 transforms from an exclusive 69-member community into a layered sanc
 │  │  │  Service   │  │  Service   │  │  Service   │     │  SERVICES          │
 │  │  └────────────┘  └────────────┘  └────────────┘     │                    │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐     │                    │
-│  │  │   Naib     │  │ Threshold  │  │Notification│     │                    │
+│  │  │   Naib     │  │ Threshold  │  │Notification│     │  RETAINED v2.1     │
 │  │  │  Service   │  │  Service   │  │  Service   │     │                    │
 │  │  └────────────┘  └────────────┘  └────────────┘     │                    │
 │  └─────────────────────────┬────────────────────────────┘                    │
@@ -94,6 +96,9 @@ Sietch v3.0 transforms from an exclusive 69-member community into a layered sanc
 │  │  │  • sponsor_invites (NEW)                       │  │                   │
 │  │  │  • story_fragments (NEW)                       │  │                   │
 │  │  │  • weekly_digests (NEW)                        │  │                   │
+│  │  │  • naib_seats (RETAINED v2.1)                  │  │                   │
+│  │  │  • notification_preferences (RETAINED v2.1)   │  │                   │
+│  │  │  • alert_history (RETAINED v2.1)              │  │                   │
 │  │  │  • [existing tables unchanged]                 │  │                   │
 │  │  └────────────────────────────────────────────────┘  │                   │
 │  └───────────────────────────────────────────────────────┘                   │
@@ -1181,6 +1186,544 @@ export class StatsService {
 export const statsService = new StatsService();
 ```
 
+### 4.6 NaibService (Retained from v2.1)
+
+**File**: `src/services/NaibService.ts`
+
+**Responsibility**: Manage Naib seat assignment, bumping logic, and seat history.
+
+```typescript
+// src/services/NaibService.ts
+
+import { db } from '../db';
+import { logger } from '../utils/logger';
+import type { NaibSeat, NaibMember } from '../types';
+
+export class NaibService {
+  private readonly NAIB_SEAT_COUNT = 7;
+
+  /**
+   * Get current Naib members
+   */
+  getCurrentNaib(): NaibMember[] {
+    return db.prepare(`
+      SELECT ns.*, mp.nym, mp.discord_id, ce.bgt
+      FROM naib_seats ns
+      JOIN member_profiles mp ON mp.id = ns.member_id
+      JOIN wallet_mappings wm ON wm.discord_id = mp.discord_id
+      JOIN current_eligibility ce ON ce.address = wm.wallet_address
+      WHERE ns.unseated_at IS NULL
+      ORDER BY ce.bgt DESC
+    `).all() as NaibMember[];
+  }
+
+  /**
+   * Get Former Naib members
+   */
+  getFormerNaib(): NaibMember[] {
+    return db.prepare(`
+      SELECT DISTINCT mp.id, mp.nym, mp.discord_id
+      FROM naib_seats ns
+      JOIN member_profiles mp ON mp.id = ns.member_id
+      WHERE ns.unseated_at IS NOT NULL
+        AND mp.id NOT IN (
+          SELECT member_id FROM naib_seats WHERE unseated_at IS NULL
+        )
+    `).all() as NaibMember[];
+  }
+
+  /**
+   * Get lowest Naib member by BGT (for bump evaluation)
+   */
+  getLowestNaibMember(): NaibMember | null {
+    return db.prepare(`
+      SELECT ns.*, mp.nym, mp.discord_id, ce.bgt, mp.created_at as tenure_start
+      FROM naib_seats ns
+      JOIN member_profiles mp ON mp.id = ns.member_id
+      JOIN wallet_mappings wm ON wm.discord_id = mp.discord_id
+      JOIN current_eligibility ce ON ce.address = wm.wallet_address
+      WHERE ns.unseated_at IS NULL
+      ORDER BY ce.bgt ASC, mp.created_at DESC
+      LIMIT 1
+    `).get() as NaibMember | null;
+  }
+
+  /**
+   * Seat a member in the Naib
+   */
+  seatMember(memberId: string, seatNumber: number): void {
+    const id = crypto.randomUUID();
+    const now = Date.now();
+
+    db.prepare(`
+      INSERT INTO naib_seats (id, member_id, seat_number, seated_at)
+      VALUES (?, ?, ?, ?)
+    `).run(id, memberId, seatNumber, now);
+
+    logger.info({ memberId, seatNumber }, 'Member seated in Naib');
+  }
+
+  /**
+   * Bump lowest Naib member when higher BGT member arrives
+   */
+  bumpMember(bumpedMemberId: string, bumpedByMemberId: string): void {
+    const now = Date.now();
+
+    // Unseat the bumped member
+    db.prepare(`
+      UPDATE naib_seats
+      SET unseated_at = ?, unseated_by = ?, unseated_reason = 'bumped'
+      WHERE member_id = ? AND unseated_at IS NULL
+    `).run(now, bumpedByMemberId, bumpedMemberId);
+
+    // Get the freed seat number
+    const freedSeat = db.prepare(`
+      SELECT seat_number FROM naib_seats
+      WHERE member_id = ? AND unseated_at = ?
+    `).get(bumpedMemberId, now) as { seat_number: number };
+
+    // Seat the new member
+    this.seatMember(bumpedByMemberId, freedSeat.seat_number);
+
+    // Mark bumped member as Former Naib
+    db.prepare(`
+      UPDATE member_profiles SET is_former_naib = 1 WHERE id = ?
+    `).run(bumpedMemberId);
+
+    logger.info({ bumpedMemberId, bumpedByMemberId }, 'Naib member bumped');
+  }
+
+  /**
+   * Evaluate and process Naib seat changes during sync
+   */
+  evaluateNaibSeats(eligibilityList: Array<{ memberId: string; bgt: number; rank: number }>): {
+    seated: string[];
+    bumped: Array<{ member: string; by: string }>;
+  } {
+    const result = { seated: [] as string[], bumped: [] as Array<{ member: string; by: string }> };
+    const currentNaib = this.getCurrentNaib();
+
+    // If Naib not full, seat top members
+    if (currentNaib.length < this.NAIB_SEAT_COUNT) {
+      const topMembers = eligibilityList
+        .filter(e => e.rank <= this.NAIB_SEAT_COUNT)
+        .filter(e => !currentNaib.some(n => n.member_id === e.memberId));
+
+      for (const member of topMembers) {
+        const nextSeat = currentNaib.length + result.seated.length + 1;
+        if (nextSeat <= this.NAIB_SEAT_COUNT) {
+          this.seatMember(member.memberId, nextSeat);
+          result.seated.push(member.memberId);
+        }
+      }
+    }
+
+    // Check for bumping (new member with higher BGT than lowest Naib)
+    const lowest = this.getLowestNaibMember();
+    if (lowest) {
+      const challengers = eligibilityList
+        .filter(e => e.bgt > lowest.bgt)
+        .filter(e => !currentNaib.some(n => n.member_id === e.memberId))
+        .sort((a, b) => b.bgt - a.bgt);
+
+      if (challengers.length > 0) {
+        this.bumpMember(lowest.member_id, challengers[0].memberId);
+        result.bumped.push({ member: lowest.member_id, by: challengers[0].memberId });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Check if member is current Naib
+   */
+  isNaibMember(memberId: string): boolean {
+    const result = db.prepare(`
+      SELECT 1 FROM naib_seats WHERE member_id = ? AND unseated_at IS NULL
+    `).get(memberId);
+    return !!result;
+  }
+
+  /**
+   * Check if member is Former Naib
+   */
+  isFormerNaib(memberId: string): boolean {
+    const result = db.prepare(`
+      SELECT is_former_naib FROM member_profiles WHERE id = ?
+    `).get(memberId) as { is_former_naib: number } | undefined;
+    return result?.is_former_naib === 1;
+  }
+}
+
+export const naibService = new NaibService();
+```
+
+### 4.7 NotificationService Extensions (Retained from v2.1)
+
+**File**: `src/services/NotificationService.ts`
+
+**Responsibility**: Send position alerts, at-risk warnings, Naib threats, and manage notification preferences.
+
+```typescript
+// src/services/NotificationService.ts (extensions for v2.1 features)
+
+import { db } from '../db';
+import { logger } from '../utils/logger';
+import { discordService } from './DiscordService';
+import type { NotificationPreferences, AlertType } from '../types';
+
+export class NotificationService {
+  /**
+   * Get member notification preferences
+   */
+  getPreferences(memberId: string): NotificationPreferences {
+    const prefs = db.prepare(`
+      SELECT * FROM notification_preferences WHERE member_id = ?
+    `).get(memberId) as NotificationPreferences | undefined;
+
+    // Return defaults if no preferences set
+    return prefs || {
+      member_id: memberId,
+      position_updates_enabled: 1,
+      position_update_frequency: '3_per_week',
+      at_risk_warnings_enabled: 1,
+      naib_alerts_enabled: 1,
+      last_position_alert_at: null,
+      alerts_sent_this_week: 0,
+      week_start_timestamp: null,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    };
+  }
+
+  /**
+   * Update notification preferences
+   */
+  updatePreferences(memberId: string, updates: Partial<NotificationPreferences>): void {
+    const now = Date.now();
+    const existing = this.getPreferences(memberId);
+
+    if (existing.created_at === now) {
+      // New record - insert
+      db.prepare(`
+        INSERT INTO notification_preferences
+        (member_id, position_updates_enabled, position_update_frequency,
+         at_risk_warnings_enabled, naib_alerts_enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        memberId,
+        updates.position_updates_enabled ?? 1,
+        updates.position_update_frequency ?? '3_per_week',
+        updates.at_risk_warnings_enabled ?? 1,
+        updates.naib_alerts_enabled ?? 1,
+        now, now
+      );
+    } else {
+      // Update existing
+      const fields = [];
+      const values = [];
+
+      if (updates.position_updates_enabled !== undefined) {
+        fields.push('position_updates_enabled = ?');
+        values.push(updates.position_updates_enabled);
+      }
+      if (updates.position_update_frequency !== undefined) {
+        fields.push('position_update_frequency = ?');
+        values.push(updates.position_update_frequency);
+      }
+      if (updates.at_risk_warnings_enabled !== undefined) {
+        fields.push('at_risk_warnings_enabled = ?');
+        values.push(updates.at_risk_warnings_enabled);
+      }
+      if (updates.naib_alerts_enabled !== undefined) {
+        fields.push('naib_alerts_enabled = ?');
+        values.push(updates.naib_alerts_enabled);
+      }
+
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(memberId);
+
+      db.prepare(`
+        UPDATE notification_preferences
+        SET ${fields.join(', ')}
+        WHERE member_id = ?
+      `).run(...values);
+    }
+  }
+
+  /**
+   * Send at-risk warning to member
+   */
+  async sendAtRiskWarning(
+    discordId: string,
+    distanceTo70: number,
+    distanceTo71: number
+  ): Promise<boolean> {
+    const message = `⚠️ **Position Alert**
+
+You are currently in the bottom 10% of Fedaykin members.
+
+Your standing:
+• Position #70 (first outside): ${distanceTo70} BGT behind you
+• Position #71: ${distanceTo71} BGT behind you
+
+If a wallet with more BGT than yours becomes eligible,
+you may lose your Fedaykin status.
+
+This is a private alert - your position is never shown publicly.
+━━━━━━━━━━━━━━━━━━━━━━━
+[Understood] [Turn Off At-Risk Alerts]`;
+
+    try {
+      await discordService.sendDM(discordId, message);
+      this.recordAlert(null, discordId, 'at_risk_warning', 'At-risk warning sent');
+      return true;
+    } catch (error) {
+      logger.error({ error, discordId }, 'Failed to send at-risk warning');
+      return false;
+    }
+  }
+
+  /**
+   * Send Naib threat alert
+   */
+  async sendNaibThreat(discordId: string, lowestNaibBgt: number): Promise<boolean> {
+    const message = `🏛️ **Naib Alert**
+
+A new member has joined with significant BGT holdings.
+
+As a Naib member, your seat is determined by BGT holdings
+among the first 7 members (with tenure as tie-breaker).
+
+Current lowest Naib BGT: ${lowestNaibBgt.toLocaleString()}
+
+If your holdings are lowest, your seat may be at risk.
+━━━━━━━━━━━━━━━━━━━━━━━
+[View Naib Status] [Dismiss]`;
+
+    try {
+      await discordService.sendDM(discordId, message);
+      this.recordAlert(null, discordId, 'naib_threat', 'Naib threat alert sent');
+      return true;
+    } catch (error) {
+      logger.error({ error, discordId }, 'Failed to send Naib threat');
+      return false;
+    }
+  }
+
+  /**
+   * Send position update alert
+   */
+  async sendPositionUpdate(
+    discordId: string,
+    distanceUp: number,
+    distanceDown: number
+  ): Promise<boolean> {
+    const statusMessage = distanceDown > 500
+      ? 'Your position is secure for now.'
+      : distanceDown < 100
+        ? '⚠️ Watch your position closely.'
+        : 'Stay vigilant, Fedaykin.';
+
+    const message = `📊 **Position Update**
+
+Your current standing:
+• You are ${distanceUp} BGT away from the position above you
+• The position below you is ${distanceDown} BGT away from yours
+
+${statusMessage}
+━━━━━━━━━━━━━━━━━━━━━━━
+[Manage Alerts] [Disable]`;
+
+    try {
+      await discordService.sendDM(discordId, message);
+      this.recordAlert(null, discordId, 'position_update', 'Position update sent');
+      return true;
+    } catch (error) {
+      logger.error({ error, discordId }, 'Failed to send position update');
+      return false;
+    }
+  }
+
+  /**
+   * Check if member can receive alert (rate limiting)
+   */
+  canSendAlert(memberId: string, alertType: AlertType): boolean {
+    const prefs = this.getPreferences(memberId);
+    const now = Date.now();
+    const weekStart = this.getWeekStart(now);
+
+    // Reset weekly counter if new week
+    if (!prefs.week_start_timestamp || prefs.week_start_timestamp < weekStart) {
+      db.prepare(`
+        UPDATE notification_preferences
+        SET alerts_sent_this_week = 0, week_start_timestamp = ?
+        WHERE member_id = ?
+      `).run(weekStart, memberId);
+      prefs.alerts_sent_this_week = 0;
+    }
+
+    // Check specific alert type enabled
+    if (alertType === 'position_update' && !prefs.position_updates_enabled) return false;
+    if (alertType === 'at_risk_warning' && !prefs.at_risk_warnings_enabled) return false;
+    if (alertType === 'naib_threat' && !prefs.naib_alerts_enabled) return false;
+
+    // Check frequency limit for position updates
+    if (alertType === 'position_update') {
+      const maxAlerts: Record<string, number> = {
+        '1_per_week': 1,
+        '2_per_week': 2,
+        '3_per_week': 3,
+        'daily': 7,
+      };
+      const limit = maxAlerts[prefs.position_update_frequency] || 3;
+      return prefs.alerts_sent_this_week < limit;
+    }
+
+    return true;
+  }
+
+  /**
+   * Record alert in history
+   */
+  private recordAlert(
+    memberId: string | null,
+    discordId: string,
+    alertType: AlertType,
+    summary: string
+  ): void {
+    db.prepare(`
+      INSERT INTO alert_history (id, member_id, discord_user_id, alert_type, content_summary, sent_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(crypto.randomUUID(), memberId, discordId, alertType, summary, Date.now());
+  }
+
+  /**
+   * Get start of current week (Monday 00:00 UTC)
+   */
+  private getWeekStart(timestamp: number): number {
+    const date = new Date(timestamp);
+    const day = date.getUTCDay();
+    const diff = date.getUTCDate() - day + (day === 0 ? -6 : 1);
+    date.setUTCDate(diff);
+    date.setUTCHours(0, 0, 0, 0);
+    return date.getTime();
+  }
+}
+
+export const notificationService = new NotificationService();
+```
+
+### 4.8 ThresholdService (Retained from v2.1)
+
+**File**: `src/services/ThresholdService.ts`
+
+**Responsibility**: Calculate Fedaykin entry threshold and position distances.
+
+```typescript
+// src/services/ThresholdService.ts
+
+import { db } from '../db';
+import type { ThresholdData } from '../types';
+
+export class ThresholdService {
+  /**
+   * Get current Fedaykin entry threshold (position 69's BGT)
+   */
+  getCurrentThreshold(): ThresholdData {
+    // Get position 69's BGT (the threshold)
+    const position69 = db.prepare(`
+      SELECT ce.bgt
+      FROM current_eligibility ce
+      WHERE ce.rank = 69
+    `).get() as { bgt: number } | undefined;
+
+    // Get positions 70-100 (next in line)
+    const waitlist = db.prepare(`
+      SELECT ce.rank, ce.bgt, ce.address
+      FROM current_eligibility ce
+      WHERE ce.rank BETWEEN 70 AND 100
+      ORDER BY ce.rank ASC
+    `).all() as { rank: number; bgt: number; address: string }[];
+
+    const threshold = position69?.bgt || 0;
+
+    return {
+      threshold,
+      position_69_bgt: threshold,
+      waitlist: waitlist.map(w => ({
+        rank: w.rank,
+        bgt: w.bgt,
+        distance: threshold - w.bgt,
+      })),
+    };
+  }
+
+  /**
+   * Get member's position relative to above/below
+   */
+  getPositionDistances(memberId: string): {
+    distanceUp: number;
+    distanceDown: number;
+    position: number;
+  } | null {
+    const member = db.prepare(`
+      SELECT ce.rank, ce.bgt
+      FROM member_profiles mp
+      JOIN wallet_mappings wm ON wm.discord_id = mp.discord_id
+      JOIN current_eligibility ce ON ce.address = wm.wallet_address
+      WHERE mp.id = ?
+    `).get(memberId) as { rank: number; bgt: number } | undefined;
+
+    if (!member || !member.rank) return null;
+
+    // Get position above
+    const above = db.prepare(`
+      SELECT bgt FROM current_eligibility WHERE rank = ?
+    `).get(member.rank - 1) as { bgt: number } | undefined;
+
+    // Get position below
+    const below = db.prepare(`
+      SELECT bgt FROM current_eligibility WHERE rank = ?
+    `).get(member.rank + 1) as { bgt: number } | undefined;
+
+    return {
+      position: member.rank,
+      distanceUp: above ? above.bgt - member.bgt : 0,
+      distanceDown: below ? member.bgt - below.bgt : 0,
+    };
+  }
+
+  /**
+   * Get at-risk members (bottom ~10% of Fedaykin)
+   */
+  getAtRiskMembers(percentage: number = 10): string[] {
+    const fedaykinCount = db.prepare(`
+      SELECT COUNT(*) as count FROM member_profiles WHERE tier = 'fedaykin'
+    `).get() as { count: number };
+
+    const atRiskCount = Math.ceil(fedaykinCount.count * (percentage / 100));
+
+    // Get bottom N Fedaykin by rank (highest rank numbers = lowest position)
+    const atRisk = db.prepare(`
+      SELECT mp.id
+      FROM member_profiles mp
+      JOIN wallet_mappings wm ON wm.discord_id = mp.discord_id
+      JOIN current_eligibility ce ON ce.address = wm.wallet_address
+      WHERE mp.tier = 'fedaykin'
+      ORDER BY ce.rank DESC
+      LIMIT ?
+    `).all(atRiskCount) as { id: string }[];
+
+    return atRisk.map(m => m.id);
+  }
+}
+
+export const thresholdService = new ThresholdService();
+```
+
 ---
 
 ## 5. Data Architecture
@@ -1253,6 +1796,52 @@ CREATE TABLE IF NOT EXISTS weekly_digests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_digest_date ON weekly_digests(week_start);
+
+-- ============================================
+-- RETAINED FROM v2.1: Naib & Alert System
+-- ============================================
+
+-- Naib seats (Top 7 competitive positions)
+CREATE TABLE IF NOT EXISTS naib_seats (
+    seat_number INTEGER PRIMARY KEY CHECK (seat_number BETWEEN 1 AND 7),
+    member_id TEXT NOT NULL UNIQUE,
+    seated_at INTEGER NOT NULL,
+    bumped_from_seat INTEGER,
+    bumped_by_member_id TEXT,
+    FOREIGN KEY (member_id) REFERENCES member_profiles(id),
+    FOREIGN KEY (bumped_by_member_id) REFERENCES member_profiles(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_naib_seats_member ON naib_seats(member_id);
+CREATE INDEX IF NOT EXISTS idx_naib_seats_seated ON naib_seats(seated_at);
+
+-- Notification preferences
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    member_id TEXT PRIMARY KEY,
+    position_alerts_enabled INTEGER DEFAULT 1,
+    at_risk_alerts_enabled INTEGER DEFAULT 1,
+    naib_threat_alerts_enabled INTEGER DEFAULT 1,
+    frequency TEXT DEFAULT 'daily' CHECK (frequency IN ('1_per_week', '2_per_week', '3_per_week', 'daily')),
+    quiet_hours_start INTEGER,
+    quiet_hours_end INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (member_id) REFERENCES member_profiles(id)
+);
+
+-- Alert history for rate limiting
+CREATE TABLE IF NOT EXISTS alert_history (
+    id TEXT PRIMARY KEY,
+    member_id TEXT NOT NULL,
+    alert_type TEXT NOT NULL CHECK (alert_type IN ('position_update', 'at_risk', 'naib_threat', 'naib_bump')),
+    sent_at INTEGER NOT NULL,
+    context_json TEXT,
+    FOREIGN KEY (member_id) REFERENCES member_profiles(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_alert_history_member ON alert_history(member_id);
+CREATE INDEX IF NOT EXISTS idx_alert_history_type ON alert_history(member_id, alert_type);
+CREATE INDEX IF NOT EXISTS idx_alert_history_sent ON alert_history(sent_at);
 ```
 
 ### 5.2 Entity Relationship Diagram
@@ -1299,6 +1888,32 @@ CREATE INDEX IF NOT EXISTS idx_digest_date ON weekly_digests(week_start);
 │ content             │       │ stats_json          │
 │ used_count          │       │ posted_at           │
 └─────────────────────┘       │ message_id          │
+                              └─────────────────────┘
+
+RETAINED FROM v2.1:
+
+┌─────────────────────┐       ┌─────────────────────────┐
+│   naib_seats        │       │ notification_preferences │
+├─────────────────────┤       ├─────────────────────────┤
+│ seat_number (PK)    │       │ member_id (PK, FK)      │
+│ member_id (FK)      │───┐   │ position_alerts_enabled │
+│ seated_at           │   │   │ at_risk_alerts_enabled  │
+│ bumped_from_seat    │   │   │ naib_threat_alerts_en.  │
+│ bumped_by_member_id │   │   │ frequency               │
+└─────────────────────┘   │   │ quiet_hours_start       │
+                          │   │ quiet_hours_end         │
+                          │   │ created_at              │
+                          │   │ updated_at              │
+                          │   └─────────────────────────┘
+                          │
+                          │   ┌─────────────────────┐
+                          │   │   alert_history     │
+                          │   ├─────────────────────┤
+                          └──▶│ id (PK)             │
+                              │ member_id (FK)      │
+                              │ alert_type          │
+                              │ sent_at             │
+                              │ context_json        │
                               └─────────────────────┘
 ```
 
@@ -1392,6 +2007,65 @@ export interface AdminAnalytics {
   new_this_week: number;
   promotions_this_week: number;
 }
+
+// ============================================
+// RETAINED FROM v2.1: Naib & Alert Types
+// ============================================
+
+export interface NaibMember {
+  memberId: string;
+  discordId: string;
+  nym: string;
+  seatNumber: number;
+  bgt: number;
+  seatedAt: number;
+  tenure: number;  // Days in seat
+}
+
+export interface NaibSeat {
+  seat_number: number;
+  member_id: string;
+  seated_at: number;
+  bumped_from_seat: number | null;
+  bumped_by_member_id: string | null;
+}
+
+export type AlertType = 'position_update' | 'at_risk' | 'naib_threat' | 'naib_bump';
+
+export type AlertFrequency = '1_per_week' | '2_per_week' | '3_per_week' | 'daily';
+
+export interface NotificationPreferences {
+  member_id: string;
+  position_alerts_enabled: boolean;
+  at_risk_alerts_enabled: boolean;
+  naib_threat_alerts_enabled: boolean;
+  frequency: AlertFrequency;
+  quiet_hours_start: number | null;
+  quiet_hours_end: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AlertHistoryEntry {
+  id: string;
+  member_id: string;
+  alert_type: AlertType;
+  sent_at: number;
+  context_json: string | null;
+}
+
+export interface ThresholdData {
+  rank70Bgt: number;      // BGT of rank 70 (exit threshold)
+  rank71Bgt: number;      // BGT of rank 71 (just below)
+  lowestNaibBgt: number;  // BGT of rank 7 (Naib floor)
+  timestamp: number;
+}
+
+export interface PositionDistances {
+  position: number;
+  distanceUp: number;     // BGT needed to move up 1
+  distanceDown: number;   // BGT buffer before dropping 1
+}
 ```
 
 ---
@@ -1414,7 +2088,20 @@ export interface AdminAnalytics {
 | GET | `/admin/analytics` | Admin | Full analytics |
 | DELETE | `/admin/invites/:id` | Admin | Revoke invite |
 
-### 6.2 Rate Limiting
+### 6.2 Retained API Endpoints (from v2.1)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/naib` | None | Current Naib roster |
+| GET | `/api/naib/former` | None | Former Naib list |
+| GET | `/api/threshold` | None | Current BGT thresholds |
+| GET | `/api/position/:memberId` | Member | Position distances |
+| GET | `/api/alerts/preferences` | Member | Alert preferences |
+| PUT | `/api/alerts/preferences` | Member | Update preferences |
+| GET | `/api/alerts/history` | Member | Alert history |
+| POST | `/admin/naib/recalculate` | Admin | Force Naib recalc |
+
+### 6.3 Rate Limiting
 
 ```typescript
 const rateLimits = {
@@ -1447,7 +2134,19 @@ const rateLimits = {
 | `/leaderboard` | `tiers` | Tier progression ranking | Public |
 | `/admin` | `stats` | Community analytics | Ephemeral |
 
-### 7.2 Discord Role Hierarchy (v3.0)
+### 7.2 Retained Slash Commands (from v2.1)
+
+| Command | Subcommand | Description | Visibility |
+|---------|------------|-------------|------------|
+| `/naib` | - | Current Naib roster | Public |
+| `/naib` | `history` | Former Naib members | Public |
+| `/threshold` | - | BGT entry thresholds | Public |
+| `/position` | - | Your position & distances | Ephemeral |
+| `/alerts` | `settings` | View alert preferences | Ephemeral |
+| `/alerts` | `configure` | Update preferences | Ephemeral |
+| `/alerts` | `history` | Recent alert history | Ephemeral |
+
+### 7.3 Discord Role Hierarchy (v3.0)
 
 | Role | Color | Tier | Granted By |
 |------|-------|------|------------|
@@ -1465,7 +2164,7 @@ const rateLimits = {
 | `@Engaged` | Green | 5+ badges | Badge count |
 | `@Veteran` | Purple | 90+ days | Tenure |
 
-### 7.3 Role Management Extensions
+### 7.4 Role Management Extensions
 
 ```typescript
 // Add tier role constants

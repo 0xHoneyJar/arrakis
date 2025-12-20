@@ -109,6 +109,48 @@ Hajra (6.9) → Ichwan (69) → Qanat (222) → Sihaya (420) → Mushtamal (690)
 
 **Tier upgrades are automatic**: When a member's BGT crosses a threshold during sync, they're upgraded.
 
+### 2.5 Dynamic Naib System (Retained from v2.1)
+
+The Naib tier operates differently from threshold-based tiers - it uses **rank-based competition**.
+
+#### 2.5.1 Naib Seat Formation
+
+The Naib consists of 7 seats, initially filled by the first 7 eligible members to complete onboarding.
+
+**Initial Formation**: Based on onboarding completion timestamp (first come, first served).
+
+#### 2.5.2 Naib Seat Competition
+
+Once all 7 Naib seats are filled, seats become competitive based on BGT holdings:
+
+**Bump Mechanics**:
+1. New eligible member completes onboarding with BGT > lowest Naib member's BGT
+2. Lowest Naib member (by BGT) is bumped
+3. **Tie-breaker**: If BGT amounts are equal, the member with longer tenure keeps their seat
+4. Bumped member receives "Former Naib" status and becomes Fedaykin
+5. New member takes the Naib seat
+
+**Re-entry**: Former Naib members CAN regain a seat if their BGT increases above the current lowest Naib member.
+
+#### 2.5.3 Naib Roles & Permissions
+
+| Role | Criteria | Discord Role | Permissions |
+|------|----------|--------------|-------------|
+| **Naib** | Current top 7 by BGT rank | `@Naib` | Access to Naib Council + Naib Archives |
+| **Former Naib** | Previously held Naib seat | `@Former Naib` | Access to Naib Archives only |
+
+#### 2.5.4 Naib Archives
+
+A private area visible only to Naib and Former Naib members for historical discussions and recognition of service.
+
+### 2.6 Fedaykin Competition (Retained from v2.1)
+
+Fedaykin (Top 8-69) positions are also rank-based and competitive:
+
+- Members can be bumped out of Fedaykin if pushed below position 69
+- At-risk members (bottom ~10% of Fedaykin) receive warnings
+- Same tenure tie-breaker applies for equal BGT
+
 ---
 
 ## 3. Discord Channel Structure
@@ -278,7 +320,41 @@ DM sent when admin awards badge:
 [View Your Badges]
 ```
 
-#### 4.3.3 Weekly Digest
+#### 4.3.3 Position Alert System (Retained from v2.1)
+
+**Alert Types for Rank-Based Tiers (Fedaykin/Naib)**:
+
+| Alert Type | Recipients | Trigger | Content |
+|------------|------------|---------|---------|
+| **Position Update** | Opted-in Fedaykin/Naib | Every 6h sync | Relative position vs above/below |
+| **At-Risk Warning** | Bottom ~10% of Fedaykin | When position threatened | Private warning with BGT distances |
+| **Naib Threat** | Naib members | When higher-BGT member joins | Warning that seat may be at risk |
+| **Bump Notification** | Bumped member | When actually bumped | Notification of status change |
+
+**At-Risk Warning** (sent to bottom ~10% of Fedaykin):
+```
+⚠️ Position Alert
+
+You are currently in the bottom 10% of Fedaykin members.
+
+Your standing:
+• Position #70 (first outside): 52 BGT behind you
+• Position #71: 231 BGT behind you
+
+If a wallet with more BGT than yours becomes eligible,
+you may lose your Fedaykin status.
+
+This is a private alert - your position is never shown publicly.
+━━━━━━━━━━━━━━━━━━━━━━━
+[Understood] [Turn Off At-Risk Alerts]
+```
+
+**Notification Preferences** (`/alerts` command):
+- Position Updates: ON/OFF, frequency (1/week, 2/week, 3/week, daily)
+- At-Risk Warnings: ON/OFF
+- Naib Alerts: ON/OFF (only shown to Naib members)
+
+#### 4.3.4 Weekly Digest
 
 Posted to #announcements every Monday:
 
@@ -455,7 +531,16 @@ Your position: #{rank} ({bgt}/{next_threshold} BGT)
 | `/invite @user` | Sponsor invite (requires badge) | Ephemeral |
 | `/invite status` | Check your invite status | Ephemeral |
 
-### 6.2 Updated Commands
+### 6.2 Retained Commands (from v2.1)
+
+| Command | Description | Visibility |
+|---------|-------------|------------|
+| `/naib` | View current Naib members and Former Naib | Public |
+| `/threshold` | View current Fedaykin entry threshold | Public |
+| `/position` | View your position relative to above/below (no rank #) | Ephemeral |
+| `/alerts` | Configure notification preferences | Ephemeral |
+
+### 6.3 Updated Commands
 
 | Command | Changes |
 |---------|---------|
@@ -463,7 +548,7 @@ Your position: #{rank} ({bgt}/{next_threshold} BGT)
 | `/directory` | Filter by tier, shows tier in listing |
 | `/leaderboard` | Add "tiers" sub-command |
 
-### 6.3 Admin Commands
+### 6.4 Admin Commands
 
 | Command | Description |
 |---------|-------------|
@@ -528,6 +613,58 @@ CREATE TABLE weekly_digests (
     posted_at INTEGER,
     message_id TEXT
 );
+
+-- Naib seat tracking (retained from v2.1)
+CREATE TABLE naib_seats (
+    id TEXT PRIMARY KEY,
+    member_id TEXT NOT NULL,
+    seat_number INTEGER NOT NULL CHECK (seat_number BETWEEN 1 AND 7),
+    seated_at INTEGER NOT NULL,
+    unseated_at INTEGER,
+    unseated_by TEXT,
+    unseated_reason TEXT CHECK (unseated_reason IN ('bumped', 'left_server', 'ineligible', NULL)),
+    FOREIGN KEY (member_id) REFERENCES member_profiles(id),
+    FOREIGN KEY (unseated_by) REFERENCES member_profiles(id)
+);
+
+CREATE INDEX idx_naib_current ON naib_seats(member_id) WHERE unseated_at IS NULL;
+CREATE INDEX idx_naib_history ON naib_seats(member_id, seated_at);
+
+-- Notification preferences (retained from v2.1)
+CREATE TABLE notification_preferences (
+    member_id TEXT PRIMARY KEY,
+    position_updates_enabled INTEGER DEFAULT 1,
+    position_update_frequency TEXT DEFAULT '3_per_week',
+    at_risk_warnings_enabled INTEGER DEFAULT 1,
+    naib_alerts_enabled INTEGER DEFAULT 1,
+    last_position_alert_at INTEGER,
+    alerts_sent_this_week INTEGER DEFAULT 0,
+    week_start_timestamp INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (member_id) REFERENCES member_profiles(id)
+);
+
+-- Alert history for audit and rate limiting (retained from v2.1)
+CREATE TABLE alert_history (
+    id TEXT PRIMARY KEY,
+    member_id TEXT,
+    discord_user_id TEXT,
+    alert_type TEXT NOT NULL CHECK (alert_type IN (
+        'position_update',
+        'at_risk_warning',
+        'naib_threat',
+        'bump_notification',
+        'tier_promotion',
+        'badge_award'
+    )),
+    content_summary TEXT,
+    sent_at INTEGER NOT NULL,
+    FOREIGN KEY (member_id) REFERENCES member_profiles(id)
+);
+
+CREATE INDEX idx_alert_history_member ON alert_history(member_id, sent_at);
+CREATE INDEX idx_alert_history_type ON alert_history(alert_type, sent_at);
 ```
 
 ### 7.2 New Services
@@ -539,34 +676,49 @@ CREATE TABLE weekly_digests (
 | `DigestService` | Weekly stats collection, posting |
 | `StoryService` | Fragment selection, posting |
 
-### 7.3 API Endpoints
+### 7.3 Retained Services (from v2.1)
+
+| Service | Responsibility |
+|---------|----------------|
+| `NaibService` | Naib seat management, bumping logic, history |
+| `NotificationService` | Position alerts, at-risk warnings, Naib threats, rate limiting |
+| `ThresholdService` | Fedaykin threshold calculation, distance metrics |
+
+### 7.4 API Endpoints
 
 ```
 # Public
 GET  /api/tiers                    → Tier definitions and thresholds
 GET  /api/stats/community          → Public community stats
+GET  /api/naib                     → Current Naib + Former Naib list
+GET  /api/threshold                → Current Fedaykin entry threshold
 
 # Member (authenticated)
 GET  /api/me/stats                 → Personal activity stats
 GET  /api/me/tier-progress         → Distance to next tier
+GET  /api/me/position              → Position relative to above/below
 POST /api/invite                   → Create sponsor invite
 GET  /api/invite/status            → Check invite status
+GET  /api/notifications/preferences   → Get notification settings
+PUT  /api/notifications/preferences   → Update notification settings
 
 # Admin
 GET  /admin/analytics              → Full analytics dashboard
 POST /admin/badges/water-sharer    → Grant sponsor badge
 DELETE /admin/invites/:id          → Revoke invite
+GET  /admin/alerts/stats           → Alert delivery statistics
 ```
 
-### 7.4 Scheduled Tasks
+### 7.5 Scheduled Tasks
 
 | Task | Schedule | Function |
 |------|----------|----------|
-| `syncEligibility` | Every 6 hours | Sync BGT, update tiers, send promotions |
+| `syncEligibility` | Every 6 hours | Sync BGT, update tiers, evaluate Naib seats, send promotions |
+| `processPositionAlerts` | Daily | Send position alerts respecting frequency limits |
 | `weeklyDigest` | Monday 00:00 UTC | Generate and post weekly digest |
 | `weeklyReset` | Monday 00:00 UTC | Reset weekly alert counters |
 
-### 7.5 Non-Functional Requirements
+### 7.6 Non-Functional Requirements
 
 | Requirement | Specification |
 |-------------|---------------|
@@ -604,6 +756,7 @@ All tiers receive same privacy protections:
 
 ### 9.1 In Scope (v3.0)
 
+**New Features:**
 - [x] 9-tier membership system
 - [x] BGT-based automatic tier assignment
 - [x] Tier-specific channel permissions
@@ -618,6 +771,16 @@ All tiers receive same privacy protections:
 - [x] Admin analytics dashboard
 - [x] Usul Ascended badge
 - [x] Full onboarding for all tiers
+
+**Retained from v2.1:**
+- [x] Dynamic Naib system (7 seats, BGT competition, tenure tie-breaker)
+- [x] Former Naib status and recognition
+- [x] Naib Archives for Naib + Former Naib
+- [x] Position alert system (relative standings for Fedaykin/Naib)
+- [x] At-risk warnings (bottom ~10% of Fedaykin)
+- [x] Naib threat alerts
+- [x] Notification preferences (opt-in, configurable frequency)
+- [x] `/naib`, `/threshold`, `/position`, `/alerts` commands
 
 ### 9.2 Out of Scope (Future)
 
