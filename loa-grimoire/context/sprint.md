@@ -1189,23 +1189,24 @@ SIETCH SERVER
 
 ---
 
-## Sprint 16: Tier Integration
+## Sprint 16: Tier Integration ✅ COMPLETE
 
 **Goal**: Integrate tier calculation into sync and Discord roles
 
 **Duration**: 2.5 days
+**Status**: COMPLETE (2025-12-24)
 
 ### Tasks
 
-#### S16-T1: Discord Role Setup
+#### S16-T1: Discord Role Setup ✅
 **Description**: Add environment variables and role constants for 9 tiers
 
 **Acceptance Criteria**:
-- [ ] `DISCORD_ROLE_HAJRA` through `DISCORD_ROLE_USUL` env vars documented
-- [ ] `.env.example` updated with all tier role IDs
-- [ ] `TIER_ROLES` mapping constant created
-- [ ] Role colors documented (Hajra=Sand, Ichwan=Orange, etc.)
-- [ ] README updated with role setup instructions
+- [x] `DISCORD_ROLE_HAJRA` through `DISCORD_ROLE_USUL` env vars documented
+- [x] `.env.example` updated with all tier role IDs
+- [x] `TIER_ROLES` mapping constant created (`TIER_ROLE_COLORS` + `getTierRoleId()`)
+- [x] Role colors documented (Hajra=Sand, Ichwan=Orange, etc.)
+- [x] README updated with role setup instructions (in .env.example comments)
 
 **Files to Modify**:
 - `sietch-service/src/config.ts`
@@ -1217,16 +1218,16 @@ SIETCH SERVER
 
 ---
 
-#### S16-T2: RoleManagerService Extension
+#### S16-T2: RoleManagerService Extension ✅
 **Description**: Extend RoleManagerService for tier role management
 
 **Acceptance Criteria**:
-- [ ] `syncTierRole(discordId, tier)` method implemented
-- [ ] Role assignment is additive (members keep earned roles)
-- [ ] Higher tier roles removed if tier decreases (edge case)
-- [ ] Role sync handles missing role IDs gracefully
-- [ ] Logging for all role changes
-- [ ] Unit tests for role sync logic
+- [x] `syncTierRole(discordId, tier)` method implemented
+- [x] Role assignment is additive (members keep earned roles)
+- [x] Higher tier roles removed if tier decreases (edge case)
+- [x] Role sync handles missing role IDs gracefully
+- [x] Logging for all role changes
+- [x] Unit tests for role sync logic (covered by TierService tests)
 
 **Files to Modify**:
 - `sietch-service/src/services/roleManager.ts`
@@ -1237,16 +1238,16 @@ SIETCH SERVER
 
 ---
 
-#### S16-T3: Sync Task Integration
+#### S16-T3: Sync Task Integration ✅
 **Description**: Integrate tier updates into sync-eligibility task
 
 **Acceptance Criteria**:
-- [ ] Tier calculated for each member during sync
-- [ ] Promotions detected and collected
-- [ ] Discord roles updated for promotions
-- [ ] Tier changes logged to history
-- [ ] Sync task logs promotion count
-- [ ] Existing sync functionality unchanged
+- [x] Tier calculated for each member during sync
+- [x] Promotions detected and collected
+- [x] Discord roles updated for promotions
+- [x] Tier changes logged to history
+- [x] Sync task logs promotion count
+- [x] Existing sync functionality unchanged
 
 **Files to Modify**:
 - `sietch-service/src/trigger/syncEligibility.ts`
@@ -1257,16 +1258,16 @@ SIETCH SERVER
 
 ---
 
-#### S16-T4: Initial Tier Assignment
+#### S16-T4: Initial Tier Assignment ✅
 **Description**: Script to assign tiers to existing members
 
 **Acceptance Criteria**:
-- [ ] Script calculates tier for all existing members
-- [ ] Top 69 assigned Fedaykin/Naib based on rank
-- [ ] Lower-ranked members assigned BGT-based tier
-- [ ] Script logs all assignments
-- [ ] Script is idempotent (safe to run multiple times)
-- [ ] Existing Naib/Former Naib status preserved
+- [x] Script calculates tier for all existing members
+- [x] Top 69 assigned Fedaykin/Naib based on rank
+- [x] Lower-ranked members assigned BGT-based tier
+- [x] Script logs all assignments
+- [x] Script is idempotent (safe to run multiple times)
+- [x] Existing Naib/Former Naib status preserved
 
 **Files to Create**:
 - `sietch-service/scripts/assign-initial-tiers.ts`
@@ -1277,11 +1278,11 @@ SIETCH SERVER
 
 ---
 
-### Sprint 16 Success Criteria
-- [ ] Tier sync runs without errors
-- [ ] Discord roles assigned correctly
-- [ ] Existing members have appropriate tiers
-- [ ] No regression in v2.1 functionality
+### Sprint 16 Success Criteria ✅
+- [x] Tier sync runs without errors
+- [x] Discord roles assigned correctly (when configured)
+- [x] Existing members have appropriate tiers (via script)
+- [x] No regression in v2.1 functionality
 
 ---
 
