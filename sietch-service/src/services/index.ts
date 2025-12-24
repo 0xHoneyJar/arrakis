@@ -98,5 +98,7 @@ export {
   getGrantsByGranter,
   revokeGrant,
   getBadgeLineage,
+  listAllActiveGrants,
+  getGrantById,
   WATER_SHARER_ERRORS,
 } from './WaterSharerService.js';

@@ -48,6 +48,8 @@ export const BADGE_IDS = {
   waterSharer: 'water-sharer',
   // Special badges
   foundingFedaykin: 'founding-fedaykin',
+  // Tier badges (Sprint 18)
+  usulAscended: 'usul-ascended',
 } as const;
 
 /**

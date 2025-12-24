@@ -5,7 +5,8 @@ import { discordService } from '../services/discord.js';
 import { naibService } from '../services/naib.js';
 import { thresholdService } from '../services/threshold.js';
 import { notificationService } from '../services/notification.js';
-import { tierService, syncTierRole, isTierRolesConfigured } from '../services/index.js';
+import { tierService, syncTierRole, isTierRolesConfigured, TIER_INFO, awardBadge, BADGE_IDS } from '../services/index.js';
+import { memberHasBadge } from '../db/queries.js';
 import {
   initDatabase,
   saveEligibilitySnapshot,
@@ -111,7 +112,7 @@ export const syncEligibilityTask = schedules.task({
       }
 
       // 9. Calculate and sync tier for each member (v3.0)
-      let tierStats = { updated: 0, promotions: 0, demotions: 0, roleChanges: 0, errors: 0 };
+      let tierStats = { updated: 0, promotions: 0, demotions: 0, roleChanges: 0, errors: 0, dmsSent: 0 };
       if (isTierRolesConfigured()) {
         try {
           triggerLogger.info('Processing tier updates for members...');
@@ -144,8 +145,65 @@ export const syncEligibilityTask = schedules.task({
                   tierStats.updated++;
 
                   // Check if promotion or demotion
-                  if (oldTier && tierService.isPromotion(oldTier, newTier)) {
+                  // Note: First tier assignment (oldTier === null) is NOT a promotion
+                  const isPromotion = oldTier !== null && tierService.isPromotion(oldTier, newTier);
+                  if (isPromotion) {
                     tierStats.promotions++;
+
+                    // Send tier promotion DM (Sprint 18)
+                    // Only for actual promotions, not first tier assignment
+                    try {
+                      const newTierInfo = TIER_INFO[newTier];
+                      const isRankBased = newTier === 'naib' || newTier === 'fedaykin';
+
+                      await notificationService.sendTierPromotion(profile.memberId, {
+                        oldTier: oldTier, // Safe - we know oldTier is not null
+                        newTier,
+                        newTierName: newTierInfo.name,
+                        bgtThreshold: newTierInfo.bgtThreshold,
+                        isRankBased,
+                      });
+
+                      tierStats.dmsSent++;
+                      triggerLogger.debug('Tier promotion DM sent', {
+                        memberId: profile.memberId,
+                        oldTier,
+                        newTier,
+                      });
+                    } catch (dmError) {
+                      // DM failures are non-critical
+                      triggerLogger.warn('Failed to send tier promotion DM', {
+                        memberId: profile.memberId,
+                        error: dmError instanceof Error ? dmError.message : String(dmError),
+                      });
+                    }
+
+                    // Auto-award Usul Ascended badge when promoted to Usul tier (Sprint 18)
+                    if (newTier === 'usul' && !memberHasBadge(profile.memberId, BADGE_IDS.usulAscended)) {
+                      try {
+                        const badge = awardBadge(profile.memberId, BADGE_IDS.usulAscended, {
+                          reason: 'Reached Usul tier (1111+ BGT)',
+                        });
+                        if (badge) {
+                          triggerLogger.info('Usul Ascended badge awarded', { memberId: profile.memberId });
+
+                          // Send badge award DM
+                          await notificationService.sendBadgeAward(profile.memberId, {
+                            badgeId: BADGE_IDS.usulAscended,
+                            badgeName: 'Usul Ascended',
+                            badgeDescription: 'Reached the Usul tier - the base of the pillar, the innermost identity. 1111+ BGT',
+                            badgeEmoji: '\u2B50',
+                            awardReason: 'Reached Usul tier (1111+ BGT)',
+                            isWaterSharer: false,
+                          });
+                        }
+                      } catch (badgeError) {
+                        triggerLogger.warn('Failed to award Usul Ascended badge', {
+                          memberId: profile.memberId,
+                          error: badgeError instanceof Error ? badgeError.message : String(badgeError),
+                        });
+                      }
+                    }
                   } else if (oldTier) {
                     tierStats.demotions++;
                   }
@@ -176,6 +234,7 @@ export const syncEligibilityTask = schedules.task({
               promotions: tierStats.promotions,
               demotions: tierStats.demotions,
               roleChanges: tierStats.roleChanges,
+              dmsSent: tierStats.dmsSent,
               errors: tierStats.errors,
             });
           }

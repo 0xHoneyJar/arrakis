@@ -851,7 +851,9 @@ export type AlertType =
   | 'naib_threat'         // Naib seat at risk from challenger
   | 'naib_bump'           // Naib member was bumped
   | 'naib_seated'         // Member just got Naib seat
-  | 'waitlist_eligible';  // Waitlist member became eligible
+  | 'waitlist_eligible'   // Waitlist member became eligible
+  | 'tier_promotion'      // Member promoted to higher tier (Sprint 18)
+  | 'badge_award';        // Badge awarded to member (Sprint 18)
 
 /**
  * Alert frequency preferences
@@ -915,7 +917,9 @@ export type AlertData =
   | NaibThreatAlertData
   | NaibBumpAlertData
   | NaibSeatedAlertData
-  | WaitlistEligibleAlertData;
+  | WaitlistEligibleAlertData
+  | TierPromotionAlertData
+  | BadgeAwardAlertData;
 
 /**
  * Position update alert data
@@ -982,6 +986,44 @@ export interface WaitlistEligibleAlertData {
   previousPosition: number;
   currentPosition: number;
   bgt: number;
+}
+
+/**
+ * Tier promotion alert data (v3.0 - Sprint 18)
+ * Sent when member is promoted to a higher tier
+ */
+export interface TierPromotionAlertData {
+  type: 'tier_promotion';
+  /** Previous tier */
+  oldTier: string;
+  /** New (higher) tier */
+  newTier: string;
+  /** Display name of new tier */
+  newTierName: string;
+  /** BGT threshold for new tier (null if rank-based) */
+  bgtThreshold: number | null;
+  /** Whether new tier is rank-based (Fedaykin/Naib) */
+  isRankBased: boolean;
+}
+
+/**
+ * Badge award alert data (v3.0 - Sprint 18)
+ * Sent when admin awards a badge to a member
+ */
+export interface BadgeAwardAlertData {
+  type: 'badge_award';
+  /** Badge ID */
+  badgeId: string;
+  /** Badge display name */
+  badgeName: string;
+  /** Badge description */
+  badgeDescription: string;
+  /** Badge emoji */
+  badgeEmoji: string | null;
+  /** Reason for awarding (admin-provided) */
+  awardReason: string | null;
+  /** Whether this is Water Sharer badge (for special messaging) */
+  isWaterSharer: boolean;
 }
 
 /**

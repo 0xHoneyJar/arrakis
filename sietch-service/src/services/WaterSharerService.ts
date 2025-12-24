@@ -430,6 +430,99 @@ export function revokeGrant(grantId: string, revokedBy: string): number {
 }
 
 /**
+ * List all active Water Sharer grants (for admin/debugging)
+ *
+ * @returns Array of all active grants with granter and recipient info
+ */
+export function listAllActiveGrants(): Array<{
+  grant: WaterSharerGrant;
+  granter: { memberId: string; nym: string };
+  recipient: { memberId: string; nym: string };
+}> {
+  const db = getDatabase();
+
+  const rows = db.prepare(`
+    SELECT
+      wsg.id, wsg.granter_member_id, wsg.recipient_member_id, wsg.granted_at,
+      granter.nym as granter_nym,
+      recipient.nym as recipient_nym
+    FROM water_sharer_grants wsg
+    JOIN member_profiles granter ON granter.member_id = wsg.granter_member_id
+    JOIN member_profiles recipient ON recipient.member_id = wsg.recipient_member_id
+    WHERE wsg.revoked_at IS NULL
+    ORDER BY wsg.granted_at DESC
+  `).all() as Array<{
+    id: string;
+    granter_member_id: string;
+    recipient_member_id: string;
+    granted_at: number;
+    granter_nym: string;
+    recipient_nym: string;
+  }>;
+
+  return rows.map((row) => ({
+    grant: {
+      id: row.id,
+      granterMemberId: row.granter_member_id,
+      recipientMemberId: row.recipient_member_id,
+      grantedAt: new Date(row.granted_at),
+      revokedAt: null,
+    },
+    granter: { memberId: row.granter_member_id, nym: row.granter_nym },
+    recipient: { memberId: row.recipient_member_id, nym: row.recipient_nym },
+  }));
+}
+
+/**
+ * Get a grant by ID
+ *
+ * @param grantId - The grant ID to fetch
+ * @returns Grant with granter and recipient info, or null if not found
+ */
+export function getGrantById(grantId: string): {
+  grant: WaterSharerGrant;
+  granter: { memberId: string; nym: string };
+  recipient: { memberId: string; nym: string };
+} | null {
+  const db = getDatabase();
+
+  const row = db.prepare(`
+    SELECT
+      wsg.id, wsg.granter_member_id, wsg.recipient_member_id, wsg.granted_at, wsg.revoked_at,
+      granter.nym as granter_nym,
+      recipient.nym as recipient_nym
+    FROM water_sharer_grants wsg
+    JOIN member_profiles granter ON granter.member_id = wsg.granter_member_id
+    JOIN member_profiles recipient ON recipient.member_id = wsg.recipient_member_id
+    WHERE wsg.id = ?
+  `).get(grantId) as {
+    id: string;
+    granter_member_id: string;
+    recipient_member_id: string;
+    granted_at: number;
+    revoked_at: number | null;
+    granter_nym: string;
+    recipient_nym: string;
+  } | undefined;
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    grant: {
+      id: row.id,
+      granterMemberId: row.granter_member_id,
+      recipientMemberId: row.recipient_member_id,
+      grantedAt: new Date(row.granted_at),
+      revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
+    },
+    granter: { memberId: row.granter_member_id, nym: row.granter_nym },
+    recipient: { memberId: row.recipient_member_id, nym: row.recipient_nym },
+  };
+}
+
+/**
  * Get the full badge lineage for a member (who they received from, who they shared to)
  *
  * @param memberId - The member ID to check
