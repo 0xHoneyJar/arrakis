@@ -1091,3 +1091,304 @@ export interface AlertStatsResponse {
   /** Members with at_risk_warnings disabled */
   at_risk_warnings_disabled: number;
 }
+
+// =============================================================================
+// Tier System Types (v3.0 - Sprint 15: Tier Foundation)
+// =============================================================================
+
+/**
+ * Valid tier names in the Sietch v3.0 system
+ * Ordered from lowest to highest (except Naib/Fedaykin are rank-based)
+ */
+export type Tier =
+  | 'hajra'       // 6.9+ BGT - Entry level
+  | 'ichwan'      // 69+ BGT - Brotherhood
+  | 'qanat'       // 222+ BGT - Underground channels
+  | 'sihaya'      // 420+ BGT - Desert spring
+  | 'mushtamal'   // 690+ BGT - Inner garden
+  | 'sayyadina'   // 888+ BGT - Priestess rank
+  | 'usul'        // 1111+ BGT - Base of the pillar
+  | 'fedaykin'    // Top 8-69 - Elite warriors (rank-based)
+  | 'naib';       // Top 7 - Tribal leaders (rank-based)
+
+/**
+ * Tier history entry tracking member progression
+ */
+export interface TierHistoryEntry {
+  /** Auto-incrementing ID */
+  id: number;
+  /** Member whose tier changed */
+  memberId: string;
+  /** Previous tier (null for initial assignment) */
+  oldTier: Tier | null;
+  /** New tier */
+  newTier: Tier;
+  /** BGT holdings at time of change (wei as string) */
+  bgtAtChange: string;
+  /** Eligibility rank at time of change */
+  rankAtChange: number | null;
+  /** When the change occurred */
+  changedAt: Date;
+}
+
+/**
+ * Sponsor invite record
+ */
+export interface SponsorInvite {
+  /** Auto-incrementing ID */
+  id: number;
+  /** Sponsor member ID (must have Water Sharer badge) */
+  sponsorMemberId: string;
+  /** Invitee Discord user ID */
+  inviteeDiscordUserId: string;
+  /** Sponsor's tier at time of invite (invitee inherits this) */
+  sponsorTierAtInvite: Tier;
+  /** Invite status */
+  status: 'pending' | 'accepted' | 'expired' | 'revoked';
+  /** When invite was created */
+  createdAt: Date;
+  /** When invite was accepted (null if not accepted) */
+  acceptedAt: Date | null;
+  /** Member ID created after acceptance (null if not accepted) */
+  inviteeMemberId: string | null;
+  /** Admin who revoked (if status = 'revoked') */
+  revokedBy: string | null;
+  /** Reason for revocation */
+  revokeReason: string | null;
+  /** When revoked */
+  revokedAt: Date | null;
+}
+
+/**
+ * Story fragment for elite member joins
+ */
+export interface StoryFragment {
+  /** Auto-incrementing ID */
+  id: number;
+  /** Fragment category (determines when it's used) */
+  category: 'fedaykin_join' | 'naib_join';
+  /** The narrative text (Markdown supported) */
+  fragmentText: string;
+  /** How many times this fragment has been used */
+  usageCount: number;
+  /** When fragment was added */
+  createdAt: Date;
+  /** When fragment was last used */
+  lastUsedAt: Date | null;
+}
+
+/**
+ * Weekly digest record
+ */
+export interface WeeklyDigest {
+  /** Auto-incrementing ID */
+  id: number;
+  /** Week identifier (ISO 8601 week: YYYY-Wnn) */
+  weekIdentifier: string;
+  /** Total members at time of digest */
+  totalMembers: number;
+  /** New members this week */
+  newMembers: number;
+  /** Total BGT represented (wei as string) */
+  totalBgt: string;
+  /** Tier distribution (JSON parsed) */
+  tierDistribution: Record<Tier, number>;
+  /** Most active tier this week */
+  mostActiveTier: Tier | null;
+  /** Total promotions this week */
+  promotionsCount: number;
+  /** Notable promotions (JSON parsed array) */
+  notablePromotions: Array<{
+    memberNym: string;
+    oldTier: Tier;
+    newTier: Tier;
+    timestamp: Date;
+  }> | null;
+  /** Badges awarded this week */
+  badgesAwarded: number;
+  /** Top new member by BGT (nym) */
+  topNewMemberNym: string | null;
+  /** Discord message ID of posted digest */
+  messageId: string | null;
+  /** Discord channel ID where posted */
+  channelId: string | null;
+  /** When digest was generated */
+  generatedAt: Date;
+  /** When digest was posted to Discord */
+  postedAt: Date | null;
+}
+
+/**
+ * Tier progress information for a member
+ * Shows current tier, next tier, and progress toward it
+ */
+export interface TierProgress {
+  /** Member's current tier */
+  currentTier: Tier;
+  /** Next tier in progression (null if at Naib) */
+  nextTier: Tier | null;
+  /** BGT needed to reach next tier (null if rank-based or at max) */
+  bgtToNextTier: string | null;
+  /** Human-readable BGT needed */
+  bgtToNextTierFormatted: number | null;
+  /** Current BGT holdings (wei as string) */
+  currentBgt: string;
+  /** Human-readable current BGT */
+  currentBgtFormatted: number;
+  /** Current eligibility rank */
+  currentRank: number | null;
+  /** Whether current tier is rank-based (Fedaykin/Naib) */
+  isRankBased: boolean;
+}
+
+/**
+ * Personal stats for /stats command
+ * Combines profile, activity, badges, and tier information
+ */
+export interface PersonalStats {
+  /** Member nym */
+  nym: string;
+  /** Member ID */
+  memberId: string;
+  /** Current tier */
+  tier: Tier;
+  /** Tier progress */
+  tierProgress: TierProgress;
+  /** Member since */
+  memberSince: Date;
+  /** Tenure category */
+  tenureCategory: 'og' | 'veteran' | 'elder' | 'member';
+  /** Messages this week */
+  messagesThisWeek: number;
+  /** Current activity streak (days) */
+  currentStreak: number;
+  /** Longest activity streak (days) */
+  longestStreak: number;
+  /** Total badges earned */
+  badgeCount: number;
+  /** Badge list */
+  badges: PublicBadge[];
+}
+
+/**
+ * Admin analytics data
+ * Full community health metrics for admin dashboard
+ */
+export interface AdminAnalytics {
+  /** Total members across all tiers */
+  totalMembers: number;
+  /** Members by tier */
+  membersByTier: Record<Tier, number>;
+  /** Total BGT represented (human-readable) */
+  totalBgt: number;
+  /** Total BGT represented (wei as string) */
+  totalBgtWei: string;
+  /** Weekly active members (active in last 7 days) */
+  weeklyActive: number;
+  /** New members this week */
+  newThisWeek: number;
+  /** Promotions this week */
+  promotionsThisWeek: number;
+  /** Badges awarded this week */
+  badgesAwardedThisWeek: number;
+  /** Average messages per member this week */
+  avgMessagesPerMember: number;
+  /** Tier with highest activity */
+  mostActiveTier: Tier | null;
+  /** Generated at timestamp */
+  generatedAt: Date;
+}
+
+/**
+ * Tier distribution data
+ * Count of members in each tier for analytics
+ */
+export interface TierDistribution {
+  hajra: number;
+  ichwan: number;
+  qanat: number;
+  sihaya: number;
+  mushtamal: number;
+  sayyadina: number;
+  usul: number;
+  fedaykin: number;
+  naib: number;
+}
+
+/**
+ * API response for GET /api/tiers
+ */
+export interface TiersResponse {
+  /** All tier definitions with thresholds */
+  tiers: Array<{
+    name: Tier;
+    bgt_threshold: number | null; // null for rank-based tiers
+    rank_requirement: string | null; // "Top 7" or "Top 8-69" for rank-based
+    description: string;
+  }>;
+}
+
+/**
+ * API response for GET /api/stats/community
+ */
+export interface CommunityStatsResponse {
+  /** Total members */
+  total_members: number;
+  /** Members by tier */
+  members_by_tier: Record<Tier, number>;
+  /** Total BGT represented */
+  total_bgt: number;
+  /** Weekly active members */
+  weekly_active: number;
+  /** When data was generated */
+  generated_at: string;
+}
+
+/**
+ * API response for GET /api/me/stats
+ */
+export interface MemberStatsResponse {
+  /** Member nym */
+  nym: string;
+  /** Current tier */
+  tier: Tier;
+  /** Tier progress */
+  tier_progress: {
+    current_tier: Tier;
+    next_tier: Tier | null;
+    bgt_to_next_tier: number | null;
+    current_bgt: number;
+    current_rank: number | null;
+    is_rank_based: boolean;
+  };
+  /** Member since */
+  member_since: string;
+  /** Tenure category */
+  tenure_category: 'og' | 'veteran' | 'elder' | 'member';
+  /** Activity stats */
+  activity: {
+    messages_this_week: number;
+    current_streak: number;
+    longest_streak: number;
+  };
+  /** Badge count */
+  badge_count: number;
+}
+
+/**
+ * API response for GET /api/me/tier-progress
+ */
+export interface TierProgressResponse {
+  /** Current tier */
+  current_tier: Tier;
+  /** Next tier */
+  next_tier: Tier | null;
+  /** BGT needed to reach next tier */
+  bgt_to_next_tier: number | null;
+  /** Current BGT holdings */
+  current_bgt: number;
+  /** Current eligibility rank */
+  current_rank: number | null;
+  /** Whether current tier is rank-based */
+  is_rank_based: boolean;
+}
