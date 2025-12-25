@@ -1,0 +1,466 @@
+/**
+ * Billing Type Definitions (v4.0 - Sprint 23)
+ *
+ * Type definitions for the billing system including:
+ * - Subscription tiers and features
+ * - Stripe integration types
+ * - Entitlement system types
+ * - Fee waiver types
+ */
+
+// =============================================================================
+// Subscription Tiers
+// =============================================================================
+
+/**
+ * Available subscription tiers
+ * Ordered from lowest to highest access level
+ */
+export type SubscriptionTier =
+  | 'starter'     // Free tier - 100 members
+  | 'basic'       // $29/mo - 500 members
+  | 'premium'     // $99/mo - 1000 members
+  | 'exclusive'   // $199/mo - 2500 members
+  | 'elite'       // $449/mo - 10000 members
+  | 'enterprise'; // Custom - unlimited
+
+/**
+ * Subscription status
+ */
+export type SubscriptionStatus =
+  | 'active'      // Paid and current
+  | 'past_due'    // Payment failed, in grace period
+  | 'canceled'    // Will not renew
+  | 'trialing'    // Trial period
+  | 'unpaid';     // Grace period expired
+
+/**
+ * Tier hierarchy for comparison (higher number = more access)
+ */
+export const TIER_HIERARCHY: Record<SubscriptionTier, number> = {
+  starter: 0,
+  basic: 1,
+  premium: 2,
+  exclusive: 3,
+  elite: 4,
+  enterprise: 5,
+};
+
+// =============================================================================
+// Features
+// =============================================================================
+
+/**
+ * Gated features that can be controlled by subscription tier
+ */
+export type Feature =
+  // Core features (Starter+)
+  | 'discord_bot'
+  | 'basic_onboarding'
+  | 'member_profiles'
+  // Basic+ features
+  | 'stats_leaderboard'
+  | 'position_alerts'
+  | 'custom_nym'
+  // Premium+ features
+  | 'nine_tier_system'
+  | 'custom_pfp'
+  | 'weekly_digest'
+  | 'activity_tracking'
+  | 'score_badge'           // Free for Premium+, purchasable for lower tiers
+  // Exclusive+ features
+  | 'admin_analytics'
+  | 'naib_dynamics'
+  | 'water_sharer_badge'
+  // Elite+ features
+  | 'custom_branding'
+  | 'priority_support'
+  | 'api_access'
+  // Enterprise only
+  | 'white_label'
+  | 'dedicated_support'
+  | 'custom_integrations';
+
+/**
+ * Feature access result from Gatekeeper
+ */
+export interface AccessResult {
+  /** Whether access is granted */
+  canAccess: boolean;
+  /** Current subscription tier */
+  tier: SubscriptionTier;
+  /** Minimum tier required for this feature */
+  requiredTier: SubscriptionTier;
+  /** Whether currently in grace period */
+  inGracePeriod: boolean;
+  /** URL to upgrade subscription (if access denied) */
+  upgradeUrl?: string;
+  /** Human-readable reason for denial */
+  reason?: string;
+}
+
+// =============================================================================
+// Subscription
+// =============================================================================
+
+/**
+ * Subscription record stored in database
+ */
+export interface Subscription {
+  /** Unique subscription ID (UUID) */
+  id: string;
+  /** Community identifier */
+  communityId: string;
+  /** Stripe customer ID */
+  stripeCustomerId?: string;
+  /** Stripe subscription ID */
+  stripeSubscriptionId?: string;
+  /** Current subscription tier */
+  tier: SubscriptionTier;
+  /** Subscription status */
+  status: SubscriptionStatus;
+  /** Grace period end timestamp (null if not in grace) */
+  graceUntil?: Date;
+  /** Current billing period start */
+  currentPeriodStart?: Date;
+  /** Current billing period end */
+  currentPeriodEnd?: Date;
+  /** Record creation timestamp */
+  createdAt: Date;
+  /** Record update timestamp */
+  updatedAt: Date;
+}
+
+/**
+ * Subscription creation parameters
+ */
+export interface CreateSubscriptionParams {
+  communityId: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  tier?: SubscriptionTier;
+  status?: SubscriptionStatus;
+}
+
+/**
+ * Subscription update parameters
+ */
+export interface UpdateSubscriptionParams {
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  tier?: SubscriptionTier;
+  status?: SubscriptionStatus;
+  graceUntil?: Date | null;
+  currentPeriodStart?: Date;
+  currentPeriodEnd?: Date;
+}
+
+// =============================================================================
+// Fee Waivers
+// =============================================================================
+
+/**
+ * Fee waiver record stored in database
+ */
+export interface FeeWaiver {
+  /** Unique waiver ID (UUID) */
+  id: string;
+  /** Community receiving the waiver */
+  communityId: string;
+  /** Tier features granted by waiver */
+  tier: SubscriptionTier;
+  /** Reason for granting waiver */
+  reason: string;
+  /** Admin who granted the waiver */
+  grantedBy: string;
+  /** When waiver was granted */
+  grantedAt: Date;
+  /** When waiver expires (null = permanent) */
+  expiresAt?: Date;
+  /** When waiver was revoked (null = active) */
+  revokedAt?: Date;
+  /** Admin who revoked (if revoked) */
+  revokedBy?: string;
+  /** Reason for revocation */
+  revokeReason?: string;
+  /** Record creation timestamp */
+  createdAt: Date;
+  /** Record update timestamp */
+  updatedAt: Date;
+}
+
+/**
+ * Fee waiver creation parameters
+ */
+export interface CreateFeeWaiverParams {
+  communityId: string;
+  tier: SubscriptionTier;
+  reason: string;
+  grantedBy: string;
+  expiresAt?: Date;
+}
+
+/**
+ * Fee waiver revocation parameters
+ */
+export interface RevokeFeeWaiverParams {
+  revokedBy: string;
+  revokeReason: string;
+}
+
+// =============================================================================
+// Entitlements
+// =============================================================================
+
+/**
+ * Entitlement source - how the entitlement was determined
+ */
+export type EntitlementSource = 'subscription' | 'waiver' | 'free' | 'boost';
+
+/**
+ * Community entitlements (cached result)
+ */
+export interface Entitlements {
+  /** Community identifier */
+  communityId: string;
+  /** Effective subscription tier */
+  tier: SubscriptionTier;
+  /** Maximum members allowed */
+  maxMembers: number;
+  /** List of enabled features */
+  features: Feature[];
+  /** How entitlement was determined */
+  source: EntitlementSource;
+  /** Whether currently in grace period */
+  inGracePeriod: boolean;
+  /** Grace period end time (if applicable) */
+  graceUntil?: Date;
+  /** Cache timestamp */
+  cachedAt: Date;
+  /** Cache expiration timestamp */
+  expiresAt: Date;
+}
+
+/**
+ * Tier information for API response
+ */
+export interface TierInfo {
+  /** Tier name */
+  tier: SubscriptionTier;
+  /** Display name */
+  name: string;
+  /** Monthly price in USD */
+  price: number;
+  /** Maximum members allowed */
+  maxMembers: number;
+  /** How entitlement was determined */
+  source: EntitlementSource;
+  /** Whether currently in grace period */
+  inGracePeriod: boolean;
+}
+
+// =============================================================================
+// Webhook Events
+// =============================================================================
+
+/**
+ * Webhook event record stored in database
+ */
+export interface WebhookEvent {
+  /** Unique event ID (UUID) */
+  id: string;
+  /** Stripe event ID */
+  stripeEventId: string;
+  /** Event type (e.g., 'checkout.session.completed') */
+  eventType: string;
+  /** Processing status */
+  status: 'processing' | 'processed' | 'failed';
+  /** Event payload (JSON string) */
+  payload: string;
+  /** Error message if failed */
+  errorMessage?: string;
+  /** When event was received */
+  receivedAt: Date;
+  /** When event was processed */
+  processedAt?: Date;
+  /** Record creation timestamp */
+  createdAt: Date;
+}
+
+/**
+ * Supported Stripe webhook event types
+ */
+export type StripeEventType =
+  | 'checkout.session.completed'
+  | 'invoice.paid'
+  | 'invoice.payment_failed'
+  | 'customer.subscription.updated'
+  | 'customer.subscription.deleted';
+
+// =============================================================================
+// Billing Audit Log
+// =============================================================================
+
+/**
+ * Billing audit log entry
+ */
+export interface BillingAuditEntry {
+  /** Unique entry ID */
+  id: number;
+  /** Event type */
+  eventType: BillingAuditEventType;
+  /** Community affected */
+  communityId?: string;
+  /** Event data (parsed JSON) */
+  eventData: Record<string, unknown>;
+  /** Actor who triggered the event */
+  actor?: string;
+  /** Event timestamp */
+  createdAt: Date;
+}
+
+/**
+ * Billing audit event types
+ */
+export type BillingAuditEventType =
+  | 'subscription_created'
+  | 'subscription_updated'
+  | 'subscription_canceled'
+  | 'payment_succeeded'
+  | 'payment_failed'
+  | 'grace_period_started'
+  | 'grace_period_ended'
+  | 'waiver_granted'
+  | 'waiver_revoked'
+  | 'feature_denied'
+  | 'entitlement_cached'
+  | 'webhook_processed'
+  | 'webhook_failed';
+
+// =============================================================================
+// Stripe Service Types
+// =============================================================================
+
+/**
+ * Checkout session creation parameters
+ */
+export interface CreateCheckoutParams {
+  /** Community identifier */
+  communityId: string;
+  /** Target subscription tier */
+  tier: SubscriptionTier;
+  /** URL to redirect after successful checkout */
+  successUrl: string;
+  /** URL to redirect if checkout is canceled */
+  cancelUrl: string;
+  /** Stripe customer ID (optional, created if not provided) */
+  customerId?: string;
+  /** Additional metadata */
+  metadata?: Record<string, string>;
+}
+
+/**
+ * Checkout session result
+ */
+export interface CheckoutResult {
+  /** Stripe Checkout session ID */
+  sessionId: string;
+  /** Checkout URL to redirect user to */
+  url: string;
+}
+
+/**
+ * Customer portal session creation parameters
+ */
+export interface CreatePortalParams {
+  /** Community identifier */
+  communityId: string;
+  /** URL to redirect after leaving portal */
+  returnUrl: string;
+}
+
+/**
+ * Customer portal result
+ */
+export interface PortalResult {
+  /** Portal URL to redirect user to */
+  url: string;
+}
+
+/**
+ * Subscription retrieval result
+ */
+export interface SubscriptionResult {
+  /** Whether subscription exists */
+  exists: boolean;
+  /** Subscription details (if exists) */
+  subscription?: Subscription;
+  /** Tier information */
+  tierInfo?: TierInfo;
+}
+
+// =============================================================================
+// API Response Types
+// =============================================================================
+
+/**
+ * Billing status API response
+ */
+export interface BillingStatusResponse {
+  /** Whether billing is enabled */
+  enabled: boolean;
+  /** Current subscription (if any) */
+  subscription?: {
+    tier: SubscriptionTier;
+    status: SubscriptionStatus;
+    currentPeriodEnd?: string;
+    inGracePeriod: boolean;
+  };
+  /** Active waiver (if any) */
+  waiver?: {
+    tier: SubscriptionTier;
+    expiresAt?: string;
+  };
+  /** Effective tier (considering subscription, waiver, free) */
+  effectiveTier: SubscriptionTier;
+  /** Maximum members allowed */
+  maxMembers: number;
+}
+
+/**
+ * Entitlements API response
+ */
+export interface EntitlementsResponse {
+  /** Community identifier */
+  communityId: string;
+  /** Current tier */
+  tier: SubscriptionTier;
+  /** Tier display name */
+  tierName: string;
+  /** Maximum members allowed */
+  maxMembers: number;
+  /** List of enabled features */
+  features: Feature[];
+  /** Entitlement source */
+  source: EntitlementSource;
+  /** Grace period status */
+  inGracePeriod: boolean;
+  /** Grace period end (if applicable) */
+  graceUntil?: string;
+}
+
+/**
+ * Feature check API response
+ */
+export interface FeatureCheckResponse {
+  /** Feature being checked */
+  feature: Feature;
+  /** Whether access is granted */
+  canAccess: boolean;
+  /** Current tier */
+  currentTier: SubscriptionTier;
+  /** Required tier for feature */
+  requiredTier: SubscriptionTier;
+  /** Upgrade URL (if denied) */
+  upgradeUrl?: string;
+}

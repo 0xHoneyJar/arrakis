@@ -157,3 +157,6 @@ export { WATER_SHARER_SCHEMA_SQL, WATER_SHARER_ROLLBACK_SQL } from './migrations
 
 // Re-export Usul Ascended schema for v3.0 (Sprint 18)
 export { USUL_ASCENDED_SCHEMA_SQL, USUL_ASCENDED_ROLLBACK_SQL } from './migrations/008_usul_ascended.js';
+
+// Re-export Billing schema for v4.0 (Sprint 23)
+export { BILLING_SCHEMA_SQL, BILLING_ROLLBACK_SQL } from './migrations/009_billing.js';

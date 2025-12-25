@@ -1476,3 +1476,8 @@ memberRouter.get('/position', (req: Request, res: Response) => {
 
   res.json(response);
 });
+
+// =============================================================================
+// Re-export Billing Routes (v4.0 - Sprint 23)
+// =============================================================================
+export { billingRouter } from './billing.routes.js';

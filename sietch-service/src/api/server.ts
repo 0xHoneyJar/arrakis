@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { initDatabase, closeDatabase } from '../db/index.js';
-import { publicRouter, adminRouter, memberRouter } from './routes.js';
+import { publicRouter, adminRouter, memberRouter, billingRouter } from './routes.js';
 import {
   errorHandler,
   notFoundHandler,
@@ -71,6 +71,10 @@ function createApp(): Application {
     next();
   });
 
+  // Raw body parser for Stripe webhook (must be before JSON parsing)
+  // Stripe requires raw body for signature verification
+  expressApp.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+
   // JSON body parsing
   expressApp.use(express.json({ limit: '10kb' }));
 
@@ -79,6 +83,9 @@ function createApp(): Application {
 
   // Member API routes (under /api prefix)
   expressApp.use('/api', memberRouter);
+
+  // Billing routes (v4.0 - Sprint 23)
+  expressApp.use('/api/billing', billingRouter);
 
   // Admin routes (under /admin prefix)
   expressApp.use('/admin', adminRouter);

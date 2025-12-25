@@ -4,7 +4,7 @@ import { dirname } from 'path';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
-import { SCHEMA_SQL, CLEANUP_OLD_SNAPSHOTS_SQL, SOCIAL_LAYER_SCHEMA_SQL } from './schema.js';
+import { SCHEMA_SQL, CLEANUP_OLD_SNAPSHOTS_SQL, SOCIAL_LAYER_SCHEMA_SQL, BILLING_SCHEMA_SQL } from './schema.js';
 import type {
   EligibilityEntry,
   SerializedEligibilityEntry,
@@ -150,6 +150,10 @@ export function initDatabase(): Database.Database {
   // Run social layer schema (v2.0)
   db.exec(SOCIAL_LAYER_SCHEMA_SQL);
   logger.info('Social layer schema initialized');
+
+  // Run billing schema (v4.0 - Sprint 23)
+  db.exec(BILLING_SCHEMA_SQL);
+  logger.info('Billing schema initialized');
 
   // Seed default story fragments if table is empty (v3.0 - Sprint 21)
   seedDefaultStoryFragments(db);
