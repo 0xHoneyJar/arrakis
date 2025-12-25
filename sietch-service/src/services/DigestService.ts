@@ -72,14 +72,26 @@ class DigestService {
    * @returns Week identifier string (e.g., "2025-W03")
    */
   getWeekIdentifier(date: Date = new Date()): string {
-    // Get ISO 8601 week number (week starts on Monday)
-    const startOfYear = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-    const daysSinceStartOfYear = Math.floor(
-      (date.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000)
-    );
-    const weekNumber = Math.ceil((daysSinceStartOfYear + startOfYear.getUTCDay() + 1) / 7);
+    // ISO 8601 week date calculation
+    // Week 1 is the first week with at least 4 days in the new year
+    // Weeks start on Monday
 
-    const year = date.getUTCFullYear();
+    // Clone date to avoid mutations
+    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+
+    // Set to nearest Thursday: current date + 4 - current day number
+    // Make Sunday's day number 7 (ISO 8601 standard)
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+
+    // Get first day of year (for the Thursday's year, not original date's year)
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+
+    // Calculate full weeks to nearest Thursday
+    const weekNumber = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+
+    // Use the Thursday's year (handles edge cases where week belongs to different year)
+    const year = d.getUTCFullYear();
     const paddedWeek = String(weekNumber).padStart(2, '0');
 
     return `${year}-W${paddedWeek}`;
@@ -291,6 +303,42 @@ class DigestService {
   }
 
   /**
+   * Get Monday-Sunday date range for an ISO 8601 week
+   *
+   * Uses the same ISO 8601 Thursday rule as getWeekIdentifier to ensure
+   * date ranges match the week identifier calculation.
+   *
+   * @param weekIdentifier - Week identifier (e.g., "2025-W03")
+   * @returns Object with weekStart (Monday) and weekEnd (Sunday) dates
+   */
+  private getWeekDateRange(weekIdentifier: string): { weekStart: Date; weekEnd: Date } {
+    const weekMatch = weekIdentifier.match(/(\d{4})-W(\d{2})/);
+    if (!weekMatch || !weekMatch[1] || !weekMatch[2]) {
+      throw new Error(`Invalid week identifier format: ${weekIdentifier}`);
+    }
+
+    const year = parseInt(weekMatch[1]);
+    const week = parseInt(weekMatch[2]);
+
+    // ISO 8601: Week 1 is the first week with Thursday in the new year
+    // Find January 4th (always in week 1) and work backwards to Monday
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const jan4DayNum = jan4.getUTCDay() || 7; // Sunday = 7
+    const week1Monday = new Date(jan4);
+    week1Monday.setUTCDate(jan4.getUTCDate() - (jan4DayNum - 1));
+
+    // Calculate target week's Monday
+    const weekStart = new Date(week1Monday);
+    weekStart.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7);
+
+    // Sunday is 6 days after Monday
+    const weekEnd = new Date(weekStart);
+    weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+
+    return { weekStart, weekEnd };
+  }
+
+  /**
    * Format weekly stats into Discord message
    *
    * Creates a Dune-themed digest with:
@@ -303,22 +351,8 @@ class DigestService {
    * @returns Formatted Discord message string
    */
   formatDigest(stats: WeeklyStats): string {
-    // Get date range for the week
-    const weekMatch = stats.weekIdentifier.match(/(\d{4})-W(\d{2})/);
-    const year = weekMatch && weekMatch[1] ? parseInt(weekMatch[1]) : new Date().getFullYear();
-    const week = weekMatch && weekMatch[2] ? parseInt(weekMatch[2]) : 1;
-
-    // Calculate start and end dates (Monday to Sunday)
-    const firstDayOfYear = new Date(Date.UTC(year, 0, 1));
-    const daysToMonday = (8 - firstDayOfYear.getUTCDay()) % 7;
-    const firstMonday = new Date(firstDayOfYear);
-    firstMonday.setUTCDate(firstDayOfYear.getUTCDate() + daysToMonday);
-
-    const weekStart = new Date(firstMonday);
-    weekStart.setUTCDate(firstMonday.getUTCDate() + (week - 1) * 7);
-
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+    // Get date range for the week using ISO 8601 calculation
+    const { weekStart, weekEnd } = this.getWeekDateRange(stats.weekIdentifier);
 
     const dateRange = `${weekStart.toLocaleDateString('en-US', {
       month: 'short',
@@ -384,11 +418,24 @@ class DigestService {
   /**
    * Get display name for tier (capitalized)
    *
+   * Uses explicit mapping for consistency with tier naming throughout the system.
+   *
    * @param tier - Tier name
    * @returns Display name
    */
   private getTierDisplayName(tier: Tier): string {
-    return tier.charAt(0).toUpperCase() + tier.slice(1);
+    const TIER_DISPLAY_NAMES: Record<Tier, string> = {
+      hajra: 'Hajra',
+      ichwan: 'Ichwan',
+      qanat: 'Qanat',
+      sihaya: 'Sihaya',
+      mushtamal: 'Mushtamal',
+      sayyadina: 'Sayyadina',
+      usul: 'Usul',
+      fedaykin: 'Fedaykin',
+      naib: 'Naib',
+    };
+    return TIER_DISPLAY_NAMES[tier];
   }
 
   /**
@@ -408,6 +455,74 @@ class DigestService {
   ): Promise<DigestPostResult> {
     try {
       logger.info({ channelId, week: stats.weekIdentifier }, 'Posting weekly digest');
+
+      // Check for duplicate within transaction to prevent race condition
+      // If two tasks run simultaneously, only one will succeed in inserting
+      const db = getDatabase();
+      const checkAndReserve = db.transaction(() => {
+        // Check if digest already exists
+        const existing = db
+          .prepare(
+            `
+            SELECT COUNT(*) as count
+            FROM weekly_digests
+            WHERE week_identifier = ?
+          `
+          )
+          .get(stats.weekIdentifier) as { count: number };
+
+        if (existing.count > 0) {
+          return { alreadyExists: true };
+        }
+
+        // Reserve this week by inserting a placeholder record
+        // This prevents concurrent tasks from posting duplicate digests
+        // Use NULL for message_id and channel_id, will update after Discord post
+        db.prepare(
+          `
+          INSERT INTO weekly_digests (
+            week_identifier,
+            total_members,
+            new_members,
+            total_bgt,
+            tier_distribution,
+            most_active_tier,
+            promotions_count,
+            notable_promotions,
+            badges_awarded,
+            top_new_member_nym,
+            message_id,
+            channel_id,
+            generated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        `
+        ).run(
+          stats.weekIdentifier,
+          stats.totalMembers,
+          stats.newMembers,
+          stats.totalBgtWei,
+          JSON.stringify(stats.tierDistribution),
+          stats.mostActiveTier ?? null,
+          stats.promotionsCount,
+          JSON.stringify(stats.notablePromotions),
+          stats.badgesAwarded,
+          stats.topNewMember?.nym ?? null,
+          stats.generatedAt.toISOString()
+        );
+
+        return { alreadyExists: false };
+      });
+
+      // Execute transaction atomically
+      const result = checkAndReserve();
+
+      if (result.alreadyExists) {
+        logger.warn({ week: stats.weekIdentifier }, 'Digest already exists, skipping post');
+        return {
+          success: false,
+          error: 'Digest already exists for this week',
+        };
+      }
 
       // Format digest message
       const digestMessage = this.formatDigest(stats);
@@ -431,8 +546,14 @@ class DigestService {
         'Digest posted successfully'
       );
 
-      // Store digest record in database
-      this.storeDigestRecord(stats, message.id, message.channelId);
+      // Update digest record with message ID and channel ID
+      db.prepare(
+        `
+        UPDATE weekly_digests
+        SET message_id = ?, channel_id = ?
+        WHERE week_identifier = ?
+      `
+      ).run(message.id, message.channelId, stats.weekIdentifier);
 
       // Log audit event
       logAuditEvent('weekly_digest_posted', {
@@ -500,7 +621,8 @@ class DigestService {
         stats.badgesAwarded,
         stats.topNewMember?.nym ?? null,
         messageId ?? null,
-        channelId ?? null
+        channelId ?? null,
+        stats.generatedAt.toISOString()
       );
 
       logger.debug({ week: stats.weekIdentifier }, 'Digest record stored in database');

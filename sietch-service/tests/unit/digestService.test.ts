@@ -71,6 +71,47 @@ describe('DigestService', () => {
 
       expect(weekId).toMatch(/\d{4}-W\d{2}/);
     });
+
+    it('calculates correct ISO 8601 week for year boundary edge cases', () => {
+      // December 29, 2025 is Monday (should be 2026-W01 per ISO 8601)
+      // This week has 4+ days in 2026, so it belongs to 2026-W01
+      const dec29_2025 = new Date('2025-12-29T00:00:00Z');
+      expect(digestService.getWeekIdentifier(dec29_2025)).toBe('2026-W01');
+
+      // January 4, 2026 is Sunday (should be 2026-W01)
+      // This is the last day of week 2026-W01
+      const jan4_2026 = new Date('2026-01-04T00:00:00Z');
+      expect(digestService.getWeekIdentifier(jan4_2026)).toBe('2026-W01');
+
+      // January 5, 2026 is Monday (should be 2026-W02)
+      // This is the first day of week 2026-W02
+      const jan5_2026 = new Date('2026-01-05T00:00:00Z');
+      expect(digestService.getWeekIdentifier(jan5_2026)).toBe('2026-W02');
+
+      // December 31, 2024 is Tuesday (should be 2025-W01 per ISO 8601)
+      // Week with Jan 1-6, 2025 (Thursday is Jan 2) belongs to 2025
+      const dec31_2024 = new Date('2024-12-31T00:00:00Z');
+      expect(digestService.getWeekIdentifier(dec31_2024)).toBe('2025-W01');
+
+      // January 1, 2025 is Wednesday (should be 2025-W01)
+      const jan1_2025 = new Date('2025-01-01T00:00:00Z');
+      expect(digestService.getWeekIdentifier(jan1_2025)).toBe('2025-W01');
+    });
+
+    it('handles week 53 correctly for 53-week years', () => {
+      // December 28, 2020 is Monday (should be 2020-W53)
+      // 2020 was a 53-week year (started on Wednesday, leap year)
+      const dec28_2020 = new Date('2020-12-28T00:00:00Z');
+      expect(digestService.getWeekIdentifier(dec28_2020)).toBe('2020-W53');
+
+      // January 3, 2021 is Sunday (should be 2020-W53, last day)
+      const jan3_2021 = new Date('2021-01-03T00:00:00Z');
+      expect(digestService.getWeekIdentifier(jan3_2021)).toBe('2020-W53');
+
+      // January 4, 2021 is Monday (should be 2021-W01)
+      const jan4_2021 = new Date('2021-01-04T00:00:00Z');
+      expect(digestService.getWeekIdentifier(jan4_2021)).toBe('2021-W01');
+    });
   });
 
   describe('collectWeeklyStats', () => {
