@@ -1,5 +1,8 @@
 # Sietch
 
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE.md)
+
 A privacy-first, token-gated Discord community for the top 69 BGT (Berachain Governance Token) holders who have never redeemed any of their BGT holdings.
 
 **Version 3.0 "The Great Expansion"** - Complete community management with 9-tier progression, stats, leaderboards, weekly digests, and rich notifications.
