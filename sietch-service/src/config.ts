@@ -104,6 +104,16 @@ const configSchema = z.object({
     redisEnabled: z.coerce.boolean().default(false),
     // Enable score badges (Sprint 27)
     badgesEnabled: z.coerce.boolean().default(true),
+    // Enable Telegram bot (v4.1 - Sprint 30)
+    telegramEnabled: z.coerce.boolean().default(false),
+  }),
+
+  // Telegram Configuration (v4.1 - Sprint 30)
+  telegram: z.object({
+    botToken: z.string().optional(),
+    webhookSecret: z.string().optional(),
+    webhookUrl: z.string().url().optional(),
+    verifyCallbackUrl: z.string().url().optional(),
   }),
 
   // Discord Configuration
@@ -245,6 +255,14 @@ function parseConfig() {
       billingEnabled: process.env.FEATURE_BILLING_ENABLED ?? 'false',
       gatekeeperEnabled: process.env.FEATURE_GATEKEEPER_ENABLED ?? 'false',
       redisEnabled: process.env.FEATURE_REDIS_ENABLED ?? 'false',
+      telegramEnabled: process.env.FEATURE_TELEGRAM_ENABLED ?? 'false',
+    },
+    // Telegram Configuration (v4.1 - Sprint 30)
+    telegram: {
+      botToken: process.env.TELEGRAM_BOT_TOKEN,
+      webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,
+      webhookUrl: process.env.TELEGRAM_WEBHOOK_URL,
+      verifyCallbackUrl: process.env.TELEGRAM_VERIFY_CALLBACK_URL,
     },
     discord: {
       botToken: process.env.DISCORD_BOT_TOKEN ?? '',
@@ -373,6 +391,14 @@ export interface Config {
     gatekeeperEnabled: boolean;
     redisEnabled: boolean;
     badgesEnabled: boolean;
+    telegramEnabled: boolean;
+  };
+  // Telegram Configuration (v4.1 - Sprint 30)
+  telegram: {
+    botToken?: string;
+    webhookSecret?: string;
+    webhookUrl?: string;
+    verifyCallbackUrl?: string;
   };
   discord: {
     botToken: string;
@@ -472,6 +498,7 @@ export const config: Config = {
   stripe: parsedConfig.stripe,
   redis: parsedConfig.redis,
   features: parsedConfig.features,
+  telegram: parsedConfig.telegram,
   discord: parsedConfig.discord,
   api: parsedConfig.api,
   database: parsedConfig.database,
@@ -637,4 +664,35 @@ export const SUBSCRIPTION_TIERS = {
  */
 export function getSubscriptionTierInfo(tier: string): typeof SUBSCRIPTION_TIERS[keyof typeof SUBSCRIPTION_TIERS] | undefined {
   return SUBSCRIPTION_TIERS[tier as keyof typeof SUBSCRIPTION_TIERS];
+}
+
+// =============================================================================
+// Telegram Configuration Helpers (v4.1 - Sprint 30)
+// =============================================================================
+
+/**
+ * Check if Telegram bot is enabled and configured
+ */
+export function isTelegramEnabled(): boolean {
+  return config.features.telegramEnabled && !!config.telegram.botToken;
+}
+
+/**
+ * Check if all required Telegram configuration is present
+ * Returns list of missing configuration keys
+ */
+export function getMissingTelegramConfig(): string[] {
+  const missing: string[] = [];
+
+  if (!config.telegram.botToken) missing.push('TELEGRAM_BOT_TOKEN');
+  if (!config.telegram.webhookSecret) missing.push('TELEGRAM_WEBHOOK_SECRET');
+
+  return missing;
+}
+
+/**
+ * Check if Telegram is in production mode (webhook) vs development (polling)
+ */
+export function isTelegramWebhookMode(): boolean {
+  return !!config.telegram.webhookUrl;
 }

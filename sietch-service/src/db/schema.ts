@@ -166,3 +166,10 @@ export { BADGES_SCHEMA_SQL, BADGES_ROLLBACK_SQL } from './migrations/010_badges.
 
 // Re-export Community Boosts schema for v4.0 (Sprint 28)
 export { BOOSTS_SCHEMA_SQL, BOOSTS_ROLLBACK_SQL } from './migrations/011_boosts.js';
+
+// Re-export Telegram Identity schema for v4.1 (Sprint 30)
+export {
+  TELEGRAM_IDENTITY_SCHEMA_SQL,
+  TELEGRAM_IDENTITY_SAFE_SQL,
+  TELEGRAM_IDENTITY_ROLLBACK_SQL,
+} from './migrations/012_telegram_identity.js';
