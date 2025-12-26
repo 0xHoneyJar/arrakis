@@ -11,7 +11,8 @@
  * - POST /boosts/:communityId/grant - Admin: Grant free boost
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { boostService, BOOST_PERKS } from '../services/boost/BoostService.js';
 import { logger } from '../utils/logger.js';
@@ -189,7 +190,7 @@ boostRouter.post(
         cancelUrl: body.cancelUrl,
       });
 
-      if (!result.success) {
+      if (!result.success || !result.purchaseId) {
         res.status(400).json({ error: result.error ?? 'Purchase failed' });
         return;
       }

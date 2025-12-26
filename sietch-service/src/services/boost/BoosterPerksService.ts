@@ -390,7 +390,7 @@ class BoosterPerksService {
   ): {
     hasAnniversary: boolean;
     anniversaryDate?: Date;
-    yearsAsBooater?: number;
+    yearsAsBooster?: number;
   } {
     const info = getMemberBoosterInfo(memberId, communityId);
 
@@ -414,12 +414,12 @@ class BoosterPerksService {
     );
 
     if (daysUntil <= withinDays) {
-      const yearsAsBooater =
+      const yearsAsBooster =
         thisYearAnniversary.getFullYear() - firstBoost.getFullYear();
       return {
         hasAnniversary: true,
         anniversaryDate: thisYearAnniversary,
-        yearsAsBooater,
+        yearsAsBooster,
       };
     }
 

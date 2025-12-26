@@ -499,7 +499,7 @@ describe('BoosterPerksService', () => {
       const result = boosterPerksService.checkBoostAnniversary('test-member', 'test-community', 7);
 
       expect(result.hasAnniversary).toBe(true);
-      expect(result.yearsAsBooater).toBe(1);
+      expect(result.yearsAsBooster).toBe(1);
     });
   });
 
