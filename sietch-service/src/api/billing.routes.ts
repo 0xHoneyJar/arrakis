@@ -22,15 +22,11 @@ import {
   NotFoundError,
 } from './middleware.js';
 import { config, isBillingEnabled, SUBSCRIPTION_TIERS } from '../config.js';
-import { stripeService } from '../services/billing/index.js';
+import { stripeService, webhookService } from '../services/billing/index.js';
 import {
   getSubscriptionByCommunityId,
   getActiveFeeWaiver,
   getEffectiveTier,
-  createSubscription,
-  updateSubscription,
-  isWebhookEventProcessed,
-  recordWebhookEvent,
   logBillingAuditEvent,
 } from '../db/billing-queries.js';
 import { logger } from '../utils/logger.js';
@@ -297,13 +293,10 @@ billingRouter.post('/webhook', async (req: Request, res: Response) => {
     return;
   }
 
-  let event;
-
   try {
-    // Verify webhook signature
+    // Verify webhook signature and get event
     // Note: req.body should be raw Buffer for signature verification
-    // The raw body middleware is configured in server.ts - we require it explicitly
-    // to prevent signature bypass if middleware misconfigured
+    // The raw body middleware is configured in server.ts
     const rawBody = (req as RawBodyRequest).rawBody;
 
     if (!rawBody) {
@@ -315,301 +308,30 @@ billingRouter.post('/webhook', async (req: Request, res: Response) => {
       return;
     }
 
-    event = stripeService.constructWebhookEvent(rawBody, signature);
-  } catch (error) {
-    logger.warn({ error }, 'Invalid Stripe webhook signature');
-    res.status(400).json({ error: 'Invalid signature' });
-    return;
-  }
+    const event = webhookService.verifySignature(rawBody, signature);
 
-  // Idempotency check
-  if (isWebhookEventProcessed(event.id)) {
-    logger.debug({ eventId: event.id }, 'Webhook event already processed');
-    res.json({ received: true, status: 'already_processed' });
-    return;
-  }
+    // Process the event through WebhookService (handles idempotency, locking, etc.)
+    const result = await webhookService.processEvent(event);
 
-  try {
-    // Process the event
-    await processWebhookEvent(event);
-
-    // Record successful processing
-    recordWebhookEvent(
-      event.id,
-      event.type,
-      JSON.stringify(event.data),
-      'processed'
-    );
-
-    res.json({ received: true, status: 'processed' });
-  } catch (error) {
-    logger.error({ eventId: event.id, eventType: event.type, error }, 'Failed to process webhook');
-
-    // Record failed processing
-    recordWebhookEvent(
-      event.id,
-      event.type,
-      JSON.stringify(event.data),
-      'failed',
-      error instanceof Error ? error.message : 'Unknown error'
-    );
-
-    logBillingAuditEvent('webhook_failed', {
-      eventId: event.id,
-      eventType: event.type,
-      error: error instanceof Error ? error.message : 'Unknown error',
+    // Return appropriate response
+    res.json({
+      received: true,
+      status: result.status,
+      eventId: result.eventId,
+      eventType: result.eventType,
+      message: result.message,
     });
-
-    // Return 200 to prevent Stripe retries for unrecoverable errors
-    // Stripe will retry on 4xx/5xx, which can cause loops
-    res.json({ received: true, status: 'failed' });
+  } catch (error) {
+    logger.warn({ error }, 'Webhook processing failed at handler level');
+    res.status(400).json({
+      error: 'Webhook processing failed',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
-// =============================================================================
-// Webhook Event Processing
-// =============================================================================
-
-/**
- * Process a Stripe webhook event
- */
-async function processWebhookEvent(event: any): Promise<void> {
-  switch (event.type) {
-    case 'checkout.session.completed':
-      await handleCheckoutCompleted(event.data.object);
-      break;
-
-    case 'invoice.paid':
-      await handleInvoicePaid(event.data.object);
-      break;
-
-    case 'invoice.payment_failed':
-      await handleInvoicePaymentFailed(event.data.object);
-      break;
-
-    case 'customer.subscription.updated':
-      await handleSubscriptionUpdated(event.data.object);
-      break;
-
-    case 'customer.subscription.deleted':
-      await handleSubscriptionDeleted(event.data.object);
-      break;
-
-    default:
-      logger.debug({ eventType: event.type }, 'Unhandled webhook event type');
-  }
-}
-
-/**
- * Handle checkout.session.completed event
- */
-async function handleCheckoutCompleted(session: any): Promise<void> {
-  const communityId = session.metadata?.community_id;
-  const tier = session.metadata?.tier as SubscriptionTier;
-
-  if (!communityId) {
-    logger.warn({ sessionId: session.id }, 'Checkout session missing community_id');
-    return;
-  }
-
-  // Check if subscription already exists
-  const existing = getSubscriptionByCommunityId(communityId);
-
-  if (existing) {
-    // Update existing subscription
-    updateSubscription(communityId, {
-      stripeCustomerId: session.customer,
-      stripeSubscriptionId: session.subscription,
-      tier: tier || existing.tier,
-      status: 'active',
-      graceUntil: null,
-    });
-  } else {
-    // Create new subscription
-    createSubscription({
-      communityId,
-      stripeCustomerId: session.customer,
-      stripeSubscriptionId: session.subscription,
-      tier: tier || 'basic',
-      status: 'active',
-    });
-  }
-
-  logBillingAuditEvent(
-    'subscription_created',
-    {
-      communityId,
-      tier,
-      stripeCustomerId: session.customer,
-      stripeSubscriptionId: session.subscription,
-    },
-    communityId
-  );
-
-  logger.info(
-    { communityId, tier, sessionId: session.id },
-    'Checkout completed, subscription created'
-  );
-}
-
-/**
- * Handle invoice.paid event
- */
-async function handleInvoicePaid(invoice: any): Promise<void> {
-  const subscriptionId = invoice.subscription;
-
-  if (!subscriptionId) {
-    return;
-  }
-
-  const subscription = await stripeService.getStripeSubscription(subscriptionId);
-  if (!subscription) {
-    return;
-  }
-
-  const communityId = subscription.metadata?.community_id;
-  if (!communityId) {
-    return;
-  }
-
-  // Clear grace period and update status
-  updateSubscription(communityId, {
-    status: 'active',
-    graceUntil: null,
-    currentPeriodStart: new Date(subscription.current_period_start * 1000),
-    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-  });
-
-  logBillingAuditEvent(
-    'payment_succeeded',
-    {
-      communityId,
-      invoiceId: invoice.id,
-      amount: invoice.amount_paid,
-    },
-    communityId
-  );
-
-  logger.info({ communityId, invoiceId: invoice.id }, 'Invoice paid');
-}
-
-/**
- * Handle invoice.payment_failed event
- */
-async function handleInvoicePaymentFailed(invoice: any): Promise<void> {
-  const subscriptionId = invoice.subscription;
-
-  if (!subscriptionId) {
-    return;
-  }
-
-  const subscription = await stripeService.getStripeSubscription(subscriptionId);
-  if (!subscription) {
-    return;
-  }
-
-  const communityId = subscription.metadata?.community_id;
-  if (!communityId) {
-    return;
-  }
-
-  // Set grace period (24 hours from now)
-  const graceUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-  updateSubscription(communityId, {
-    status: 'past_due',
-    graceUntil,
-  });
-
-  logBillingAuditEvent(
-    'payment_failed',
-    {
-      communityId,
-      invoiceId: invoice.id,
-      graceUntil: graceUntil.toISOString(),
-    },
-    communityId
-  );
-
-  logBillingAuditEvent(
-    'grace_period_started',
-    {
-      communityId,
-      graceUntil: graceUntil.toISOString(),
-    },
-    communityId
-  );
-
-  logger.warn(
-    { communityId, invoiceId: invoice.id, graceUntil },
-    'Invoice payment failed, grace period started'
-  );
-}
-
-/**
- * Handle customer.subscription.updated event
- */
-async function handleSubscriptionUpdated(stripeSubscription: any): Promise<void> {
-  const communityId = stripeSubscription.metadata?.community_id;
-
-  if (!communityId) {
-    return;
-  }
-
-  const tier = stripeService.extractTierFromSubscription(stripeSubscription);
-  const status = stripeService.mapSubscriptionStatus(stripeSubscription.status);
-
-  updateSubscription(communityId, {
-    tier: tier || undefined,
-    status,
-    currentPeriodStart: new Date(stripeSubscription.current_period_start * 1000),
-    currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
-    graceUntil: status === 'active' ? null : undefined,
-  });
-
-  logBillingAuditEvent(
-    'subscription_updated',
-    {
-      communityId,
-      tier,
-      status,
-      cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
-    },
-    communityId
-  );
-
-  logger.info(
-    { communityId, tier, status },
-    'Subscription updated'
-  );
-}
-
-/**
- * Handle customer.subscription.deleted event
- */
-async function handleSubscriptionDeleted(stripeSubscription: any): Promise<void> {
-  const communityId = stripeSubscription.metadata?.community_id;
-
-  if (!communityId) {
-    return;
-  }
-
-  updateSubscription(communityId, {
-    status: 'canceled',
-    tier: 'starter', // Downgrade to free tier
-  });
-
-  logBillingAuditEvent(
-    'subscription_canceled',
-    {
-      communityId,
-      canceledAt: new Date().toISOString(),
-    },
-    communityId
-  );
-
-  logger.info({ communityId }, 'Subscription canceled');
-}
+// Note: Webhook event processing is now handled by WebhookService
+// (Sprint 24) for better separation of concerns and testability
 
 // =============================================================================
 // Helper Functions
