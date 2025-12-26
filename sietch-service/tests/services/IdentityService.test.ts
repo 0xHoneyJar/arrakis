@@ -17,9 +17,14 @@ vi.mock('../../src/db/queries.js', () => ({
   getDatabase: vi.fn(() => mockDb),
 }));
 
-// Create mock database
+// Create mock database with transaction support
 const mockDb = {
   prepare: vi.fn(),
+  // Mock transaction function - it wraps a callback and executes it
+  transaction: vi.fn((fn: () => any) => {
+    // Return a function that executes the transaction body when called
+    return () => fn();
+  }),
 };
 
 // Import after mock is set up
@@ -375,24 +380,28 @@ describe('IdentityService', () => {
     it('should complete verification and link wallet', async () => {
       const now = Math.floor(Date.now() / 1000);
 
-      // Mock get session
+      // Session lookup (outside transaction)
       const getSession = vi.fn().mockReturnValue({
         telegram_user_id: 'telegram-456',
         status: 'pending',
         expires_at: now + 600,
       });
 
-      // Mock find existing member
+      // Inside transaction: find existing member
       const getMember = vi.fn().mockReturnValue({ id: 'member-123' });
 
-      // Mock link telegram (check existing)
+      // Inside transaction: check existing telegram link
       const getExisting = vi.fn().mockReturnValue(undefined);
+
+      // Inside transaction: link telegram
       const runLink = vi.fn().mockReturnValue({ changes: 1 });
 
-      // Mock update session
+      // Inside transaction: update session
       const runComplete = vi.fn().mockReturnValue({ changes: 1 });
 
+      // First call is session lookup (outside transaction)
       mockDb.prepare.mockReturnValueOnce({ get: getSession });
+      // Transaction calls: getMember, getExisting, runLink, runComplete
       mockDb.prepare.mockReturnValueOnce({ get: getMember });
       mockDb.prepare.mockReturnValueOnce({ get: getExisting });
       mockDb.prepare.mockReturnValueOnce({ run: runLink });
@@ -402,28 +411,32 @@ describe('IdentityService', () => {
 
       expect(result.telegramUserId).toBe('telegram-456');
       expect(result.memberId).toBe('member-123');
+      expect(mockDb.transaction).toHaveBeenCalled();
     });
 
     it('should create new member if wallet not found', async () => {
       const now = Math.floor(Date.now() / 1000);
 
+      // Session lookup (outside transaction)
       const getSession = vi.fn().mockReturnValue({
         telegram_user_id: 'telegram-456',
         status: 'pending',
         expires_at: now + 600,
       });
 
-      // Member not found
+      // Inside transaction: member not found
       const getMember = vi.fn().mockReturnValue(undefined);
 
-      // Mock create member
+      // Inside transaction: create member
       const runCreate = vi.fn().mockReturnValue({ changes: 1 });
 
-      // Mock link telegram
+      // Inside transaction: check existing telegram link
       const getExisting = vi.fn().mockReturnValue(undefined);
+
+      // Inside transaction: link telegram
       const runLink = vi.fn().mockReturnValue({ changes: 1 });
 
-      // Mock update session
+      // Inside transaction: update session
       const runComplete = vi.fn().mockReturnValue({ changes: 1 });
 
       mockDb.prepare.mockReturnValueOnce({ get: getSession });
@@ -438,6 +451,7 @@ describe('IdentityService', () => {
       expect(result.telegramUserId).toBe('telegram-456');
       expect(result.memberId).toBeDefined();
       expect(runCreate).toHaveBeenCalled();
+      expect(mockDb.transaction).toHaveBeenCalled();
     });
 
     it('should throw error if session not found', async () => {

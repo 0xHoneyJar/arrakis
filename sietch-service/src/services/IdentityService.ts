@@ -103,27 +103,45 @@ class IdentityService {
   ): Promise<MemberIdentity | null> {
     const db = getDatabase();
 
-    const column = platform === 'discord' ? 'discord_user_id' : 'telegram_user_id';
-    const linkedColumn = platform === 'discord' ? 'discord_linked_at' : 'telegram_linked_at';
-
-    const member = db.prepare(`
-      SELECT
-        id,
-        wallet_address,
-        discord_user_id,
-        telegram_user_id,
-        joined_at as discord_linked_at,
-        telegram_linked_at
-      FROM member_profiles
-      WHERE ${column} = ?
-    `).get(platformUserId) as {
+    // SECURITY: Use separate prepared statements to avoid SQL injection
+    // Template literals with column names are safe here since 'platform' is typed,
+    // but using explicit queries is cleaner and more defensive
+    type MemberRow = {
       id: string;
       wallet_address: string;
       discord_user_id: string | null;
       telegram_user_id: string | null;
       discord_linked_at: number | null;
       telegram_linked_at: number | null;
-    } | undefined;
+    };
+
+    let member: MemberRow | undefined;
+
+    if (platform === 'discord') {
+      member = db.prepare(`
+        SELECT
+          id,
+          wallet_address,
+          discord_user_id,
+          telegram_user_id,
+          joined_at as discord_linked_at,
+          telegram_linked_at
+        FROM member_profiles
+        WHERE discord_user_id = ?
+      `).get(platformUserId) as MemberRow | undefined;
+    } else {
+      member = db.prepare(`
+        SELECT
+          id,
+          wallet_address,
+          discord_user_id,
+          telegram_user_id,
+          joined_at as discord_linked_at,
+          telegram_linked_at
+        FROM member_profiles
+        WHERE telegram_user_id = ?
+      `).get(platformUserId) as MemberRow | undefined;
+    }
 
     if (!member) {
       return null;
@@ -143,7 +161,8 @@ class IdentityService {
       platforms.push({
         platform: 'telegram',
         platformUserId: member.telegram_user_id,
-        linkedAt: new Date(member.telegram_linked_at || Date.now()),
+        // telegram_linked_at is stored in seconds, convert to milliseconds for Date
+        linkedAt: new Date((member.telegram_linked_at || Math.floor(Date.now() / 1000)) * 1000),
       });
     }
 
@@ -200,7 +219,8 @@ class IdentityService {
       platforms.push({
         platform: 'telegram',
         platformUserId: member.telegram_user_id,
-        linkedAt: new Date(member.telegram_linked_at || Date.now()),
+        // telegram_linked_at is stored in seconds, convert to milliseconds for Date
+        linkedAt: new Date((member.telegram_linked_at || Math.floor(Date.now() / 1000)) * 1000),
       });
     }
 
@@ -217,6 +237,10 @@ class IdentityService {
    * @param memberId - The member's ID
    * @param telegramUserId - The Telegram user ID
    * @throws Error if Telegram account is already linked to another wallet
+   *
+   * NOTE: telegram_linked_at is stored in SECONDS (Unix timestamp) to match
+   * the telegram_verification_sessions table. Discord's joined_at uses
+   * milliseconds for backwards compatibility.
    */
   async linkTelegram(memberId: string, telegramUserId: string): Promise<void> {
     const db = getDatabase();
@@ -231,11 +255,13 @@ class IdentityService {
     }
 
     // Update the member profile with Telegram link
+    // Use seconds for telegram_linked_at (matching verification sessions table)
+    const nowSeconds = Math.floor(Date.now() / 1000);
     const result = db.prepare(`
       UPDATE member_profiles
       SET telegram_user_id = ?, telegram_linked_at = ?
       WHERE id = ?
-    `).run(telegramUserId, Date.now(), memberId);
+    `).run(telegramUserId, nowSeconds, memberId);
 
     if (result.changes === 0) {
       throw new Error('Member not found');
@@ -392,7 +418,7 @@ class IdentityService {
   ): Promise<{ telegramUserId: string; memberId: string }> {
     const db = getDatabase();
 
-    // Get the session
+    // Get the session first (outside transaction to fail fast)
     const session = db.prepare(`
       SELECT telegram_user_id, status, expires_at
       FROM telegram_verification_sessions
@@ -422,44 +448,66 @@ class IdentityService {
       throw new Error('Session expired');
     }
 
-    // Find or create member by wallet
-    let member = db.prepare(`
-      SELECT id FROM member_profiles WHERE LOWER(wallet_address) = LOWER(?)
-    `).get(walletAddress) as { id: string } | undefined;
+    // Use transaction for atomic member creation/linking and session completion
+    // This prevents partial state if any step fails
+    const completeVerificationTx = db.transaction(() => {
+      // Find or create member by wallet
+      let member = db.prepare(`
+        SELECT id FROM member_profiles WHERE LOWER(wallet_address) = LOWER(?)
+      `).get(walletAddress) as { id: string } | undefined;
 
-    if (!member) {
-      // Create new member profile
-      const memberId = randomUUID();
+      if (!member) {
+        // Create new member profile
+        const memberId = randomUUID();
+        db.prepare(`
+          INSERT INTO member_profiles (id, wallet_address, joined_at)
+          VALUES (?, ?, ?)
+        `).run(memberId, walletAddress.toLowerCase(), now);
+
+        member = { id: memberId };
+        logger.info(
+          { memberId, walletAddress },
+          'Created new member profile from Telegram verification'
+        );
+      }
+
+      // Check if this Telegram account is already linked to a different member
+      const existingLink = db.prepare(`
+        SELECT id FROM member_profiles WHERE telegram_user_id = ?
+      `).get(session.telegram_user_id) as { id: string } | undefined;
+
+      if (existingLink && existingLink.id !== member.id) {
+        throw new Error('Telegram account already linked to another wallet');
+      }
+
+      // Link Telegram to member (inline to stay in transaction)
       db.prepare(`
-        INSERT INTO member_profiles (id, wallet_address, joined_at)
-        VALUES (?, ?, ?)
-      `).run(memberId, walletAddress.toLowerCase(), now);
+        UPDATE member_profiles
+        SET telegram_user_id = ?, telegram_linked_at = ?
+        WHERE id = ?
+      `).run(session.telegram_user_id, now, member.id);
 
-      member = { id: memberId };
-      logger.info(
-        { memberId, walletAddress },
-        'Created new member profile from Telegram verification'
-      );
-    }
+      // Mark session as completed
+      db.prepare(`
+        UPDATE telegram_verification_sessions
+        SET status = 'completed', wallet_address = ?, completed_at = ?
+        WHERE id = ?
+      `).run(walletAddress.toLowerCase(), now, sessionId);
 
-    // Link Telegram to member
-    await this.linkTelegram(member.id, session.telegram_user_id);
+      return member.id;
+    });
 
-    // Mark session as completed
-    db.prepare(`
-      UPDATE telegram_verification_sessions
-      SET status = 'completed', wallet_address = ?, completed_at = ?
-      WHERE id = ?
-    `).run(walletAddress.toLowerCase(), now, sessionId);
+    // Execute the transaction
+    const memberId = completeVerificationTx();
 
     logger.info(
-      { sessionId, memberId: member.id, telegramUserId: session.telegram_user_id },
+      { sessionId, memberId, telegramUserId: session.telegram_user_id },
       'Telegram verification completed'
     );
 
     return {
       telegramUserId: session.telegram_user_id,
-      memberId: member.id,
+      memberId,
     };
   }
 
