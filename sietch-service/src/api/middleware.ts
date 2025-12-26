@@ -8,6 +8,7 @@ import { validateApiKey } from '../config.js';
  */
 export interface AuthenticatedRequest extends Request {
   adminName?: string;
+  apiKeyId?: string;
 }
 
 /**
