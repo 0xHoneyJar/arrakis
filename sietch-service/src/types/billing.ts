@@ -608,3 +608,228 @@ export interface BadgeSettingsResponse {
   /** Badge style */
   badgeStyle: BadgeStyle;
 }
+
+// =============================================================================
+// Community Boost Types (v4.0 - Sprint 28)
+// =============================================================================
+
+/**
+ * Boost level enumeration (1-3)
+ * Higher levels unlock more perks
+ */
+export type BoostLevel = 1 | 2 | 3;
+
+/**
+ * Boost purchase record stored in database
+ */
+export interface BoostPurchase {
+  /** Unique purchase ID (UUID) */
+  id: string;
+  /** Member who purchased the boost */
+  memberId: string;
+  /** Community being boosted */
+  communityId: string;
+  /** Stripe payment intent ID */
+  stripePaymentId?: string;
+  /** Number of months purchased */
+  monthsPurchased: number;
+  /** Amount paid in cents */
+  amountPaidCents: number;
+  /** Purchase timestamp */
+  purchasedAt: Date;
+  /** When boost expires */
+  expiresAt: Date;
+  /** Whether boost is still active */
+  isActive: boolean;
+  /** Record creation timestamp */
+  createdAt: Date;
+}
+
+/**
+ * Community boost aggregation (sum of all active boosts)
+ */
+export interface CommunityBoostStatus {
+  /** Community identifier */
+  communityId: string;
+  /** Total number of active boosters */
+  totalBoosters: number;
+  /** Current boost level (1-3, 0 if none) */
+  level: BoostLevel | 0;
+  /** Total boost months accumulated */
+  totalBoostMonths: number;
+  /** Progress to next level (0-100) */
+  progressToNextLevel: number;
+  /** Boosts needed for next level */
+  boostsNeededForNextLevel: number;
+  /** Active perks at current level */
+  perks: BoostPerk[];
+}
+
+/**
+ * Booster perk definition
+ */
+export interface BoostPerk {
+  /** Perk identifier */
+  id: string;
+  /** Perk display name */
+  name: string;
+  /** Perk description */
+  description: string;
+  /** Minimum level required */
+  minLevel: BoostLevel;
+  /** Whether perk is community-wide or booster-only */
+  scope: 'community' | 'booster';
+}
+
+/**
+ * Individual booster record
+ */
+export interface Booster {
+  /** Member identifier */
+  memberId: string;
+  /** Member nym/display name */
+  nym?: string;
+  /** First boost date */
+  firstBoostDate: Date;
+  /** Most recent boost date */
+  lastBoostDate: Date;
+  /** Total months boosted */
+  totalMonthsBoosted: number;
+  /** Current active boost expiry */
+  currentBoostExpiry?: Date;
+  /** Whether currently boosting */
+  isActive: boolean;
+}
+
+/**
+ * Boost purchase creation parameters
+ */
+export interface CreateBoostPurchaseParams {
+  memberId: string;
+  communityId: string;
+  stripePaymentId?: string;
+  monthsPurchased: number;
+  amountPaidCents: number;
+}
+
+/**
+ * Boost pricing configuration
+ */
+export interface BoostPricing {
+  /** Price per month in cents */
+  pricePerMonthCents: number;
+  /** Available bundle options */
+  bundles: BoostBundle[];
+}
+
+/**
+ * Boost bundle option
+ */
+export interface BoostBundle {
+  /** Number of months */
+  months: number;
+  /** Total price in cents */
+  priceCents: number;
+  /** Discount percentage (0-100) */
+  discountPercent: number;
+  /** Stripe price ID */
+  stripePriceId?: string;
+}
+
+/**
+ * Boost level thresholds
+ */
+export interface BoostLevelThresholds {
+  /** Boosters needed for level 1 */
+  level1: number;
+  /** Boosters needed for level 2 */
+  level2: number;
+  /** Boosters needed for level 3 */
+  level3: number;
+}
+
+// =============================================================================
+// Boost API Response Types
+// =============================================================================
+
+/**
+ * Boost status API response
+ */
+export interface BoostStatusResponse {
+  /** Community identifier */
+  communityId: string;
+  /** Current boost level */
+  level: BoostLevel | 0;
+  /** Total active boosters */
+  totalBoosters: number;
+  /** Progress percentage to next level */
+  progressPercent: number;
+  /** Boosters needed for next level */
+  boostersNeeded: number;
+  /** Active perks */
+  perks: string[];
+}
+
+/**
+ * Booster list API response
+ */
+export interface BoosterListResponse {
+  /** Community identifier */
+  communityId: string;
+  /** List of boosters */
+  boosters: {
+    memberId: string;
+    nym?: string;
+    monthsBoosted: number;
+    isActive: boolean;
+    boostExpiry?: string;
+  }[];
+  /** Total count */
+  totalCount: number;
+}
+
+/**
+ * Boost purchase API response
+ */
+export interface BoostPurchaseResponse {
+  /** Purchase ID */
+  purchaseId: string;
+  /** Stripe checkout URL (if not already purchased) */
+  checkoutUrl?: string;
+  /** Success indicator */
+  success: boolean;
+  /** New boost expiry date */
+  expiresAt?: string;
+  /** Updated community level */
+  newLevel?: BoostLevel | 0;
+}
+
+/**
+ * Boost pricing API response
+ */
+export interface BoostPricingResponse {
+  /** Price per month in USD */
+  pricePerMonth: string;
+  /** Available bundles */
+  bundles: {
+    months: number;
+    price: string;
+    discountPercent: number;
+  }[];
+}
+
+/**
+ * Booster perks API response
+ */
+export interface BoosterPerksResponse {
+  /** Member identifier */
+  memberId: string;
+  /** Whether member is a booster */
+  isBooster: boolean;
+  /** Booster-only perks unlocked */
+  boosterPerks: string[];
+  /** Community-wide perks from boost level */
+  communityPerks: string[];
+  /** Boost expiry date (if booster) */
+  boostExpiry?: string;
+}

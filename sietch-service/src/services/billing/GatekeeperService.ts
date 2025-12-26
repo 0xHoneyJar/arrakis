@@ -1,10 +1,11 @@
 /**
- * Gatekeeper Service (v4.0 - Sprint 25)
+ * Gatekeeper Service (v4.0 - Sprint 28)
  *
  * Central feature access control service implementing:
  * - Redis-cached entitlement checking (5-minute TTL)
  * - SQLite fallback when Redis unavailable
  * - Three-tier entitlement lookup: waiver → subscription → free
+ * - Community boost level integration for enhanced perks
  * - Grace period handling
  * - Upgrade URL generation for denied features
  *
@@ -35,7 +36,9 @@ import type {
   AccessResult,
   TierInfo,
   EntitlementSource,
+  BoostLevel,
 } from '../../types/billing.js';
+import { getCommunityBoostLevel } from '../../db/boost-queries.js';
 
 // =============================================================================
 // Types
@@ -441,6 +444,58 @@ class GatekeeperService {
    */
   isEnabled(): boolean {
     return config.features?.gatekeeperEnabled ?? true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Boost Integration (Sprint 28)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get boost level for a community
+   *
+   * @param communityId - Community to check
+   * @returns Current boost level (0-3)
+   */
+  getBoostLevel(communityId: string): BoostLevel | 0 {
+    try {
+      return getCommunityBoostLevel(communityId);
+    } catch (error) {
+      logger.warn(
+        { communityId, error: (error as Error).message },
+        'Failed to get boost level, returning 0'
+      );
+      return 0;
+    }
+  }
+
+  /**
+   * Check if community has minimum boost level
+   *
+   * @param communityId - Community to check
+   * @param minLevel - Minimum level required
+   * @returns Whether boost level is sufficient
+   */
+  hasBoostLevel(communityId: string, minLevel: BoostLevel): boolean {
+    const currentLevel = this.getBoostLevel(communityId);
+    return currentLevel >= minLevel;
+  }
+
+  /**
+   * Get enhanced entitlements including boost perks
+   *
+   * Combines subscription/waiver entitlements with boost-based perks.
+   *
+   * @param communityId - Community to check
+   * @returns Entitlements with boost information
+   */
+  async getEnhancedEntitlements(communityId: string): Promise<Entitlements & { boostLevel: BoostLevel | 0 }> {
+    const entitlements = await this.getEntitlements(communityId);
+    const boostLevel = this.getBoostLevel(communityId);
+
+    return {
+      ...entitlements,
+      boostLevel,
+    };
   }
 }
 

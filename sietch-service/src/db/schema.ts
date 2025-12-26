@@ -163,3 +163,6 @@ export { BILLING_SCHEMA_SQL, BILLING_ROLLBACK_SQL } from './migrations/009_billi
 
 // Re-export Score Badges schema for v4.0 (Sprint 27)
 export { BADGES_SCHEMA_SQL, BADGES_ROLLBACK_SQL } from './migrations/010_badges.js';
+
+// Re-export Community Boosts schema for v4.0 (Sprint 28)
+export { BOOSTS_SCHEMA_SQL, BOOSTS_ROLLBACK_SQL } from './migrations/011_boosts.js';

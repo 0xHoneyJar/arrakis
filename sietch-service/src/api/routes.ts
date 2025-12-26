@@ -1486,3 +1486,8 @@ export { billingRouter } from './billing.routes.js';
 // Re-export Badge Routes (v4.0 - Sprint 27)
 // =============================================================================
 export { badgeRouter } from './badge.routes.js';
+
+// =============================================================================
+// Re-export Boost Routes (v4.0 - Sprint 28)
+// =============================================================================
+export { boostRouter } from './boost.routes.js';

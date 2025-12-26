@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { initDatabase, closeDatabase } from '../db/index.js';
-import { publicRouter, adminRouter, memberRouter, billingRouter, badgeRouter } from './routes.js';
+import { publicRouter, adminRouter, memberRouter, billingRouter, badgeRouter, boostRouter } from './routes.js';
 import { adminRouter as billingAdminRouter } from './admin.routes.js';
 import {
   errorHandler,
@@ -97,6 +97,9 @@ function createApp(): Application {
 
   // Badge routes (v4.0 - Sprint 27)
   expressApp.use('/api/badge', badgeRouter);
+
+  // Boost routes (v4.0 - Sprint 28)
+  expressApp.use('/api/boosts', boostRouter);
 
   // Admin routes (under /admin prefix)
   expressApp.use('/admin', adminRouter);
