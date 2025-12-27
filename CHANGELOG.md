@@ -7,6 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2025-12-27
+
+### Added
+
+#### Telegram Bot (Sprint 30-33)
+- Grammy-based Telegram bot with webhook support
+- `/start` - Welcome message with quick action buttons
+- `/verify` - Wallet linking via signature verification
+- `/score` - Conviction score with tier, rank, BGT, badges
+- `/badges` - View earned badges with descriptions
+- `/stats` - Community statistics overview
+- `/leaderboard` - Top 10 members by badge count
+- `/alerts` - Configurable notification preferences
+- `/help` - Command reference
+
+#### Inline Queries (Sprint 33)
+- `@SietchBot score` - Quick conviction score lookup
+- `@SietchBot rank` - Current rank display
+- `@SietchBot leaderboard` - Top 5 members
+- `@SietchBot help` - Usage instructions
+- Personalized results with 30-second cache
+
+#### Alert Preferences (Sprint 33)
+- Position update toggles
+- At-risk warning toggles
+- Naib alert toggles (for Naib members)
+- Frequency settings (1x/2x/3x per week, daily)
+- One-click disable all
+
+#### Cross-Platform Identity (Sprint 30)
+- `IdentityService` for unified wallet management
+- Link same wallet to Discord and Telegram
+- Platform-specific verification flows
+- Member lookup by platform ID
+
+### Security
+- IDOR protection on alert callback handlers
+- Authorization verification for all preference changes
+- Sanitized error messages (no stack traces)
+
+### Changed
+- Updated documentation with single source of truth principle
+- Simplified sietch-service/README.md to reference parent
+- Added Telegram to architecture diagram
+
+## [4.0.0] - 2025-12-26
+
+### Added
+
+#### Stripe Billing (Sprint 24-27)
+- `StripeService` for payment processing
+- Customer creation and management
+- Subscription lifecycle handling
+- Payment intent creation
+- Invoice management
+
+#### Webhook Processing (Sprint 25-26)
+- `WebhookService` for Stripe event handling
+- Signature verification with timing-safe comparison
+- Idempotent event processing
+- Support for 15+ webhook event types
+- Automatic retry handling
+
+#### Gatekeeper Service (Sprint 27)
+- Feature access control based on subscription tier
+- Three-tier feature matrix (free, pro, enterprise)
+- Grace period handling for failed payments
+- Real-time access checks
+
+#### Waiver System (Sprint 28)
+- `WaiverService` for payment exemptions
+- Time-limited and permanent waivers
+- Waiver reason tracking
+- Admin waiver management
+
+#### Billing Audit (Sprint 29)
+- `BillingAuditService` for compliance logging
+- Payment event audit trail
+- Subscription change history
+- Admin action logging
+
+#### Boost System (Sprint 28-29)
+- `BoostService` for temporary perks
+- `BoosterPerksService` for perk management
+- Boost expiration handling via trigger.dev
+- Boost stacking rules
+
+#### Redis Caching (Sprint 27)
+- `RedisService` for distributed caching
+- Session management
+- Rate limiting support
+- Cache invalidation patterns
+
+### Changed
+- Added billing routes to API
+- Enhanced config with Stripe environment variables
+- Added billing-related database migrations
+
+### Security
+- Webhook signature verification
+- Timing-safe token comparison
+- Parameterized billing queries
+- Audit logging for all billing operations
+
 ## [3.0.0] - 2025-12-26
 
 ### Added
@@ -189,12 +293,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Codename | Key Features |
 |---------|--------------|----------|--------------|
+| 4.1.0 | 2025-12-27 | The Crossing | Telegram bot, inline queries, cross-platform identity |
+| 4.0.0 | 2025-12-26 | SaaS Foundation | Stripe billing, webhooks, gatekeeper, boosts |
 | 3.0.0 | 2025-12-26 | The Great Expansion | 9-tier system, stats, digest, notifications |
 | 2.1.0 | 2025-12-20 | Naib Dynamics | Naib seats, threshold, production deploy |
 | 2.0.0 | 2025-12-15 | Social Layer | Profiles, badges, directory, activity |
 | 1.0.0 | 2025-12-01 | MVP | Core eligibility, Discord bot, API |
 
-[Unreleased]: https://github.com/0xHoneyJar/arrakis/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/0xHoneyJar/arrakis/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/0xHoneyJar/arrakis/compare/v4.0.0...v4.1.0
+[4.0.0]: https://github.com/0xHoneyJar/arrakis/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/0xHoneyJar/arrakis/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/0xHoneyJar/arrakis/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/0xHoneyJar/arrakis/compare/v1.0.0...v2.0.0
