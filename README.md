@@ -1,28 +1,38 @@
 # Sietch
 
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-4.1.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE.md)
 
-A privacy-first, token-gated Discord community for the top 69 BGT (Berachain Governance Token) holders who have never redeemed any of their BGT holdings.
+A privacy-first, token-gated community for the top 69 BGT (Berachain Governance Token) holders who have never redeemed any of their BGT holdings.
 
-**Version 3.0 "The Great Expansion"** - Complete community management with 9-tier progression, stats, leaderboards, weekly digests, and rich notifications.
+**Version 4.1 "The Crossing"** - Multi-platform expansion with Telegram bot integration.
 
 ## Overview
 
 Sietch provides a dedicated space for a specific, highly curated subset of the Berachain community—high-conviction participants demonstrated through on-chain actions over time. Eligibility is determined entirely on-chain: only wallets that have claimed BGT from reward vaults and never burned (redeemed) any BGT qualify.
 
-### What's New in v3.0
+### What's New in v4.1
+
+- **Telegram Bot** - Full-featured bot with 8 commands mirroring Discord functionality
+- **Inline Queries** - Quick stats lookup via `@SietchBot score` in any chat
+- **Alert Preferences** - Configurable notification settings per platform
+- **Cross-Platform Identity** - Link same wallet to Discord and Telegram
+
+### Previous Features (v4.0)
+
+- **Stripe Billing** - SaaS foundation with subscription management
+- **Payment Webhooks** - Secure payment event handling
+
+### v3.0 Features
 
 - **9-Tier Progression** - From Traveler to Naib based on BGT holdings and rank
 - **Personal Stats** - Track your tier progress, BGT history, and time in tiers
-- **Tier Leaderboard** - See who's closest to their next promotion
-- **Weekly Digest** - Automated Monday community updates with 10 metrics
+- **Weekly Digest** - Automated Monday community updates
 - **Story Fragments** - Dune-themed narrative posts for elite promotions
 - **Water Sharer Badge** - Shareable badge system with lineage tracking
 - **Notification System** - Tier promotion DMs, badge awards, at-risk alerts
-- **Admin Analytics** - Comprehensive dashboard for community health
 
-### Previous Features (v2.0)
+### v2.0 Features
 
 - **Pseudonymous Profiles** - Create a unique identity (nym) completely unlinked to your wallet
 - **Badge System** - Earn badges for tenure, activity, and achievements
@@ -40,30 +50,31 @@ Sietch provides a dedicated space for a specific, highly curated subset of the B
                         │  │  (viem)     │  │  Service    │   │
                         │  └─────────────┘  └─────────────┘   │
                         │  ┌─────────────┐  ┌─────────────┐   │
-                        │  │  Badge Svc  │  │  Activity   │   │
+                        │  │  Badge Svc  │  │  Identity   │   │
                         │  │  (10 types) │  │  Service    │   │
                         │  └─────────────┘  └─────────────┘   │
                         └──────────┬──────────────────────────┘
                                    │
-              ┌────────────────────┼────────────────────┐
-              ▼                    ▼                    ▼
-       ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-       │ Discord Bot │      │  REST API   │      │ trigger.dev │
-       │ (discord.js)│      │ (Collab.Land│      │ (Scheduled) │
-       └──────┬──────┘      │  + Public)  │      └─────────────┘
-              │             └─────────────┘
-              ▼
-       ┌─────────────┐
-       │   Discord   │
-       │   Server    │
-       └─────────────┘
+       ┌───────────────────────────┼───────────────────────────┐
+       ▼                           ▼                           ▼
+┌─────────────┐             ┌─────────────┐             ┌─────────────┐
+│ Discord Bot │             │ Telegram Bot│             │  REST API   │
+│ (discord.js)│             │  (grammy)   │             │ (Collab.Land│
+└──────┬──────┘             └──────┬──────┘             │  + Public)  │
+       │                           │                    └─────────────┘
+       ▼                           ▼
+┌─────────────┐             ┌─────────────┐
+│   Discord   │             │  Telegram   │
+│   Server    │             │   Users     │
+└─────────────┘             └─────────────┘
 ```
 
 1. **Berachain RPC** - Direct on-chain queries for BGT balances via viem
-2. **Sietch Service** - Manages eligibility, profiles, badges, and activity
+2. **Sietch Service** - Manages eligibility, profiles, badges, and identity
 3. **Discord Bot** - Handles onboarding, slash commands, and notifications
-4. **REST API** - Collab.Land integration for token gating
-5. **trigger.dev** - Scheduled tasks (eligibility sync, activity decay, badge checks)
+4. **Telegram Bot** - Mirrors Discord functionality with inline queries
+5. **REST API** - Collab.Land integration for token gating
+6. **Identity Service** - Cross-platform wallet linking (Discord + Telegram)
 
 ## Eligibility Criteria
 
@@ -156,13 +167,47 @@ All discussions operate under Chatham House Rules:
 - Never reveal speaker identity or affiliation
 - No attribution of statements
 
+## Bot Commands
+
+### Discord Commands
+
+| Command | Description |
+|---------|-------------|
+| `/onboard` | Start onboarding flow |
+| `/profile` | View your member profile |
+| `/stats` | View personal stats with tier progress |
+| `/leaderboard` | Top badge holders or tier progression |
+| `/water-share` | Share or check Water Sharer badge |
+| `/admin-stats` | Admin analytics dashboard |
+
+### Telegram Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message and quick actions |
+| `/verify` | Link wallet via signature verification |
+| `/score` | View conviction score with tier and rank |
+| `/badges` | View earned badges |
+| `/stats` | Community statistics |
+| `/leaderboard` | Top 10 members by badges |
+| `/alerts` | Configure notification preferences |
+| `/help` | Command reference |
+
+### Telegram Inline Queries
+
+Type `@SietchBot` followed by:
+- `score` - Your conviction score
+- `rank` - Your current rank
+- `leaderboard` - Top 5 members
+- `help` - Usage instructions
+
 ## API
 
 ### Public Endpoints
 
 ```
 GET /health
-{ "status": "healthy", "version": "3.0.0" }
+{ "status": "healthy", "version": "4.1.0" }
 
 GET /api/v1/eligibility
 [{ "address": "0x...", "bgtHeld": "1234567890", "rank": 42, "role": "fedaykin" }]
@@ -201,15 +246,17 @@ POST /admin/water-share/revoke/:id  # Revoke member's grants
 
 ## Technical Details
 
-- **Stack**: Node.js 20, TypeScript, Express, Discord.js v14, SQLite, viem
+- **Stack**: Node.js 20, TypeScript, Express, Discord.js v14, Grammy, SQLite, viem
+- **Discord Bot**: discord.js v14 with slash commands
+- **Telegram Bot**: Grammy framework with webhooks
 - **Refresh Cadence**: Eligibility sync every 6 hours via trigger.dev
 - **Weekly Digest**: Monday 9:00 UTC via trigger.dev cron
 - **Activity Decay**: 10% decay every 6 hours (demurrage model)
 - **Badge Checks**: Daily evaluation at midnight UTC
 - **Grace Period**: 24 hours during RPC outages (no revocations)
-- **Wallet Verification**: Collab.Land signature flow
+- **Wallet Verification**: Collab.Land (Discord), signature verification (Telegram)
 - **Privacy**: Rounded BGT values, ephemeral responses for sensitive data
-- **Tests**: Unit + integration test suites covering all services
+- **Tests**: Unit + integration test suites (100+ tests)
 
 ## Naming Reference
 
@@ -230,11 +277,13 @@ Names from Frank Herbert's *Dune*:
 
 ## Documentation
 
-- **[sietch-service/README.md](sietch-service/README.md)** - Service documentation
-- **[loa-grimoire/prd.md](loa-grimoire/prd.md)** - Product Requirements Document
-- **[loa-grimoire/sdd.md](loa-grimoire/sdd.md)** - Software Design Document
-- **[loa-grimoire/sprint.md](loa-grimoire/sprint.md)** - Sprint Plan (22 sprints complete)
-- **[sietch-service/docs/discord/PERMISSION_MATRIX.md](sietch-service/docs/discord/PERMISSION_MATRIX.md)** - Discord permissions
+| Document | Description |
+|----------|-------------|
+| [sietch-service/README.md](sietch-service/README.md) | Service setup & development |
+| [loa-grimoire/prd.md](loa-grimoire/prd.md) | Product Requirements Document |
+| [loa-grimoire/sdd.md](loa-grimoire/sdd.md) | Software Design Document |
+| [loa-grimoire/sprint.md](loa-grimoire/sprint.md) | Sprint Plan (33 sprints complete) |
+| [sietch-service/docs/deployment/](sietch-service/docs/deployment/) | Deployment guides & runbooks |
 
 ## Built With
 
