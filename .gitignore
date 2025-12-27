@@ -1,0 +1,98 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+*.log
+
+# Production builds
+build/
+dist/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE and Editor
+.vscode/
+.idea/
+
+# Claude Code config (local workspace settings, prompts, scratchpad)
+.claude/config/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Package manager
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Loa Framework State
+# Created by /setup command when first-time configuration completes
+# Each developer runs setup independently, so this should not be shared
+.loa-setup-complete
+
+# ck semantic search state (embeddings cache, indexes)
+# Large machine-specific files that rebuild automatically
+.ck/
+
+# Agent trajectory logs (reasoning audit trails)
+# JSONL format logs for development/debugging, not needed in version control
+loa-grimoire/a2a/trajectory/*.jsonl
+
+# Pending feedback (temporary file for failed Linear submissions)
+# Kept in case /feedback fails to submit to Linear - automatically retried
+loa-grimoire/analytics/pending-feedback.json
+
+# Server audit reports (contain sensitive deployment info)
+loa-grimoire/deployment/SERVER-REALITY-AUDIT.md
+
+# Project-specific generated artifacts
+# IMPORTANT: Uncomment these lines when using this as a base for your project
+# if you are not in THJ to avoid committing generated documentation to your repository.
+# Within THJ as we work within private repos we commit these files to help with internal
+# knowledge systems.
+#
+# Beads graph memory (sprint task tracking)
+# By default, .beads/ is tracked for team collaboration on sprint state.
+# Uncomment to keep local-only:
+# .beads/
+#
+# Loa process artifacts (loa-grimoire/)
+# Uncomment to exclude from version control:
+# loa-grimoire/prd.md
+# loa-grimoire/sdd.md
+# loa-grimoire/sprint.md
+# loa-grimoire/a2a/
+# loa-grimoire/deployment/
+#
+# Analytics (usage tracking)
+# By default, analytics are tracked but may contain developer-specific info
+# Uncomment to exclude from version control:
+loa-grimoire/analytics/
+#
+# Application artifacts (app/)
+app/src/
+app/tests/
+app/config/
+app/package.json
+app/package-lock.json
+app/tsconfig.json
+app/ecosystem.config.js

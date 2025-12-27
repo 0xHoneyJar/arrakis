@@ -1,0 +1,17 @@
+Sprint 32 - Telegram Utility Commands
+Completed: 2025-12-27
+Version: v4.1 "The Crossing"
+
+Implementation: COMPLETE
+Security Audit: APPROVED by Paranoid Cypherpunk Auditor
+
+Tasks Completed:
+- TASK-32.1: Implement /refresh command with 5-minute cooldown
+- TASK-32.2: Implement /unlink command with confirmation flow
+- TASK-32.3: Add Redis caching to leaderboard service (60s TTL)
+- TASK-32.4: Update command index and help text
+- TASK-32.5: Write unit tests (13 new tests)
+
+Test Results: 41/41 passing
+
+Security: No critical, high, or medium-severity vulnerabilities identified.
