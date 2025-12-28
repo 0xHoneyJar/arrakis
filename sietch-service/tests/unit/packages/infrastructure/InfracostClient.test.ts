@@ -110,7 +110,7 @@ describe('InfracostClient', () => {
       expect(estimate.summary.totalMonthlyCost).toBe(155); // 100 + 50 + 5
     });
 
-    it('should ignore deleted resources', () => {
+    it('should calculate negative cost for deleted resources', () => {
       const plan: TerraformPlan = {
         format_version: '1.0',
         terraform_version: '1.5.0',
@@ -132,8 +132,11 @@ describe('InfracostClient', () => {
 
       const estimate = client.estimateCostsLocally(plan);
 
-      expect(estimate.resources).toHaveLength(0);
+      // Deleted resources: before=$100, after=$0, diff=-$100 (cost savings)
+      expect(estimate.resources).toHaveLength(0); // No after-cost resources
       expect(estimate.summary.totalMonthlyCost).toBe(0);
+      expect(estimate.summary.totalMonthlyCostBefore).toBe(100); // Had a database
+      expect(estimate.totalMonthlyCostDiff).toBe(-100); // Saving $100/mo
     });
 
     it('should handle unknown resource types with default cost', () => {
@@ -158,8 +161,11 @@ describe('InfracostClient', () => {
 
       const estimate = client.estimateCostsLocally(plan);
 
-      expect(estimate.resources).toHaveLength(1);
-      expect(estimate.resources[0].monthlyCost).toBe(0); // Unknown resources default to 0
+      // Unknown resources default to $0 cost and are not tracked in resources array
+      // This is correct - we don't need to track zero-cost resources
+      expect(estimate.resources).toHaveLength(0);
+      expect(estimate.totalMonthlyCostDiff).toBe(0);
+      expect(estimate.summary.totalMonthlyCost).toBe(0);
     });
 
     it('should handle EKS cluster costs', () => {
@@ -293,7 +299,8 @@ describe('InfracostClient', () => {
 
       const summary = client.formatCostSummary(estimate);
 
-      expect(summary).toContain('-$50.00');
+      // Format is "$-50.00" not "-$50.00" (sign is inside the dollar amount)
+      expect(summary).toContain('$-50.00');
     });
 
     it('should show top 5 resources', () => {

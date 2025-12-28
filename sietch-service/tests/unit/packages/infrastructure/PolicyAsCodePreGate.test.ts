@@ -270,16 +270,20 @@ describe('PolicyAsCodePreGate', () => {
       const configWithInfracost: PreGateConfig = {
         ...config,
         infracostApiKey: 'test-key',
+        // Set a lower threshold for testing
+        budgetThresholdUsd: 500,
       };
 
       const preGateWithCost = new PolicyAsCodePreGate(configWithInfracost);
       await preGateWithCost.initialize();
 
       // Create plan with high-cost resources
+      // With fixed estimator: creates have before=0, after=cost
+      // 6 databases * $100/ea = $600 diff (exceeds $500 threshold)
       const plan: TerraformPlan = {
         format_version: '1.0',
         terraform_version: '1.5.0',
-        resource_changes: Array.from({ length: 50 }, (_, i) => ({
+        resource_changes: Array.from({ length: 6 }, (_, i) => ({
           address: `aws_db_instance.db${i}`,
           mode: 'managed' as const,
           type: 'aws_db_instance',
@@ -295,10 +299,11 @@ describe('PolicyAsCodePreGate', () => {
 
       const decision = await preGateWithCost.evaluate(plan);
 
-      // 50 databases * $100/mo = $5000, but with estimation it should be >$5k
+      // 6 databases * $100/mo = $600 diff (before=0, after=$600)
+      // $600 > $500 threshold = should reject
       expect(decision.verdict).toBe('REJECT');
       expect(decision.reason).toContain('Budget threshold exceeded');
-      expect(decision.costEstimate?.totalMonthlyCostDiff).toBeGreaterThan(5000);
+      expect(decision.costEstimate?.totalMonthlyCostDiff).toBeGreaterThan(500);
     });
   });
 

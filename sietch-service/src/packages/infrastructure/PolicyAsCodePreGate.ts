@@ -9,10 +9,14 @@
  * 2. Check Infracost budget threshold (if configured)
  * 3. Calculate risk score
  * 4. Return decision: APPROVE, REJECT, or REVIEW_REQUIRED
+ *
+ * Note: Uses TypeScript-based policy evaluation for simplicity.
+ * OPA WASM integration can be added as a future enhancement by:
+ * 1. Pre-compiling .rego to WASM: `opa build -t wasm policies/`
+ * 2. Loading with @open-policy-agent/opa-wasm
  */
 
 import { promises as fs } from 'fs';
-import { loadPolicy } from '@open-policy-agent/opa-wasm';
 import { InfracostClient } from './InfracostClient.js';
 import { RiskScorer } from './RiskScorer.js';
 import type {
@@ -25,17 +29,49 @@ import type {
 } from './types.js';
 
 /**
+ * Logger interface for dependency injection
+ * Compatible with pino, winston, or console
+ */
+export interface Logger {
+  info(obj: object, msg?: string): void;
+  warn(obj: object, msg?: string): void;
+  error(obj: object, msg?: string): void;
+}
+
+/**
+ * Loaded policy instance with content and metadata
+ */
+interface PolicyInstance {
+  content: string;
+  path: string;
+}
+
+/**
+ * Extended configuration with optional logger
+ */
+export interface PreGateConfigWithLogger extends PreGateConfig {
+  logger?: Logger;
+}
+
+/**
  * Main orchestrator for Policy-as-Code pre-gate validation
  */
 export class PolicyAsCodePreGate {
-  private config: PreGateConfig;
+  private config: PreGateConfigWithLogger;
   private infracostClient?: InfracostClient;
   private riskScorer: RiskScorer;
-  private policy?: any; // OPA policy instance
+  private policy?: PolicyInstance;
+  private logger: Logger;
 
-  constructor(config: PreGateConfig) {
+  constructor(config: PreGateConfigWithLogger) {
     this.config = config;
     this.riskScorer = new RiskScorer();
+    // Use injected logger or default to console-compatible wrapper
+    this.logger = config.logger || {
+      info: (obj: object, msg?: string) => console.log(msg || '', obj),
+      warn: (obj: object, msg?: string) => console.warn(msg || '', obj),
+      error: (obj: object, msg?: string) => console.error(msg || '', obj),
+    };
 
     // Initialize Infracost client if API key provided
     if (config.infracostApiKey) {
@@ -100,7 +136,7 @@ export class PolicyAsCodePreGate {
           }
         } catch (error) {
           // Infracost failure is non-blocking, log and continue
-          console.warn('Infracost estimation failed:', error);
+          this.logger.warn({ error: String(error) }, 'Infracost estimation failed');
         }
       }
 
@@ -114,9 +150,10 @@ export class PolicyAsCodePreGate {
 
       // Ensure evaluation completes within timeout
       if (evaluationTimeMs > this.config.evaluationTimeoutMs) {
-        console.warn(
-          `Policy evaluation exceeded timeout: ${evaluationTimeMs}ms > ${this.config.evaluationTimeoutMs}ms`
-        );
+        this.logger.warn({
+          evaluationTimeMs,
+          timeoutMs: this.config.evaluationTimeoutMs,
+        }, 'Policy evaluation exceeded timeout');
       }
 
       return {

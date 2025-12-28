@@ -121,6 +121,7 @@ export class InfracostClient {
   estimateCostsLocally(terraformPlan: TerraformPlan): InfracostEstimate {
     const resources: InfracostResource[] = [];
     let totalMonthlyCost = 0;
+    let totalMonthlyCostBefore = 0;
 
     // Simple cost heuristics (very rough estimates)
     const costMap: Record<string, number> = {
@@ -140,29 +141,51 @@ export class InfracostClient {
     };
 
     for (const change of terraformPlan.resource_changes || []) {
-      if (change.change.actions.includes('create') || change.change.actions.includes('update')) {
-        const baseCost = costMap[change.type] || 0;
-        const monthlyCost = change.change.actions.includes('delete') ? 0 : baseCost;
+      const baseCost = costMap[change.type] || 0;
+      const actions = change.change.actions;
 
+      // Determine before and after costs based on action type
+      let beforeCost = 0;
+      let afterCost = 0;
+
+      if (actions.includes('create') && !actions.includes('delete')) {
+        // New resource: before=0, after=cost
+        beforeCost = 0;
+        afterCost = baseCost;
+      } else if (actions.includes('delete') && !actions.includes('create')) {
+        // Deleted resource: before=cost, after=0
+        beforeCost = baseCost;
+        afterCost = 0;
+      } else if (actions.includes('update')) {
+        // Updated resource: assume same cost (no change)
+        beforeCost = baseCost;
+        afterCost = baseCost;
+      } else if (actions.includes('delete') && actions.includes('create')) {
+        // Replace: before=cost, after=cost (resource recreated)
+        beforeCost = baseCost;
+        afterCost = baseCost;
+      }
+      // no-op and read: no cost impact
+
+      // Only track resources with cost impact
+      if (afterCost > 0) {
         resources.push({
           name: change.address,
           resourceType: change.type,
-          monthlyCost,
+          monthlyCost: afterCost,
           costComponents: [
             {
               name: 'Base cost',
               unit: 'per month',
-              monthlyCost,
+              monthlyCost: afterCost,
             },
           ],
         });
-
-        totalMonthlyCost += monthlyCost;
       }
-    }
 
-    // Calculate before cost (assume current resources are unchanged)
-    const totalMonthlyCostBefore = totalMonthlyCost * 0.8; // Rough estimate
+      totalMonthlyCost += afterCost;
+      totalMonthlyCostBefore += beforeCost;
+    }
 
     return {
       totalMonthlyCostDiff: totalMonthlyCost - totalMonthlyCostBefore,

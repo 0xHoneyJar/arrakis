@@ -905,4 +905,136 @@ To add new hard blocks:
 
 **Implementation Completed**: 2025-12-29
 **Ready for Review**: ✅ YES
-**Dependencies Required**: `npm install @open-policy-agent/opa-wasm axios`
+**Dependencies Required**: `npm install axios` (OPA WASM import removed - using TypeScript evaluation)
+
+---
+
+## Changes Made (Code Review Feedback)
+
+### Revision 1: Addressing Engineer Feedback (2025-12-29)
+
+The following issues from the Senior Technical Lead review have been fixed:
+
+#### ISSUE-1: Removed Unused OPA WASM Import ✅
+
+**Location**: `PolicyAsCodePreGate.ts`
+
+**Before**:
+```typescript
+import { loadPolicy } from '@open-policy-agent/opa-wasm';
+```
+
+**After**: Import removed entirely.
+
+**Rationale**: The TypeScript-based policy evaluator is the intentional approach. OPA WASM integration can be a future enhancement.
+
+---
+
+#### ISSUE-2: Replaced console.warn with Logger Injection ✅
+
+**Location**: `PolicyAsCodePreGate.ts`
+
+**Changes**:
+1. Added `Logger` interface for dependency injection (compatible with pino, winston, console)
+2. Added `PreGateConfigWithLogger` interface extending `PreGateConfig`
+3. Updated constructor to accept optional logger with console fallback
+4. Replaced `console.warn` calls with structured logging
+
+**Before**:
+```typescript
+console.warn('Infracost estimation failed:', error);
+console.warn(`Policy evaluation exceeded timeout: ${evaluationTimeMs}ms`);
+```
+
+**After**:
+```typescript
+this.logger.warn({ error: String(error) }, 'Infracost estimation failed');
+this.logger.warn({
+  evaluationTimeMs,
+  timeoutMs: this.config.evaluationTimeoutMs,
+}, 'Policy evaluation exceeded timeout');
+```
+
+---
+
+#### ISSUE-3: Fixed Cost Estimation Formula for Creates ✅
+
+**Location**: `InfracostClient.ts:estimateCostsLocally()`
+
+**Problem**: The old formula used a hardcoded `0.8` multiplier for "before" cost, which incorrectly calculated before=80% of cost for creates (should be 0).
+
+**Before**:
+```typescript
+const totalMonthlyCostBefore = totalMonthlyCost * 0.8; // Rough estimate
+```
+
+**After**:
+```typescript
+// Determine before and after costs based on action type
+let beforeCost = 0;
+let afterCost = 0;
+
+if (actions.includes('create') && !actions.includes('delete')) {
+  // New resource: before=0, after=cost
+  beforeCost = 0;
+  afterCost = baseCost;
+} else if (actions.includes('delete') && !actions.includes('create')) {
+  // Deleted resource: before=cost, after=0
+  beforeCost = baseCost;
+  afterCost = 0;
+} else if (actions.includes('update')) {
+  // Updated resource: assume same cost (no change)
+  beforeCost = baseCost;
+  afterCost = baseCost;
+} else if (actions.includes('delete') && actions.includes('create')) {
+  // Replace: before=cost, after=cost (resource recreated)
+  beforeCost = baseCost;
+  afterCost = baseCost;
+}
+```
+
+**Test Updates**:
+- Updated `InfracostClient.test.ts` to expect correct cost differentials
+- Updated `PolicyAsCodePreGate.test.ts` budget test with corrected threshold logic
+
+---
+
+#### ISSUE-4: Added Proper Typing for Policy Instance ✅
+
+**Location**: `PolicyAsCodePreGate.ts`
+
+**Before**:
+```typescript
+private policy?: any; // OPA policy instance
+```
+
+**After**:
+```typescript
+/**
+ * Loaded policy instance with content and metadata
+ */
+interface PolicyInstance {
+  content: string;
+  path: string;
+}
+
+private policy?: PolicyInstance;
+```
+
+---
+
+### Test Results After Fixes
+
+```
+> sietch-service@4.0.0 test:run
+> vitest run tests/unit/packages/infrastructure/
+
+ ✓ tests/unit/packages/infrastructure/RiskScorer.test.ts (15 tests) 5ms
+ ✓ tests/unit/packages/infrastructure/PolicyAsCodePreGate.test.ts (19 tests) 13ms
+ ✓ tests/unit/packages/infrastructure/InfracostClient.test.ts (14 tests) 10ms
+
+Test Files  3 passed (3)
+    Tests  48 passed (48)
+```
+
+All 48 tests pass after the fixes.
