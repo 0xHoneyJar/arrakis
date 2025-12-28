@@ -3,125 +3,126 @@
 **Sprint ID**: sprint-48
 **Review Date**: 2025-12-29
 **Reviewer**: Senior Technical Lead
-**Status**: CHANGES REQUIRED
+**Status**: APPROVED
 
 ---
 
 ## Executive Summary
 
-Sprint 48 implements a Policy-as-Code Pre-Gate system for Terraform infrastructure changes. The implementation is comprehensive with good architectural decisions, but several issues need to be addressed before approval.
+Sprint 48 Policy-as-Code Pre-Gate implementation has been re-reviewed after fixes were applied. All 4 issues from the previous review have been properly addressed.
 
 ---
 
 ## Review Results
 
-### Issues Found
+### Issue Resolution Verification
 
-#### ISSUE-1: OPA WASM Import Not Used (Medium)
+#### ISSUE-1: OPA WASM Import Removed ✅
 
-**Location**: `sietch-service/src/packages/infrastructure/PolicyAsCodePreGate.ts:15`
+**Verification**: Confirmed `import { loadPolicy } from '@open-policy-agent/opa-wasm'` has been removed from `PolicyAsCodePreGate.ts`.
 
-**Issue**: The `loadPolicy` import from `@open-policy-agent/opa-wasm` is imported but never used. The implementation falls back to a TypeScript-based policy evaluator.
-
-```typescript
-import { loadPolicy } from '@open-policy-agent/opa-wasm';
-```
-
-**Impact**: Unused imports add package size and can confuse maintainers. More importantly, this suggests the OPA WASM integration wasn't fully implemented.
-
-**Fix Required**: Either:
-1. Remove the unused import if TypeScript evaluation is the intended approach
-2. Implement actual OPA WASM integration
-
-**Recommendation**: For this sprint, remove the unused import and document that TypeScript evaluation is intentional. OPA WASM can be a future enhancement.
+**Status**: FIXED
 
 ---
 
-#### ISSUE-2: Console Logging in Production Code (Low)
+#### ISSUE-2: Logger Injection Implemented ✅
 
-**Location**: `sietch-service/src/packages/infrastructure/PolicyAsCodePreGate.ts:103,117-119`
+**Verification**: Confirmed the following improvements:
+- `Logger` interface added (lines 35-39) - compatible with pino, winston, console
+- `PreGateConfigWithLogger` interface added (lines 52-54)
+- Constructor accepts optional logger with console-compatible fallback (lines 69-74)
+- `this.logger.warn()` used instead of `console.warn` (lines 139, 153)
 
-**Issue**: Uses `console.warn` directly instead of injected logger.
+**Code Quality**: The logger interface is properly exported and follows dependency injection best practices.
 
-```typescript
-console.warn('Infracost estimation failed:', error);
-// ...
-console.warn(`Policy evaluation exceeded timeout: ${evaluationTimeMs}ms > ${this.config.evaluationTimeoutMs}ms`);
-```
-
-**Impact**: Inconsistent logging, no structured log data, cannot be silenced in tests.
-
-**Fix Required**: Inject a logger instance and use structured logging.
+**Status**: FIXED
 
 ---
 
-#### ISSUE-3: Hardcoded Cost Estimation Formula (Low)
+#### ISSUE-3: Cost Estimation Formula Corrected ✅
 
-**Location**: `sietch-service/src/packages/infrastructure/InfracostClient.ts:165`
-
-**Issue**: The local cost estimator uses a hardcoded `0.8` multiplier for "before" cost calculation.
+**Verification**: The `estimateCostsLocally()` method now correctly calculates before/after costs:
 
 ```typescript
-const totalMonthlyCostBefore = totalMonthlyCost * 0.8; // Rough estimate
+if (actions.includes('create') && !actions.includes('delete')) {
+  // New resource: before=0, after=cost
+  beforeCost = 0;
+  afterCost = baseCost;
+} else if (actions.includes('delete') && !actions.includes('create')) {
+  // Deleted resource: before=cost, after=0
+  beforeCost = baseCost;
+  afterCost = 0;
+} else if (actions.includes('update')) {
+  // Updated resource: assume same cost (no change)
+  beforeCost = baseCost;
+  afterCost = baseCost;
+} else if (actions.includes('delete') && actions.includes('create')) {
+  // Replace: before=cost, after=cost (resource recreated)
+  beforeCost = baseCost;
+  afterCost = baseCost;
+}
 ```
 
-**Impact**: This is a rough heuristic that doesn't reflect actual infrastructure state. For new resources, the "before" cost should be 0, not 80% of the new cost.
-
-**Fix Required**: For `create` actions, set `totalMonthlyCostBefore = 0`. Only use the 0.8 multiplier for `update` actions where we don't know the exact before state.
+**Status**: FIXED - The hardcoded `0.8` multiplier has been replaced with proper semantic cost calculation.
 
 ---
 
-#### ISSUE-4: Missing Type Safety in Policy Content (Low)
+#### ISSUE-4: PolicyInstance Typing Added ✅
 
-**Location**: `sietch-service/src/packages/infrastructure/PolicyAsCodePreGate.ts:34`
+**Verification**: Confirmed proper interface definition:
 
-**Issue**: Policy instance is typed as `any`.
-
-```typescript
-private policy?: any; // OPA policy instance
-```
-
-**Impact**: Loses TypeScript's type safety benefits.
-
-**Fix Required**: Define a proper interface:
 ```typescript
 interface PolicyInstance {
   content: string;
   path: string;
 }
+
 private policy?: PolicyInstance;
 ```
 
+**Status**: FIXED
+
 ---
 
-## Positive Observations
+### Additional Improvements Made
 
-1. **Comprehensive Test Coverage**: 48 tests covering all major scenarios
-2. **Clean Architecture**: Proper separation between InfracostClient, RiskScorer, and PolicyAsCodePreGate
-3. **Well-Documented OPA Policies**: The `.rego` file is well-structured with clear rule definitions
-4. **Risk Scoring Algorithm**: Weighted multi-factor scoring is a sound approach
-5. **TypeScript Policy Evaluation**: While not using OPA WASM, the TypeScript implementation correctly mirrors the Rego rules
-6. **Good Error Handling**: Graceful fallback when Infracost API fails
+During this review, I noted the new interfaces (`Logger`, `PreGateConfigWithLogger`) were not exported from `index.ts`. This has been corrected to ensure consumers can import these types.
+
+---
+
+## Test Results
+
+```
+ ✓ tests/unit/packages/infrastructure/RiskScorer.test.ts (15 tests)
+ ✓ tests/unit/packages/infrastructure/PolicyAsCodePreGate.test.ts (19 tests)
+ ✓ tests/unit/packages/infrastructure/InfracostClient.test.ts (14 tests)
+
+Test Files  3 passed (3)
+    Tests  48 passed (48)
+```
+
+All 48 tests pass.
 
 ---
 
 ## Verdict
 
-**CHANGES REQUIRED**
+**All good**
 
-Please address the 4 issues above before re-review. Priority order:
-1. ISSUE-1: Remove unused OPA WASM import (quick fix)
-2. ISSUE-2: Replace console.warn with logger injection (medium effort)
-3. ISSUE-3: Fix cost estimation formula for creates (medium effort)
-4. ISSUE-4: Add proper typing for policy instance (quick fix)
+The implementation meets all acceptance criteria and all previous review feedback has been properly addressed:
 
-After fixes, run tests again and update `reviewer.md` with the changes made.
+1. Clean imports - no unused dependencies
+2. Proper logging via dependency injection
+3. Correct cost calculation semantics
+4. Type-safe policy instance handling
+5. All tests passing
+
+Ready for security audit.
 
 ---
 
 ## Next Steps
 
-1. Fix all issues listed above
-2. Re-run tests: `npm run test:run -- tests/unit/packages/infrastructure/`
-3. Update `reviewer.md` with changes made
-4. Request re-review: `/review-sprint sprint-48`
+1. Security Audit: `/audit-sprint sprint-48`
+2. Upon approval, the sprint will be marked COMPLETED
+

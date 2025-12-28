@@ -6,6 +6,7 @@
  */
 
 export { PolicyAsCodePreGate } from './PolicyAsCodePreGate.js';
+export type { Logger, PreGateConfigWithLogger } from './PolicyAsCodePreGate.js';
 export { InfracostClient } from './InfracostClient.js';
 export { RiskScorer } from './RiskScorer.js';
 
