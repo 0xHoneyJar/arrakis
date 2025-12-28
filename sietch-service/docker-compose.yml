@@ -1,0 +1,47 @@
+# Docker Compose - Development Database
+#
+# Sprint 38: Drizzle Schema Design
+#
+# PostgreSQL development environment for local testing.
+# Includes Redis for session storage (Sprint 42+).
+#
+# Usage:
+#   docker-compose up -d        # Start services
+#   docker-compose down         # Stop services
+#   docker-compose down -v      # Stop and remove volumes
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: arrakis-postgres
+    environment:
+      POSTGRES_USER: arrakis
+      POSTGRES_PASSWORD: arrakis
+      POSTGRES_DB: arrakis
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./drizzle/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arrakis -d arrakis"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: arrakis-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
