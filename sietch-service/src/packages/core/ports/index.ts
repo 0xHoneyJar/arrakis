@@ -8,3 +8,4 @@
  */
 
 export * from './IChainProvider.js';
+export * from './IThemeProvider.js';
