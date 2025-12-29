@@ -139,6 +139,34 @@ The "Clear, Don't Compact" paradigm for context management:
 5. PRD/SDD - Design intent
 6. CONTEXT WINDOW - Transient, never authoritative
 
+### Beads Task Tracking (bd CLI)
+
+**IMPORTANT**: Use `bd` for tracking multi-session work, dependencies, and discovered issues.
+
+```bash
+# Finding work
+bd ready                              # Show issues ready to work (no blockers)
+bd list --status=open                 # All open issues
+bd show <id>                          # Detailed issue view
+
+# Creating & updating
+bd create --title="..." --type=task --priority=2  # New issue (priority 0-4)
+bd update <id> --status=in_progress   # Claim work
+bd close <id>                         # Mark complete
+
+# Dependencies
+bd dep add <issue> <depends-on>       # Add dependency
+bd blocked                            # Show blocked issues
+
+# Session management
+bd sync                               # Sync with git (run at session end)
+bd stats                              # Project statistics
+```
+
+**When to use bd vs TodoWrite**:
+- **bd**: Multi-session work, dependencies, discovered issues, persistent tracking
+- **TodoWrite**: Single-session execution, simple task lists, immediate work
+
 **Key Protocols**:
 - `session-continuity.md` - Tiered recovery, fork detection
 - `grounding-enforcement.md` - Citation requirements (>=0.95 ratio)
@@ -268,6 +296,48 @@ Skills assess context size and split into parallel sub-tasks when needed.
 | deploying-infrastructure | <2,000 | 2,000-5,000 | >5,000 |
 
 Use `.claude/scripts/context-check.sh` for assessment.
+
+## Code Search with ck (seek)
+
+**IMPORTANT**: Use `ck` for code search instead of standard grep. It provides semantic search capabilities.
+
+### When to Use ck
+
+- **Exploring unfamiliar code**: `ck --sem "authentication flow" src/`
+- **Finding related implementations**: `ck --sem "error handling" .`
+- **Understanding concepts**: `ck --hybrid "database connection" .`
+- **Standard text search**: `ck "TODO" src/` (drop-in grep replacement)
+
+### Common Commands
+
+```bash
+# Semantic search (finds conceptually similar code)
+ck --sem "error handling" src/          # Find error handling patterns
+ck --sem "authentication" --limit 10    # Top 10 auth-related files
+ck --sem "database query" --threshold 0.7  # High-confidence matches
+
+# Hybrid search (regex + semantic)
+ck --hybrid "async function" .          # Best of both worlds
+
+# Basic text search (grep replacement)
+ck "pattern" src/                       # Simple text search
+ck -i "TODO" .                          # Case-insensitive
+ck -n "import" file.ts                  # With line numbers
+ck -C 3 "error" .                       # 3 lines context
+
+# Index management
+ck --status .                           # Check index status
+ck --index .                            # Pre-build index
+```
+
+### For AI/Agent Output
+
+```bash
+ck --jsonl --sem "bug fix" src/         # JSONL format for agents
+ck --jsonl --no-snippet "auth"          # Compact output
+```
+
+**Prefer `ck --sem` or `ck --hybrid`** over basic grep when exploring code semantically.
 
 ## Helper Scripts
 
