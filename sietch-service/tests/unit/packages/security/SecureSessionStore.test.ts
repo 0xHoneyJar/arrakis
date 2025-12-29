@@ -2,6 +2,7 @@
  * SecureSessionStore Tests
  *
  * Sprint 51: Session Security Enhancements
+ * Sprint 53: Updated for required RATE_LIMIT_SALT env var
  *
  * Tests IP binding, device fingerprinting, and failed attempt rate limiting.
  */
@@ -9,6 +10,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SecureSessionStore } from '../../../../src/packages/security/SecureSessionStore.js';
 import type { Redis } from 'ioredis';
+import * as crypto from 'node:crypto';
+
+// Sprint 53: Required env var for rate limit salt
+const TEST_RATE_LIMIT_SALT = 'test-rate-limit-salt-value';
 
 describe('SecureSessionStore', () => {
   let store: SecureSessionStore;
@@ -16,8 +21,20 @@ describe('SecureSessionStore', () => {
   const testUserId = 'user-123';
   const testGuildId = 'guild-456';
 
+  // Helper to generate rate limit key matching production logic
+  const getRateLimitKey = (userId: string, guildId: string): string => {
+    const hash = crypto
+      .createHash('sha256')
+      .update(`${TEST_RATE_LIMIT_SALT}:${guildId}:${userId}`)
+      .digest('hex')
+      .substring(0, 16);
+    return `secure_session:rate_limit:${hash}`;
+  };
+
   // Mock Redis implementation
   beforeEach(() => {
+    // Sprint 53: Set required env var before tests
+    process.env.RATE_LIMIT_SALT = TEST_RATE_LIMIT_SALT;
     const data = new Map<string, string>();
     const ttls = new Map<string, number>();
 
@@ -127,8 +144,10 @@ describe('SecureSessionStore', () => {
       };
 
       // Simulate 10 failed attempts (hit rate limit)
+      // Sprint 53: Use hashed rate limit key
+      const rateLimitKey = getRateLimitKey(testUserId, testGuildId);
       for (let i = 0; i < 10; i++) {
-        await mockRedis.incr(`secure_session:rate_limit:${testGuildId}:${testUserId}`);
+        await mockRedis.incr(rateLimitKey);
       }
 
       await expect(
@@ -325,9 +344,11 @@ describe('SecureSessionStore', () => {
 
   describe('Rate Limiting', () => {
     it('should not rate limit below threshold', async () => {
+      // Sprint 53: Use hashed rate limit key
+      const rateLimitKey = getRateLimitKey(testUserId, testGuildId);
       // Record 9 failed attempts (below threshold of 10)
       for (let i = 0; i < 9; i++) {
-        await mockRedis.incr(`secure_session:rate_limit:${testGuildId}:${testUserId}`);
+        await mockRedis.incr(rateLimitKey);
       }
 
       const status = await store.checkRateLimit(testUserId, testGuildId);
@@ -337,9 +358,11 @@ describe('SecureSessionStore', () => {
     });
 
     it('should rate limit at threshold', async () => {
+      // Sprint 53: Use hashed rate limit key
+      const rateLimitKey = getRateLimitKey(testUserId, testGuildId);
       // Record 10 failed attempts (threshold)
       for (let i = 0; i < 10; i++) {
-        await mockRedis.incr(`secure_session:rate_limit:${testGuildId}:${testUserId}`);
+        await mockRedis.incr(rateLimitKey);
       }
 
       const status = await store.checkRateLimit(testUserId, testGuildId);
@@ -350,9 +373,11 @@ describe('SecureSessionStore', () => {
     });
 
     it('should reset rate limit', async () => {
+      // Sprint 53: Use hashed rate limit key
+      const rateLimitKey = getRateLimitKey(testUserId, testGuildId);
       // Record failed attempts
       for (let i = 0; i < 10; i++) {
-        await mockRedis.incr(`secure_session:rate_limit:${testGuildId}:${testUserId}`);
+        await mockRedis.incr(rateLimitKey);
       }
 
       // Reset
@@ -372,9 +397,11 @@ describe('SecureSessionStore', () => {
 
       const session = await store.createSession(testUserId, testGuildId, context);
 
+      // Sprint 53: Use hashed rate limit key
+      const rateLimitKey = getRateLimitKey(testUserId, testGuildId);
       // Trigger lockout
       for (let i = 0; i < 10; i++) {
-        await mockRedis.incr(`secure_session:rate_limit:${testGuildId}:${testUserId}`);
+        await mockRedis.incr(rateLimitKey);
       }
 
       const result = await store.validateSession(session.sessionId, context);

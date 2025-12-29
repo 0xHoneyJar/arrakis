@@ -413,10 +413,18 @@ export class ApiKeyManager {
 
   /**
    * Check if a key has specific permission
+   *
+   * SECURITY: Empty permissions = NO permissions (fail-closed)
+   * Use ['*'] for admin keys that need all permissions.
+   * Sprint 53: Fixed insecure default (CRITICAL-003)
    */
   hasPermission(keyRecord: ApiKeyRecord, permission: string): boolean {
-    // Empty permissions means all permissions
+    // Empty permissions means NO permissions (fail-closed security)
     if (keyRecord.permissions.length === 0) {
+      return false;
+    }
+    // Wildcard grants all permissions (explicit admin keys only)
+    if (keyRecord.permissions.includes('*')) {
       return true;
     }
     return keyRecord.permissions.includes(permission);
@@ -647,9 +655,18 @@ export class ApiKeyManager {
    *
    * Uses SHA-256 with a pepper for secure storage.
    * Note: In production, consider using argon2 or bcrypt for additional security.
+   *
+   * SECURITY: API_KEY_PEPPER environment variable is REQUIRED.
+   * Sprint 53: Removed insecure default pepper (CRITICAL-002)
    */
   private hashSecret(secret: string): string {
-    const pepper = process.env.API_KEY_PEPPER ?? 'arrakis-default-pepper';
+    const pepper = process.env.API_KEY_PEPPER;
+    if (!pepper) {
+      throw new Error(
+        'API_KEY_PEPPER environment variable is required. ' +
+        'Generate one with: openssl rand -base64 32'
+      );
+    }
     return crypto
       .createHmac('sha256', pepper)
       .update(secret)

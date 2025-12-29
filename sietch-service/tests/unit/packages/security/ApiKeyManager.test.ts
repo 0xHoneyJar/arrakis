@@ -2,6 +2,7 @@
  * ApiKeyManager Unit Tests
  *
  * Sprint 50: Critical Hardening (P0)
+ * Sprint 53: Updated for required API_KEY_PEPPER and fail-closed permissions
  *
  * Test coverage:
  * - Key generation and creation
@@ -20,6 +21,9 @@ import {
   type ApiKeyManagerConfig,
   type ApiKeyRecord,
 } from '../../../../src/packages/security/ApiKeyManager.js';
+
+// Sprint 53: Required env var for API key pepper
+const TEST_API_KEY_PEPPER = 'test-api-key-pepper-value';
 
 // =============================================================================
 // Mocks
@@ -67,6 +71,9 @@ describe('ApiKeyManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Sprint 53: Set required env var before tests
+    process.env.API_KEY_PEPPER = TEST_API_KEY_PEPPER;
+
     db = createMockDb();
     auditLog = createMockAuditLog();
 
@@ -320,13 +327,31 @@ describe('ApiKeyManager', () => {
   // ===========================================================================
 
   describe('hasPermission', () => {
-    it('should return true for empty permissions (all permissions)', () => {
+    // Sprint 53 CRITICAL-003: Empty permissions = NO access (fail-closed)
+    it('should return false for empty permissions (fail-closed security)', () => {
       const keyRecord: ApiKeyRecord = {
         keyId: 'ak_abc123',
         keyHash: 'hash',
         version: 1,
         tenantId: 'tenant-123',
-        permissions: [], // Empty = all permissions
+        permissions: [], // Sprint 53: Empty = NO permissions (fail-closed)
+        createdAt: new Date(),
+        expiresAt: null,
+        revokedAt: null,
+        lastUsedAt: null,
+      };
+
+      expect(keyManager.hasPermission(keyRecord, 'any-permission')).toBe(false);
+    });
+
+    // Sprint 53: Wildcard permission grants all access (explicit admin keys only)
+    it('should return true for wildcard permission', () => {
+      const keyRecord: ApiKeyRecord = {
+        keyId: 'ak_abc123',
+        keyHash: 'hash',
+        version: 1,
+        tenantId: 'tenant-123',
+        permissions: ['*'], // Wildcard = all permissions
         createdAt: new Date(),
         expiresAt: null,
         revokedAt: null,
@@ -334,6 +359,8 @@ describe('ApiKeyManager', () => {
       };
 
       expect(keyManager.hasPermission(keyRecord, 'any-permission')).toBe(true);
+      expect(keyManager.hasPermission(keyRecord, 'read')).toBe(true);
+      expect(keyManager.hasPermission(keyRecord, 'write')).toBe(true);
     });
 
     it('should return true if permission is in list', () => {

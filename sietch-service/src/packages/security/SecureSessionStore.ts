@@ -128,8 +128,17 @@ export class SecureSessionStore {
     this.enableIpBinding = config.enableIpBinding ?? true;
     this.enableFingerprinting = config.enableFingerprinting ?? true;
     this.keyPrefix = config.keyPrefix ?? 'secure_session';
-    // Generate random salt for rate limit keys (defense-in-depth against Redis key prediction)
-    this.rateLimitSalt = crypto.randomBytes(8).toString('hex');
+
+    // SECURITY: Rate limit salt MUST be persistent across restarts
+    // Sprint 53: Fixed rate limit bypass via container restart (CRITICAL-004)
+    const rateLimitSalt = process.env.RATE_LIMIT_SALT;
+    if (!rateLimitSalt) {
+      throw new Error(
+        'RATE_LIMIT_SALT environment variable is required. ' +
+        'Generate one with: openssl rand -hex 16'
+      );
+    }
+    this.rateLimitSalt = rateLimitSalt;
   }
 
   /**

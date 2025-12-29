@@ -253,12 +253,16 @@ export class KillSwitchProtocol {
   /**
    * Revoke all sessions globally (DANGEROUS)
    *
-   * Uses Redis SCAN for non-blocking iteration instead of KEYS
+   * Uses Redis SCAN for non-blocking iteration instead of KEYS.
+   * Uses pipelined DEL to avoid blocking Redis with large atomic deletes.
+   *
+   * Sprint 53: Fixed CRITICAL-005 - Pipeline Redis deletions to prevent blocking
    */
   private async revokeAllSessions(): Promise<number> {
     let cursor = '0';
     let count = 0;
-    const batchSize = 1000; // Process in batches
+    // SECURITY: Reduced batch size from 1000 to 100 to minimize Redis blocking
+    const batchSize = 100;
 
     do {
       // SCAN is non-blocking and cursor-based (production-safe)
@@ -271,7 +275,13 @@ export class KillSwitchProtocol {
       );
 
       if (keys.length > 0) {
-        await this.redis.del(...keys);
+        // SECURITY: Use pipeline instead of atomic del(...keys) to prevent Redis blocking
+        // Atomic del with many keys can block Redis for milliseconds
+        const pipeline = this.redis.pipeline();
+        for (const key of keys) {
+          pipeline.del(key);
+        }
+        await pipeline.exec();
         count += keys.length;
       }
 
@@ -303,12 +313,15 @@ export class KillSwitchProtocol {
   /**
    * Revoke all sessions for a user
    *
-   * Uses Redis SCAN for non-blocking iteration instead of KEYS
+   * Uses Redis SCAN for non-blocking iteration instead of KEYS.
+   *
+   * Sprint 53: Fixed CRITICAL-005 - Reduced batch size to prevent Redis blocking
    */
   private async revokeUserSessions(userId: string): Promise<number> {
     let cursor = '0';
     let revokedCount = 0;
-    const batchSize = 1000; // Process in batches
+    // SECURITY: Reduced batch size from 1000 to 100 to minimize Redis blocking
+    const batchSize = 100;
 
     do {
       // SCAN is non-blocking and cursor-based (production-safe)
