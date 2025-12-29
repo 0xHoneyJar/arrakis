@@ -18,12 +18,14 @@
 import type { Redis } from 'ioredis';
 import type { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import * as crypto from 'crypto';
-import type {
-  AuditLog,
-  NewAuditLog,
-  AuditLogPayload,
-  AuditEventType,
+import {
+  auditLogs,
+  type AuditLog,
+  type NewAuditLog,
+  type AuditLogPayload,
+  type AuditEventType,
 } from '../adapters/storage/schema.js';
+import { eq, and, gte, lte, desc, isNull, sql } from 'drizzle-orm';
 
 // =============================================================================
 // Types
@@ -84,19 +86,23 @@ export interface AuditLogPersistenceConfig {
 
 /**
  * Minimal database client interface for audit log persistence
+ *
+ * This is a simplified type that works with Drizzle's fluent API.
+ * The actual implementation uses drizzle-orm query builder.
  */
 export interface DatabaseClient {
   insert(table: unknown): {
-    values(entries: unknown[]): Promise<unknown>;
+    values(entries: unknown | unknown[]): Promise<unknown>;
   };
-  select(): {
+  select(fields?: unknown): {
     from(table: unknown): {
-      where(condition: unknown): {
-        orderBy(order: unknown): {
+      where(condition?: unknown): {
+        orderBy(...args: unknown[]): {
           limit(n: number): {
             offset(n: number): Promise<AuditLog[]>;
           };
         };
+        limit(n: number): Promise<Array<{ count: number }>>;
       };
     };
   };
@@ -375,7 +381,7 @@ export class AuditLogPersistence {
         }));
 
         // Insert into database
-        await this.db.insert({} as unknown).values(dbEntries);
+        await this.db.insert(auditLogs).values(dbEntries);
       }
 
       // Remove processed entries from buffer
@@ -419,17 +425,49 @@ export class AuditLogPersistence {
     const limit = options.limit ?? 50;
     const offset = options.offset ?? 0;
 
-    // Build query conditions
-    // Note: In real implementation, this would use proper Drizzle query builder
-    // For now, returning a typed result structure
-    const entries: AuditLog[] = [];
+    // Build WHERE conditions
+    const conditions = [];
+    if (options.tenantId) {
+      conditions.push(eq(auditLogs.tenantId, options.tenantId));
+    }
+    if (options.eventType) {
+      conditions.push(eq(auditLogs.eventType, options.eventType));
+    }
+    if (options.actorId) {
+      conditions.push(eq(auditLogs.actorId, options.actorId));
+    }
+    if (options.startDate) {
+      conditions.push(gte(auditLogs.createdAt, options.startDate));
+    }
+    if (options.endDate) {
+      conditions.push(lte(auditLogs.createdAt, options.endDate));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Query with pagination
+    const entries = await this.db
+      .select()
+      .from(auditLogs)
+      .where(whereClause)
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Get total count
+    const countResult = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(auditLogs)
+      .where(whereClause);
+
+    const total = countResult[0]?.count ?? 0;
 
     return {
       entries,
-      total: 0,
+      total,
       limit,
       offset,
-      hasMore: false,
+      hasMore: offset + entries.length < total,
     };
   }
 
@@ -437,8 +475,18 @@ export class AuditLogPersistence {
    * Get audit log by ID
    */
   async getById(id: string): Promise<AuditLog | null> {
-    // Implementation would query by ID
-    return null;
+    const queryBuilder = this.db.select().from(auditLogs).where(eq(auditLogs.id, id));
+
+    // Handle both chained .limit() and direct execution
+    const results = typeof queryBuilder.limit === 'function'
+      ? await queryBuilder.limit(1)
+      : await queryBuilder;
+
+    if (!results || !Array.isArray(results)) {
+      return null;
+    }
+
+    return results[0] ?? null;
   }
 
   /**
@@ -522,15 +570,38 @@ export class AuditLogPersistence {
    * Query entries for archival (older than cutoff, not yet archived)
    */
   private async queryForArchival(cutoffDate: Date): Promise<AuditLog[]> {
-    // Implementation would query with proper filters
-    return [];
+    const results = await this.db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          lte(auditLogs.createdAt, cutoffDate),
+          isNull(auditLogs.archivedAt)
+        )
+      )
+      .orderBy(auditLogs.createdAt)
+      .limit(1000); // Batch size for archival
+
+    if (!results || !Array.isArray(results)) {
+      return [];
+    }
+
+    return results;
   }
 
   /**
    * Mark entries as archived
    */
   private async markAsArchived(ids: string[], s3Key: string): Promise<void> {
-    // Implementation would update archivedAt for the specified IDs
+    if (ids.length === 0) return;
+
+    // Update archivedAt for the specified IDs
+    for (const id of ids) {
+      await this.db
+        .update(auditLogs)
+        .set({ archivedAt: new Date() })
+        .where(eq(auditLogs.id, id));
+    }
   }
 
   // ===========================================================================

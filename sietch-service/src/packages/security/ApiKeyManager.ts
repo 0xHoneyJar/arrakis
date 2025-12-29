@@ -13,7 +13,8 @@
  */
 
 import * as crypto from 'crypto';
-import type { ApiKey, NewApiKey } from '../adapters/storage/schema.js';
+import { apiKeys, type ApiKey, type NewApiKey } from '../adapters/storage/schema.js';
+import { eq, and, desc, or, isNull, lte, gt } from 'drizzle-orm';
 import type { AuditLogPersistence, AuditLogEntry } from './AuditLogPersistence.js';
 
 // =============================================================================
@@ -92,15 +93,17 @@ interface SelectBuilder {
 
 interface FromBuilder {
   where(condition: unknown): WhereBuilder;
+  orderBy(order: unknown): OrderByBuilder;
 }
 
 interface WhereBuilder {
   orderBy(order: unknown): OrderByBuilder;
-  limit(n: number): LimitBuilder;
+  limit(n: number): LimitBuilder & Promise<ApiKey[]>;
 }
 
 interface OrderByBuilder {
-  limit(n: number): Promise<ApiKey[]>;
+  limit(n: number): LimitBuilder & Promise<ApiKey[]>;
+  where(condition: unknown): WhereBuilder;
 }
 
 interface LimitBuilder {
@@ -226,7 +229,7 @@ export class ApiKeyManager {
     };
 
     // Insert into database
-    await this.db.insert({} as unknown).values(keyRecord);
+    await this.db.insert(apiKeys).values(keyRecord);
 
     // Audit log
     await this.logAuditEvent({
@@ -289,7 +292,10 @@ export class ApiKeyManager {
     await this.db.transaction(async (tx) => {
       // Set expiration on current key
       if (currentKey) {
-        await tx.update({} as unknown).set({ expiresAt: oldKeyExpiresAt }).where({} as unknown);
+        await tx
+          .update(apiKeys)
+          .set({ expiresAt: oldKeyExpiresAt })
+          .where(eq(apiKeys.keyId, currentKey.keyId));
       }
 
       // Create new key record
@@ -306,7 +312,7 @@ export class ApiKeyManager {
         lastUsedAt: null,
       };
 
-      await tx.insert({} as unknown).values(keyRecord);
+      await tx.insert(apiKeys).values(keyRecord);
     });
 
     // Audit log
@@ -438,7 +444,10 @@ export class ApiKeyManager {
     }
 
     // Update key as revoked
-    await this.db.update({} as unknown).set({ revokedAt: new Date() }).where({} as unknown);
+    await this.db
+      .update(apiKeys)
+      .set({ revokedAt: new Date() })
+      .where(eq(apiKeys.keyId, keyId));
 
     // Audit log
     await this.logAuditEvent({
@@ -471,7 +480,10 @@ export class ApiKeyManager {
 
     // Revoke all keys
     for (const key of activeKeys) {
-      await this.db.update({} as unknown).set({ revokedAt: new Date() }).where({} as unknown);
+      await this.db
+        .update(apiKeys)
+        .set({ revokedAt: new Date() })
+        .where(eq(apiKeys.keyId, key.keyId));
     }
 
     // Audit log
@@ -502,17 +514,67 @@ export class ApiKeyManager {
    * Get current active key for a tenant
    */
   async getCurrentKey(tenantId: string): Promise<ApiKeyRecord | null> {
+    const now = new Date();
+
     // Query for active key (not revoked, not expired, highest version)
-    // Implementation would use proper Drizzle query
-    return null;
+    const results = await this.db
+      .select()
+      .from(apiKeys)
+      .where(
+        and(
+          eq(apiKeys.tenantId, tenantId),
+          isNull(apiKeys.revokedAt),
+          or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, now))
+        )
+      )
+      .orderBy(desc(apiKeys.version))
+      .limit(1);
+
+    if (results.length === 0) {
+      return null;
+    }
+
+    const key = results[0];
+    return {
+      keyId: key.keyId,
+      keyHash: key.keyHash,
+      version: key.version,
+      tenantId: key.tenantId,
+      name: key.name ?? undefined,
+      permissions: key.permissions ?? [],
+      createdAt: key.createdAt,
+      expiresAt: key.expiresAt,
+      revokedAt: key.revokedAt,
+      lastUsedAt: key.lastUsedAt,
+    };
   }
 
   /**
    * Get all keys for a tenant
    */
   async getKeysForTenant(tenantId: string): Promise<ApiKeyRecord[]> {
-    // Implementation would query all keys for tenant
-    return [];
+    const results = await this.db
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.tenantId, tenantId))
+      .orderBy(desc(apiKeys.version));
+
+    if (!results || !Array.isArray(results)) {
+      return [];
+    }
+
+    return results.map((key) => ({
+      keyId: key.keyId,
+      keyHash: key.keyHash,
+      version: key.version,
+      tenantId: key.tenantId,
+      name: key.name ?? undefined,
+      permissions: key.permissions ?? [],
+      createdAt: key.createdAt,
+      expiresAt: key.expiresAt,
+      revokedAt: key.revokedAt,
+      lastUsedAt: key.lastUsedAt,
+    }));
   }
 
   /**
@@ -527,23 +589,36 @@ export class ApiKeyManager {
    * Find key by ID
    */
   private async findKeyById(keyId: string): Promise<ApiKey | null> {
-    // Implementation would query by keyId
-    return null;
+    const results = await this.db
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.keyId, keyId))
+      .limit(1);
+
+    return results.length > 0 ? results[0] : null;
   }
 
   /**
    * Find key by ID and hash
    */
   private async findKeyByIdAndHash(keyId: string, hash: string): Promise<ApiKey | null> {
-    // Implementation would query by keyId and keyHash
-    return null;
+    const results = await this.db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.keyId, keyId), eq(apiKeys.keyHash, hash)))
+      .limit(1);
+
+    return results.length > 0 ? results[0] : null;
   }
 
   /**
    * Update last used timestamp
    */
   private async updateLastUsed(keyId: string): Promise<void> {
-    await this.db.update({} as unknown).set({ lastUsedAt: new Date() }).where({} as unknown);
+    await this.db
+      .update(apiKeys)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiKeys.keyId, keyId));
   }
 
   // ===========================================================================
