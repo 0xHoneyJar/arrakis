@@ -404,3 +404,137 @@ export type NewManifest = typeof manifests.$inferInsert;
 
 export type ShadowState = typeof shadowStates.$inferSelect;
 export type NewShadowState = typeof shadowStates.$inferInsert;
+
+// =============================================================================
+// Audit Logs Table (Sprint 50 - Post-Audit Hardening)
+// =============================================================================
+
+/**
+ * Audit Logs - Security event logging with HMAC signatures
+ *
+ * Persists security-critical events from KillSwitchProtocol, MFA, sessions, etc.
+ * Uses Redis WAL buffer for high-throughput logging before batch persistence.
+ *
+ * RLS Policy: tenant_id = current_setting('app.current_tenant')::UUID OR tenant_id IS NULL
+ * (Global events with NULL tenant_id are visible to platform admins)
+ */
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').references(() => communities.id, { onDelete: 'set null' }),
+    eventType: text('event_type').notNull(),
+    actorId: text('actor_id').notNull(),
+    targetScope: text('target_scope'), // 'GLOBAL', 'COMMUNITY', 'USER'
+    targetId: text('target_id'),
+    payload: jsonb('payload').$type<AuditLogPayload>().notNull(),
+    hmacSignature: text('hmac_signature').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  (table) => ({
+    tenantIdx: index('idx_audit_logs_tenant').on(table.tenantId),
+    eventTypeIdx: index('idx_audit_logs_type').on(table.eventType),
+    createdAtIdx: index('idx_audit_logs_created').on(table.createdAt),
+    actorIdx: index('idx_audit_logs_actor').on(table.actorId),
+  })
+);
+
+/**
+ * Valid audit event types
+ */
+export type AuditEventType =
+  | 'KILL_SWITCH_ACTIVATED'
+  | 'KILL_SWITCH_DEACTIVATED'
+  | 'MFA_VERIFIED'
+  | 'MFA_FAILED'
+  | 'SESSION_REVOKED'
+  | 'VAULT_POLICY_REVOKED'
+  | 'API_KEY_ROTATED'
+  | 'API_KEY_REVOKED'
+  | 'COMMUNITY_FROZEN'
+  | 'COMMUNITY_UNFROZEN'
+  | 'RLS_VIOLATION_ATTEMPT'
+  | 'TENANT_CONTEXT_SET'
+  | 'ADMIN_ACTION';
+
+/**
+ * Audit log payload stored as JSONB
+ */
+export interface AuditLogPayload {
+  /** Event-specific data */
+  [key: string]: unknown;
+  /** Optional reason for the action */
+  reason?: string;
+  /** Optional additional context */
+  context?: Record<string, unknown>;
+  /** IP address if available */
+  ipAddress?: string;
+  /** User agent if available */
+  userAgent?: string;
+}
+
+/**
+ * Audit log relations
+ */
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  tenant: one(communities, {
+    fields: [auditLogs.tenantId],
+    references: [communities.id],
+  }),
+}));
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type NewAuditLog = typeof auditLogs.$inferInsert;
+
+// =============================================================================
+// API Keys Table (Sprint 50 - Post-Audit Hardening)
+// =============================================================================
+
+/**
+ * API Keys - Key management with versioning and rotation support
+ *
+ * Supports key rotation with grace period:
+ * - New key created with incremented version
+ * - Old key given expiration (grace period)
+ * - Both keys valid during grace period
+ * - Old key auto-expires after grace period
+ *
+ * Keys are stored as hashes (never plaintext).
+ */
+export const apiKeys = pgTable(
+  'api_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    keyId: text('key_id').notNull().unique(),
+    keyHash: text('key_hash').notNull(),
+    version: integer('version').notNull(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    name: text('name'), // Optional friendly name
+    permissions: jsonb('permissions').$type<string[]>().default([]),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  },
+  (table) => ({
+    tenantIdx: index('idx_api_keys_tenant').on(table.tenantId),
+    keyIdIdx: index('idx_api_keys_key_id').on(table.keyId),
+    versionIdx: index('idx_api_keys_version').on(table.tenantId, table.version),
+  })
+);
+
+/**
+ * API key relations
+ */
+export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
+  tenant: one(communities, {
+    fields: [apiKeys.tenantId],
+    references: [communities.id],
+  }),
+}));
+
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type NewApiKey = typeof apiKeys.$inferInsert;
