@@ -311,9 +311,9 @@ Skills declare integrations in their `index.yaml`:
 integrations:
   required: []
   optional:
-    - name: "linear"
-      reason: "Sync tasks to Linear"
-      fallback: "Tasks remain local"
+    - name: "github"
+      reason: "Sync issues to GitHub"
+      fallback: "Issues remain local"
 ```
 
 ## Key Conventions

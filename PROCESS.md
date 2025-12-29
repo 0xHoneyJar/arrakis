@@ -223,7 +223,7 @@ Full-featured experience with analytics and MCP integrations:
    - Confirms local-only storage with opt-in sharing via `/feedback`
 
 2. **MCP Server Configuration** (Multichoice):
-   - Offers selection of MCP servers: Linear, GitHub, Vercel, Discord, web3-stats, All, Skip
+   - Offers selection of MCP servers: GitHub, Vercel, Discord, web3-stats, All, Skip
    - For each selected MCP, provides:
      - **Guided setup**: Step-by-step configuration instructions
      - **Documentation link**: External setup guide
@@ -288,7 +288,7 @@ Streamlined experience without analytics:
    - Indicates which servers are active
 
 3. **MCP Multichoice Selection**:
-   - Linear, GitHub, Vercel, Discord, web3-stats, All, Skip
+   - GitHub, Vercel, Discord, web3-stats, All, Skip
    - Provides guided setup or documentation for selected servers
 
 4. **Update Marker File**:
@@ -748,7 +748,7 @@ After security audit, if changes required:
 
 ### Post-Deployment: Developer Feedback (`/feedback`) - THJ Only
 
-**Goal**: Collect developer experience feedback and submit to Linear
+**Goal**: Collect developer experience feedback and store locally
 
 **Availability**: THJ developers only (checks `user_type` in `.loa-setup-complete`)
 
@@ -778,27 +778,24 @@ After security audit, if changes required:
    - Saves pending feedback locally (safety net before submission)
    - Formats feedback with analytics summary
 
-5. **Submit to Linear**:
-   - Searches for existing issue in "Loa Feedback" project
-   - If found: Adds comment with new feedback
-   - If not found: Creates new issue
-   - Includes full analytics JSON in collapsible details block
+5. **Save Feedback**:
+   - Saves feedback to `loa-grimoire/analytics/feedback.json`
+   - Includes full analytics JSON for context
 
 6. **Record Submission**:
    - Updates `feedback_submissions` array in analytics
-   - Deletes pending feedback file on success
 
 **Command**:
 ```bash
 /feedback
 ```
 
-**Output**: Linear issue/comment in "Loa Feedback" project
+**Output**: Feedback saved to `loa-grimoire/analytics/feedback.json`
 
 **Error Handling**:
-- If Linear submission fails, feedback is saved to `pending-feedback.json`
-- On next `/feedback` run, offers to submit pending feedback
-- No feedback is ever lost due to network/auth issues
+- If save fails, feedback is saved to `pending-feedback.json`
+- On next `/feedback` run, offers to save pending feedback
+- No feedback is ever lost
 
 **OSS Users**: For issues or feature requests, please open a GitHub issue at https://github.com/0xHoneyJar/loa/issues
 
@@ -1044,7 +1041,7 @@ command_type: "wizard"  # or "survey", "git"
 | `/review-sprint {sprint}` | Review and approve/reject implementation | `reviewing-code` | `loa-grimoire/a2a/engineer-feedback.md` | All users |
 | `/audit-sprint {sprint}` | Security audit of sprint implementation | `auditing-security` | `loa-grimoire/a2a/auditor-sprint-feedback.md` | All users |
 | `/deploy-production` | Deploy to production | `deploying-infrastructure` | `loa-grimoire/deployment/` | All users |
-| `/feedback` | Submit developer experience feedback | survey | Linear issue in "Loa Feedback" | THJ only |
+| `/feedback` | Submit developer experience feedback | survey | Local feedback file | THJ only |
 | `/update` | Pull framework updates from upstream | git | Merged updates | All users |
 | `/contribute` | Create OSS contribution PR | git | GitHub PR | All users |
 | `/audit` | Security audit (ad-hoc) | `auditing-security` | `SECURITY-AUDIT-REPORT.md` | All users |
@@ -1298,7 +1295,7 @@ See `.claude/protocols/trajectory-evaluation.md` for detailed protocol.
 # 12. Submit feedback (THJ only, optional but encouraged)
 /feedback
 # → Answer 4 survey questions
-# → Feedback + analytics posted to Linear
+# → Feedback + analytics saved locally
 # → OSS users: Open GitHub issue instead
 
 # 13. Get framework updates (periodically)
