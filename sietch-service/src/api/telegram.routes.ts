@@ -171,26 +171,15 @@ telegramRouter.post('/verify/callback', async (req, res) => {
       'Received Telegram verification callback'
     );
 
-    // SECURITY: Collab.Land signature/HMAC verification
-    // Implementation depends on your specific Collab.Land integration:
-    //
-    // Option A: HMAC verification (if Collab.Land provides shared secret)
-    // if (config.collabland?.webhookSecret) {
-    //   const expectedHmac = crypto
-    //     .createHmac('sha256', config.collabland.webhookSecret)
-    //     .update(JSON.stringify({ sessionId, walletAddress }))
-    //     .digest('hex');
-    //   if (hmac !== expectedHmac) {
-    //     logger.warn({ sessionId }, 'Invalid Collab.Land HMAC signature');
-    //     res.status(403).json({ error: 'Invalid signature' });
-    //     return;
-    //   }
-    // }
-    //
-    // Option B: Check X-Forwarded-For against Collab.Land IP allowlist
-    // Option C: Verify request comes from internal network only
-    //
-    // For now, log a warning if no signature provided
+    /**
+     * SECURITY: Collab.Land callback verification options:
+     * - Option A: HMAC verification with shared secret (config.collabland.webhookSecret)
+     * - Option B: IP allowlist verification via X-Forwarded-For header
+     * - Option C: Internal network verification (VPC/firewall rules)
+     *
+     * Currently using Option C (network-level protection) with warning logs.
+     * See docs/security/telegram-verification.md for implementation details.
+     */
     if (!signature && !hmac) {
       logger.warn(
         { sessionId },

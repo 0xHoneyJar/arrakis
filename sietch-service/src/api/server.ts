@@ -7,6 +7,7 @@ import { initDatabase, closeDatabase } from '../db/index.js';
 import { publicRouter, adminRouter, memberRouter, billingRouter, badgeRouter, boostRouter } from './routes.js';
 import { telegramRouter } from './telegram.routes.js';
 import { adminRouter as billingAdminRouter } from './admin.routes.js';
+import { docsRouter } from './docs/swagger.js';
 import {
   errorHandler,
   notFoundHandler,
@@ -110,6 +111,9 @@ function createApp(): Application {
 
   // Billing admin routes (v4.0 - Sprint 26)
   expressApp.use('/admin', billingAdminRouter);
+
+  // API Documentation (v5.1 - Sprint 52)
+  expressApp.use('/docs', docsRouter);
 
   // 404 handler
   expressApp.use(notFoundHandler);

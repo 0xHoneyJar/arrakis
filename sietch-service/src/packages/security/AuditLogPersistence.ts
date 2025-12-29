@@ -16,7 +16,7 @@
  */
 
 import type { Redis } from 'ioredis';
-import type { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import type { S3Client } from '@aws-sdk/client-s3';
 import * as crypto from 'crypto';
 import {
   auditLogs,
@@ -541,15 +541,18 @@ export class AuditLogPersistence {
     const archiveData = JSON.stringify(entries);
     const checksum = crypto.createHash('sha256').update(archiveData).digest('hex');
 
-    // Upload to S3
-    // Note: Actual implementation would use S3 SDK
-    // await this.s3Client.send(new PutObjectCommand({
-    //   Bucket: this.s3Bucket,
-    //   Key: s3Key,
-    //   Body: archiveData,
-    //   ContentType: 'application/json',
-    //   Metadata: { checksum },
-    // }));
+    // Upload to S3 if client is configured
+    if (this.s3Client && this.s3Bucket) {
+      // Dynamic import to avoid bundling S3 SDK when not used
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+      await this.s3Client.send(new PutObjectCommand({
+        Bucket: this.s3Bucket,
+        Key: s3Key,
+        Body: archiveData,
+        ContentType: 'application/json',
+        Metadata: { checksum },
+      }));
+    }
 
     // Mark entries as archived
     await this.markAsArchived(entries.map((e) => e.id), s3Key);
