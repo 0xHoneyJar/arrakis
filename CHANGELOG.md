@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2025-12-29
+
+### Added
+
+#### Multi-Tenant SaaS Architecture (Sprint 34-49)
+- **PostgreSQL with Row-Level Security** - Complete tenant isolation at database level
+- **Hexagonal Architecture** - Ports and adapters pattern for domain isolation
+- **Theme System** - Pluggable theme engine with BasicTheme and SietchTheme
+- **Two-Tier Chain Provider** - Score Service for complex queries, viem fallback
+
+#### Infrastructure Components (Sprint 44-49)
+- `RiskScorer` - Risk assessment for Terraform plans (resource sensitivity, blast radius, cost impact)
+- `InfracostClient` - Cost estimation integration with caching and circuit breaker
+- `PolicyAsCodePreGate` - OPA-based Terraform validation with configurable policies
+- `EnhancedHITLApprovalGate` - Human approval workflow with Slack/Discord notifications
+- Three-stage validation: pre-gate → notification → human approval
+- 24-hour timeout with configurable reminder intervals
+- MFA verification for high-risk approvals (threshold-based or mandatory)
+- HMAC-SHA256 signed audit trail entries
+
+#### Enterprise Security
+- HashiCorp Vault Transit engine integration for Ed25519 signing
+- AWS EKS deployment architecture with proper network isolation
+- 6-layer Defense in Depth model (WAF, VPC, Pod Security, RLS, Vault, Audit)
+- Webhook URL validation with domain allowlist
+- Input sanitization for log injection and XSS prevention
+- Auth verifier interface for resolver identity verification
+
+#### Port Interfaces (Hexagonal Architecture)
+- `IChainProvider` - Chain-agnostic wallet scoring interface
+- `IThemeProvider` - Theme configuration and tier evaluation interface
+- `IWizardEngine` - Self-service onboarding interface
+- `ISynthesisQueue` - Discord/Telegram role synthesis interface
+
+### Changed
+- Migrated from SQLite to PostgreSQL with Drizzle ORM
+- Refactored chain interactions behind Two-Tier Chain Provider
+- Extracted tier/badge logic into pluggable Theme System
+- All v4.1 features preserved via SietchTheme
+
+### Security
+- Webhook URL validation prevents data exfiltration via malicious URLs
+- HMAC signatures on audit trail prevent tampering
+- Sanitized error messages prevent network topology leakage
+- Input sanitization prevents log injection and XSS
+- Documented storage trust model for approval persistence
+
+### Documentation
+- Comprehensive deployment documentation in `loa-grimoire/deployment/`
+- Production runbooks for backup/restore and incident response
+- Security audit reports for sprint and deployment infrastructure
+
 ## [4.1.0] - 2025-12-27
 
 ### Added
@@ -293,6 +345,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Codename | Key Features |
 |---------|--------------|----------|--------------|
+| 5.0.0 | 2025-12-29 | The Transformation | Multi-tenant SaaS, hexagonal architecture, HITL approval |
 | 4.1.0 | 2025-12-27 | The Crossing | Telegram bot, inline queries, cross-platform identity |
 | 4.0.0 | 2025-12-26 | SaaS Foundation | Stripe billing, webhooks, gatekeeper, boosts |
 | 3.0.0 | 2025-12-26 | The Great Expansion | 9-tier system, stats, digest, notifications |
@@ -300,7 +353,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | 2.0.0 | 2025-12-15 | Social Layer | Profiles, badges, directory, activity |
 | 1.0.0 | 2025-12-01 | MVP | Core eligibility, Discord bot, API |
 
-[Unreleased]: https://github.com/0xHoneyJar/arrakis/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/0xHoneyJar/arrakis/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/0xHoneyJar/arrakis/compare/v4.1.0...v5.0.0
 [4.1.0]: https://github.com/0xHoneyJar/arrakis/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/0xHoneyJar/arrakis/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/0xHoneyJar/arrakis/compare/v2.1.0...v3.0.0
