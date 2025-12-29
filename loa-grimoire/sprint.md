@@ -1,22 +1,24 @@
-# Sprint Plan: Arrakis v5.0 "The Transformation"
+# Sprint Plan: Arrakis v5.1 "The Transformation"
 
-**Version:** 5.0
-**Date:** December 28, 2025
-**Status:** READY FOR IMPLEMENTATION
+**Version:** 5.1
+**Date:** December 29, 2025
+**Status:** HARDENING PHASE
 **Team:** Loa Framework + Engineering
-**PRD Reference:** loa-grimoire/prd.md
-**SDD Reference:** loa-grimoire/sdd.md
+**PRD Reference:** loa-grimoire/prd.md (v5.1)
+**SDD Reference:** loa-grimoire/sdd.md (v5.1)
 
 ---
 
 ## Executive Summary
 
-Transform Arrakis from a bespoke Berachain Discord bot into a **multi-tenant, chain-agnostic SaaS platform**. This plan breaks down 6 development phases into 16 weekly sprints (sprints 34-49), building on the foundation established in v4.1 (sprints 30-33).
+Transform Arrakis from a bespoke Berachain Discord bot into a **multi-tenant, chain-agnostic SaaS platform**. This plan breaks down 7 development phases into 19 weekly sprints (sprints 34-52), building on the foundation established in v4.1 (sprints 30-33).
 
-**Total Sprints:** 16 (Sprint 34-49)
+**v5.1 Update:** Added Phase 7 (Sprints 50-52) to address findings from external code review.
+
+**Total Sprints:** 19 (Sprint 34-52)
 **Sprint Duration:** 1 week each
-**Estimated Completion:** 16 weeks from start
-**Target:** 100+ communities, SietchTheme parity, zero Discord 429 bans
+**Estimated Completion:** 19 weeks from start
+**Target:** 100+ communities, SietchTheme parity, zero Discord 429 bans, enterprise security hardening
 
 ---
 
@@ -31,6 +33,7 @@ Transform Arrakis from a bespoke Berachain Discord bot into a **multi-tenant, ch
 | 44-45 | 4 | BullMQ + Token Bucket | SynthesisQueue, GlobalTokenBucket, Reconciliation | Sprint 43 |
 | 46-47 | 5 | Vault Transit + Kill Switch | VaultSigningAdapter, KillSwitchProtocol | Sprint 45 |
 | 48-49 | 6 | OPA Pre-Gate + HITL | PolicyAsCodePreGate, HITLApprovalGate | Sprint 47 |
+| 50-52 | 7 | Post-Audit Hardening | Audit Persistence, Circuit Breaker Metrics, API Docs | Sprint 49 |
 
 ---
 
@@ -854,6 +857,159 @@ Complete Enhanced HITL Approval Gate and deploy full v5.0 infrastructure to prod
 
 ---
 
+## Phase 7: Post-Audit Hardening (Weeks 17-19)
+
+### Sprint 50: Critical Hardening (P0) - Audit Log Persistence & RLS Validation
+
+**Duration:** 1 week
+**Dates:** Week 17
+
+#### Sprint Goal
+Address P0 critical findings from external code review: persist audit logs to database, validate RLS policies with penetration testing, and implement API key rotation mechanism.
+
+#### Deliverables
+- [ ] `packages/adapters/storage/AuditLogPersistence.ts`
+- [ ] RLS penetration test suite
+- [ ] `packages/security/ApiKeyManager.ts`
+- [ ] PostgreSQL audit log schema migration
+
+#### Acceptance Criteria
+- [ ] Audit logs persist to PostgreSQL with HMAC-SHA256 signatures
+- [ ] Redis WAL buffer for high-throughput logging (1000 ops/sec)
+- [ ] S3 cold storage archival (90-day retention)
+- [ ] RLS isolation verified via penetration tests (tenant A cannot access tenant B)
+- [ ] API key rotation with versioning and 24-hour grace period
+- [ ] No audit log loss during container restarts
+
+#### Technical Tasks
+- [ ] TASK-50.1: Create `audit_logs` PostgreSQL table with JSONB payload
+- [ ] TASK-50.2: Implement Redis WAL buffer with 5-second flush interval
+- [ ] TASK-50.3: Add HMAC-SHA256 signature generation for audit entries
+- [ ] TASK-50.4: Implement S3 cold storage archival (>30 days)
+- [ ] TASK-50.5: Write RLS penetration test suite (20+ cases)
+- [ ] TASK-50.6: Implement cross-tenant query validation tests
+- [ ] TASK-50.7: Create `ApiKeyManager` with version tracking
+- [ ] TASK-50.8: Implement key rotation with grace period
+- [ ] TASK-50.9: Add audit log retrieval API with pagination
+- [ ] TASK-50.10: Document compliance procedures
+
+#### Dependencies
+- Sprint 49: HITL Gate complete
+
+#### Risks & Mitigation
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| Audit log volume overwhelming | Medium | Medium | Redis buffer + batch writes |
+| RLS bypass discovered | Low | Critical | Comprehensive pen testing |
+
+#### Success Metrics
+- 0 audit log loss in failure scenarios
+- 100% RLS isolation verified
+- API key rotation <1s downtime
+
+---
+
+### Sprint 51: High Priority Hardening (P1) - Observability & Session Security
+
+**Duration:** 1 week
+**Dates:** Week 18
+
+#### Sprint Goal
+Address P1 high priority findings: add circuit breaker observability metrics, implement session security enhancements, and standardize error response format.
+
+#### Deliverables
+- [ ] Prometheus metrics for circuit breaker
+- [ ] `packages/security/SecureSessionStore.ts`
+- [ ] `packages/core/errors/ApiError.ts`
+- [ ] Grafana alerting rules
+
+#### Acceptance Criteria
+- [ ] Circuit breaker state exposed via Prometheus (open/closed/half-open)
+- [ ] Error rate and latency percentiles tracked per circuit
+- [ ] Session IP binding with fingerprinting
+- [ ] Suspicious session rate limiting (10 failed attempts → 15min lockout)
+- [ ] Unified `ApiError` response schema across all endpoints
+- [ ] Alerting rules for circuit breaker transitions
+
+#### Technical Tasks
+- [ ] TASK-51.1: Add prom-client dependency
+- [ ] TASK-51.2: Implement circuit breaker metrics exporter
+- [ ] TASK-51.3: Create Prometheus counters: `arrakis_circuit_breaker_state`
+- [ ] TASK-51.4: Create histogram: `arrakis_circuit_breaker_latency`
+- [ ] TASK-51.5: Implement `SecureSessionStore` with IP binding
+- [ ] TASK-51.6: Add device fingerprinting (User-Agent + Accept headers)
+- [ ] TASK-51.7: Implement failed attempt rate limiting
+- [ ] TASK-51.8: Create unified `ApiError` class with error codes
+- [ ] TASK-51.9: Migrate all endpoints to ApiError format
+- [ ] TASK-51.10: Create Grafana alerting rules for circuit state changes
+
+#### Dependencies
+- Sprint 50: Audit log persistence
+
+#### Risks & Mitigation
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| Metrics cardinality explosion | Medium | Medium | Label value limits |
+| Session binding too strict | Low | Medium | Configurable strictness |
+
+#### Success Metrics
+- 100% circuit breaker visibility in Grafana
+- <5 minute MTTD for circuit breaker issues
+- Unified error format across 100% of endpoints
+
+---
+
+### Sprint 52: Medium Priority Hardening (P2) - Code Quality & Documentation
+
+**Duration:** 1 week
+**Dates:** Week 19
+
+#### Sprint Goal
+Address P2 medium priority findings: remove dead code, normalize naming conventions, increase test coverage, and add OpenAPI documentation.
+
+#### Deliverables
+- [ ] Dead code removal PR
+- [ ] Naming convention normalization
+- [ ] OpenAPI 3.0 specification
+- [ ] Test coverage increase to 80%
+
+#### Acceptance Criteria
+- [ ] All commented-out code blocks removed
+- [ ] Consistent file naming: PascalCase for classes, camelCase for utilities
+- [ ] All `.js` imports converted to `.ts`
+- [ ] OpenAPI spec generated from TypeScript types
+- [ ] Test coverage increased from 54% to 80%
+- [ ] Property-based tests for eligibility calculations
+
+#### Technical Tasks
+- [ ] TASK-52.1: Audit codebase for dead/commented code
+- [ ] TASK-52.2: Remove all dead code blocks
+- [ ] TASK-52.3: Rename files to consistent conventions
+- [ ] TASK-52.4: Update all imports for renamed files
+- [ ] TASK-52.5: Add @asteasolutions/zod-to-openapi dependency
+- [ ] TASK-52.6: Generate OpenAPI spec from Zod schemas
+- [ ] TASK-52.7: Add missing unit tests for uncovered paths
+- [ ] TASK-52.8: Add property-based tests with fast-check
+- [ ] TASK-52.9: Set coverage threshold to 80% in CI
+- [ ] TASK-52.10: Create API documentation site (Swagger UI)
+
+#### Dependencies
+- Sprint 51: Session security
+
+#### Risks & Mitigation
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| Breaking changes from renames | Medium | Medium | Staged rollout |
+| Coverage target too aggressive | Low | Low | Incremental increase |
+
+#### Success Metrics
+- 0 dead code blocks remaining
+- 100% naming convention compliance
+- 80% test coverage achieved
+- OpenAPI spec validates 100%
+
+---
+
 ## Risk Register
 
 | ID | Risk | Phase | Probability | Impact | Mitigation | Owner |
@@ -866,6 +1022,9 @@ Complete Enhanced HITL Approval Gate and deploy full v5.0 infrastructure to prod
 | R6 | Migration data loss | 2 | Low | High | Backup + rollback | Backend |
 | R7 | Theme regression | 1 | Medium | High | Property-based tests | QA |
 | R8 | Wizard timeout | 3 | High | Medium | Redis sessions | Platform |
+| R9 | Audit log loss | 7 | Low | High | Redis WAL + PostgreSQL | Security |
+| R10 | Circuit breaker blind spot | 7 | Medium | Medium | Prometheus metrics | Platform |
+| R11 | API key compromise | 7 | Low | High | Key rotation mechanism | Security |
 
 ---
 
@@ -880,6 +1039,9 @@ Complete Enhanced HITL Approval Gate and deploy full v5.0 infrastructure to prod
 | Discord 429 rate | 0 bans | API error logs | 4 |
 | Signing via Vault | 100% | Audit logs | 5 |
 | Dangerous ops blocked | 100% | OPA metrics | 6 |
+| Audit log durability | 0 loss | Failure scenario tests | 7 |
+| Circuit breaker visibility | 100% | Grafana dashboards | 7 |
+| Test coverage | 80% | CI coverage reports | 7 |
 
 ---
 
@@ -912,6 +1074,13 @@ Phase 6 (Sprint 48-49)
          │
          ▼
 v5.0 COMPLETE
+         │
+         ▼
+Phase 7 (Sprint 50-52)
+  Post-Audit Hardening
+         │
+         ▼
+v5.1 HARDENED
 ```
 
 ---
@@ -942,6 +1111,16 @@ v5.0 COMPLETE
 | FR-5.6.1: Policy Pre-Gate | 48 | Planned |
 | FR-5.6.2: HITL Gate | 49 | Planned |
 | FR-5.7.1: WizardEngine | 42 | Planned |
+| **Hardening Requirements (v5.1)** | | |
+| HR-10.1.1: Audit Log Persistence | 50 | Planned |
+| HR-10.1.2: RLS Penetration Testing | 50 | Planned |
+| HR-10.1.3: API Key Rotation | 50 | Planned |
+| HR-10.2.1: Circuit Breaker Metrics | 51 | Planned |
+| HR-10.2.2: Session Security | 51 | Planned |
+| HR-10.2.3: Error Standardization | 51 | Planned |
+| HR-10.3.1: Code Quality | 52 | Planned |
+| HR-10.3.2: Test Coverage 80% | 52 | Planned |
+| HR-10.3.3: OpenAPI Documentation | 52 | Planned |
 
 ### B. SDD Component Mapping
 
@@ -971,6 +1150,12 @@ v5.0 COMPLETE
 | NaibSecurityGuard | 47 | Planned |
 | PolicyAsCodePreGate | 48 | Planned |
 | EnhancedHITLApprovalGate | 49 | Planned |
+| **Hardening Components (v5.1)** | | |
+| AuditLogPersistence | 50 | Planned |
+| ApiKeyManager | 50 | Planned |
+| SecureSessionStore | 51 | Planned |
+| ApiError | 51 | Planned |
+| CircuitBreakerMetrics | 51 | Planned |
 
 ### C. Files to Delete After Migration
 
@@ -1020,8 +1205,9 @@ PRIVATE_KEY  # Moved to Vault
 |---------|------|---------|
 | 4.1 | 2025-12-27 | v4.1 "The Crossing" - Telegram integration (Sprints 30-33) |
 | 5.0 | 2025-12-28 | v5.0 "The Transformation" - SaaS platform (Sprints 34-49) |
+| 5.1 | 2025-12-29 | v5.1 Post-Audit Hardening - Security hardening (Sprints 50-52) |
 
 ---
 
-*Sprint Plan v5.0 generated by Loa planning workflow*
-*Based on: PRD v5.0, SDD v5.0, Architecture Spec v5.5.1*
+*Sprint Plan v5.1 generated by Loa planning workflow*
+*Based on: PRD v5.1, SDD v5.1, External Code Review (2025-12-29)*
