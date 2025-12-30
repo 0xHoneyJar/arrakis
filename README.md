@@ -1,217 +1,234 @@
-# Loa
+# Arrakis
 
-[![Version](https://img.shields.io/badge/version-0.9.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.0.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE.md)
 
-> *"The Loa are pragmatic entities... They're not worshipped for salvation—they're worked with for practical results."*
+A multi-tenant SaaS platform for token-gated onchain communities and beyond. Deploy wallet-based access control, tiered progression systems, and cross-platform bots through a self-service wizard.
 
-Agent-driven development framework using 8 specialized AI agents to orchestrate the complete product lifecycle—from requirements through production deployment. Built with enterprise-grade managed scaffolding.
+**Version 5.0.0 "The Transformation"** - Complete SaaS architecture overhaul with multi-tenancy, chain abstraction, and enterprise-grade infrastructure.
+
+## Overview
+
+Arrakis transforms token-gated community management from bespoke bot development into a self-service platform. Communities can deploy Discord/Telegram bots with configurable eligibility rules, tiered role systems, and real-time wallet scoring—all without writing code.
+
+### What's New in v5.0
+
+#### Multi-Tenant SaaS Architecture (Sprints 34-49)
+- **PostgreSQL with Row-Level Security** - Complete tenant isolation at database level
+- **Hexagonal Architecture** - Clean separation of domain, service, and infrastructure layers
+- **Theme System** - Pluggable theme engine (BasicTheme free, SietchTheme premium)
+- **Two-Tier Chain Provider** - Chain-agnostic scoring via Score Service with viem fallback
+
+#### Infrastructure Components
+- **Policy-as-Code Pre-Gate** - OPA-based Terraform plan validation with risk scoring
+- **Enhanced HITL Approval Gate** - Slack/Discord notifications, MFA for high-risk changes, 24-hour timeout
+- **Infracost Integration** - Cost estimation for infrastructure changes
+- **Audit Trail with HMAC Signatures** - Tamper-proof audit logging
+
+#### Enterprise Security
+- **HashiCorp Vault Transit** - Ed25519 signing without key exposure
+- **AWS EKS Deployment** - Kubernetes with proper network isolation
+- **Defense in Depth** - 6-layer security model (WAF, VPC, Pod Security, RLS, Vault, Audit)
+- **Webhook URL Validation** - Domain allowlist for Slack/Discord webhooks
+
+### Previous Features (v4.x)
+
+All v4.1 features are preserved via the SietchTheme:
+- 9-tier Dune-themed progression system
+- 10 badge types across tenure, achievement, and activity
+- Weekly digest with community metrics
+- Telegram bot with inline queries
+- Stripe billing integration
+- Cross-platform identity (Discord + Telegram)
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        ARRAKIS SAAS PLATFORM v5.0                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                         DOMAIN LAYER                                 │   │
+│  │  ┌──────────┐  ┌──────────────┐  ┌─────────┐  ┌───────────────┐    │   │
+│  │  │  Asset   │  │  Community   │  │  Role   │  │  Eligibility  │    │   │
+│  │  └──────────┘  └──────────────┘  └─────────┘  └───────────────┘    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                        SERVICE LAYER                                 │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  ┌──────────┐ │   │
+│  │  │ WizardEngine │  │ SyncService  │  │ ThemeEngine │  │ TierEval │ │   │
+│  │  └──────────────┘  └──────────────┘  └─────────────┘  └──────────┘ │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                    ┌───────────────┼───────────────┐                       │
+│                    ▼               ▼               ▼                       │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                     INFRASTRUCTURE LAYER                             │   │
+│  │                                                                      │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐ │   │
+│  │  │              TWO-TIER CHAIN PROVIDER                            │ │   │
+│  │  │  ┌─────────────────┐    ┌────────────────────────────────────┐ │ │   │
+│  │  │  │  Tier 1: Native │    │  Tier 2: Score Service             │ │ │   │
+│  │  │  │  (Binary checks)│    │  (Complex queries + Circuit Breaker)│ │ │   │
+│  │  │  │  • hasBalance   │    │  • getRankedHolders                │ │ │   │
+│  │  │  │  • ownsNFT      │    │  • getAddressRank                  │ │ │   │
+│  │  │  │  Direct viem    │    │  • getActivityScore                │ │ │   │
+│  │  │  └─────────────────┘    └────────────────────────────────────┘ │ │   │
+│  │  └────────────────────────────────────────────────────────────────┘ │   │
+│  │                                                                      │   │
+│  │  ┌──────────────┐  ┌───────────────┐  ┌──────────────────────────┐ │   │
+│  │  │ Discord      │  │ PostgreSQL    │  │ Redis                    │ │   │
+│  │  │ Adapter      │  │ + RLS         │  │ (Sessions + TokenBucket) │ │   │
+│  │  └──────────────┘  └───────────────┘  └──────────────────────────┘ │   │
+│  │                                                                      │   │
+│  │  ┌──────────────┐  ┌───────────────┐  ┌──────────────────────────┐ │   │
+│  │  │ BullMQ       │  │ Vault Transit │  │ S3 Shadow                │ │   │
+│  │  │ Synthesis    │  │ (Signing)     │  │ (Manifest Versions)      │ │   │
+│  │  └──────────────┘  └───────────────┘  └──────────────────────────┘ │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+| Component | Purpose |
+|-----------|---------|
+| **Two-Tier Chain Provider** | Score Service for complex queries, viem fallback for binary checks |
+| **Theme Engine** | Pluggable tier/badge/notification configurations |
+| **WizardEngine** | Self-service community onboarding |
+| **PolicyAsCodePreGate** | OPA-based Terraform validation |
+| **EnhancedHITLApprovalGate** | Human approval workflow with MFA |
+| **RiskScorer** | Infrastructure change risk assessment |
+| **InfracostClient** | Cost estimation integration |
 
 ## Quick Start
 
-### Mount onto Existing Repository (Recommended)
+### For Community Operators
+
+1. Invite the Arrakis bot to your Discord server
+2. Run `/setup` to launch the onboarding wizard
+3. Configure your eligibility rules (token, chain, threshold)
+4. Select a theme (BasicTheme or SietchTheme)
+5. Bot automatically creates channels, roles, and starts syncing
+
+### For Developers
 
 ```bash
-# One-liner install
-curl -fsSL https://raw.githubusercontent.com/0xHoneyJar/loa/main/.claude/scripts/mount-loa.sh | bash
+# Clone and install
+git clone https://github.com/0xHoneyJar/arrakis.git
+cd arrakis/sietch-service
+npm install
 
-# Start Claude Code
-claude
+# Configure environment
+cp .env.example .env
+# Edit .env with your credentials
 
-# Run setup
-/setup
+# Run development server
+npm run dev
 
-# Begin workflow
-/plan-and-analyze
-```
-
-### Clone Template
-
-```bash
-git clone https://github.com/0xHoneyJar/loa.git my-project && cd my-project
-claude
-/setup
-/plan-and-analyze
-```
-
-See **[INSTALLATION.md](INSTALLATION.md)** for detailed installation options.
-
-## Architecture: Three-Zone Model
-
-Loa uses a **managed scaffolding** architecture inspired by AWS Projen, Copier, and Google's ADK:
-
-| Zone | Path | Owner | Description |
-|------|------|-------|-------------|
-| **System** | `.claude/` | Framework | Immutable - overwritten on updates |
-| **State** | `loa-grimoire/`, `.beads/` | Project | Your project memory - never touched |
-| **App** | `src/`, `lib/`, `app/` | Developer | Your code - ignored entirely |
-
-**Key principle**: Never edit `.claude/` directly. Use `.claude/overrides/` for customizations.
-
-## The Workflow
-
-| Phase | Command | Agent | Output |
-|-------|---------|-------|--------|
-| 0 | `/setup` | - | `.loa-setup-complete` |
-| 1 | `/plan-and-analyze` | discovering-requirements | `loa-grimoire/prd.md` |
-| 2 | `/architect` | designing-architecture | `loa-grimoire/sdd.md` |
-| 3 | `/sprint-plan` | planning-sprints | `loa-grimoire/sprint.md` |
-| 4 | `/implement sprint-N` | implementing-tasks | Code + report |
-| 5 | `/review-sprint sprint-N` | reviewing-code | Approval/feedback |
-| 5.5 | `/audit-sprint sprint-N` | auditing-security | Security approval |
-| 6 | `/deploy-production` | deploying-infrastructure | Infrastructure |
-
-### Mounting & Riding (Existing Codebases)
-
-| Command | Purpose |
-|---------|---------|
-| `/mount` | Install Loa onto existing repo |
-| `/ride` | Analyze codebase, generate evidence-grounded docs |
-
-### Ad-Hoc Commands
-
-| Command | Purpose |
-|---------|---------|
-| `/audit` | Full codebase security audit |
-| `/audit-deployment` | Infrastructure security review |
-| `/translate @doc for audience` | Executive summaries |
-| `/update` | Pull framework updates |
-| `/contribute` | Create upstream PR |
-
-## The Agents (The Loa)
-
-Eight specialized agents that ride alongside you:
-
-1. **discovering-requirements** - Senior Product Manager
-2. **designing-architecture** - Software Architect
-3. **planning-sprints** - Technical PM
-4. **implementing-tasks** - Senior Engineer
-5. **reviewing-code** - Tech Lead
-6. **deploying-infrastructure** - DevOps Architect
-7. **auditing-security** - Security Auditor
-8. **translating-for-executives** - Developer Relations
-
-## Key Features
-
-### Enterprise-Grade Managed Scaffolding
-
-- **Projen-Level Synthesis Protection**: System Zone is immutable, checksums enforce integrity
-- **Copier-Level Migration Gates**: Schema changes trigger mandatory migrations
-- **ADK-Level Trajectory Evaluation**: Agent reasoning is logged and auditable
-
-### Structured Agentic Memory
-
-Agents maintain persistent working memory in `loa-grimoire/NOTES.md`:
-- Survives context window resets
-- Tracks technical debt, blockers, decisions
-- Enables continuity across sessions
-
-### Lossless Ledger Protocol (v0.9.0)
-
-**"Clear, Don't Compact"** - Agents proactively checkpoint work before clearing context:
-
-- **Grounding Enforcement**: 95% of claims must cite sources before `/clear`
-- **Session Continuity**: Instant recovery from persistent ledgers (~100 tokens)
-- **Self-Healing**: Automatic State Zone recovery from git history
-- **Audit Trail**: Complete trajectory logging with timestamped handoffs
-
-### Two Quality Gates
-
-1. **Code Review**: Tech lead reviews until "All good"
-2. **Security Audit**: Auditor reviews until "APPROVED - LETS FUCKING GO"
-
-### Stealth Mode
-
-Run Loa without committing state to your repo:
-```yaml
-# .loa.config.yaml
-persistence_mode: stealth
-```
-
-## Repository Structure
-
-```
-.claude/                        # System Zone (framework-managed)
-├── skills/                     # 8 agent skills
-├── commands/                   # Slash commands
-├── protocols/                  # Framework protocols
-│   ├── session-continuity.md   # Lossless Ledger Protocol
-│   ├── grounding-enforcement.md # Grounding ratio enforcement
-│   ├── synthesis-checkpoint.md # Pre-/clear checkpoint
-│   ├── attention-budget.md     # Token budget management
-│   ├── jit-retrieval.md        # Just-in-time code retrieval
-│   ├── structured-memory.md    # NOTES.md protocol
-│   ├── trajectory-evaluation.md # ADK-style evaluation
-│   └── change-validation.md    # Pre-implementation validation
-├── scripts/                    # Helper scripts
-│   ├── mount-loa.sh           # One-command install
-│   ├── update.sh              # Framework updates
-│   ├── check-loa.sh           # CI validation
-│   ├── grounding-check.sh     # Grounding ratio calculation
-│   ├── synthesis-checkpoint.sh # Pre-/clear checkpoint
-│   ├── self-heal-state.sh     # State Zone recovery
-│   ├── validate-prd-requirements.sh # UAT validation
-│   ├── detect-drift.sh        # Code/docs drift detection
-│   └── validate-change-plan.sh # Pre-implementation validation
-└── overrides/                  # Your customizations
-
-loa-grimoire/                   # State Zone (project memory)
-├── NOTES.md                    # Structured agentic memory
-├── context/                    # User-provided context
-├── reality/                    # Code extraction results (/ride)
-├── legacy/                     # Legacy doc inventory (/ride)
-├── prd.md, sdd.md, sprint.md  # Planning docs
-├── drift-report.md            # Three-way drift analysis
-├── a2a/                        # Agent communication
-│   ├── trajectory/            # Agent reasoning logs
-│   └── sprint-N/              # Per-sprint feedback
-└── deployment/                 # Infrastructure docs
-
-.beads/                        # Task graph (optional)
-.ckignore                      # ck semantic search exclusions (optional)
-.loa-version.json              # Version manifest
-.loa.config.yaml               # Your configuration
+# Run tests
+npm run test:run
 ```
 
 ## Configuration
 
-`.loa.config.yaml` is user-owned - framework updates never touch it:
+### Environment Variables
 
-```yaml
-persistence_mode: standard      # or "stealth"
-integrity_enforcement: strict   # or "warn", "disabled"
-drift_resolution: code          # or "docs", "ask"
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | PostgreSQL connection string | Yes |
+| `REDIS_URL` | Redis connection string | Yes |
+| `DISCORD_TOKEN` | Discord bot token | Yes |
+| `DISCORD_CLIENT_ID` | Discord application ID | Yes |
+| `API_KEY_PEPPER` | HMAC pepper for API key hashing (generate: `openssl rand -base64 32`) | Production |
+| `RATE_LIMIT_SALT` | Salt for rate limit key hashing (generate: `openssl rand -hex 16`) | Production |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token | Optional |
+| `STRIPE_SECRET_KEY` | Stripe API key | Optional |
+| `SCORE_SERVICE_URL` | Score Service endpoint | Optional |
+| `VAULT_ADDR` | HashiCorp Vault address | Production |
+| `VAULT_TOKEN` | Vault authentication token | Production |
 
-grounding:
-  enforcement: warn             # strict | warn | disabled
-  threshold: 0.95               # 0.00-1.00
+## Security
 
-memory:
-  notes_file: loa-grimoire/NOTES.md
-  trajectory_retention_days: 30
+Arrakis implements a 6-layer Defense in Depth model:
 
-edd:
-  enabled: true
-  min_test_scenarios: 3
+1. **WAF (CloudFront)** - Rate limiting, SQL injection, XSS protection
+2. **Network (VPC)** - Private subnets, security groups, VPC endpoints
+3. **Application (EKS)** - Non-root containers, read-only filesystem, RBAC
+4. **Data (PostgreSQL)** - Row-Level Security for tenant isolation
+5. **Secrets (Vault)** - Transit engine for signing, no key exposure
+6. **Audit (CloudWatch)** - Comprehensive logging with HMAC signatures
+
+### Infrastructure Security
+
+- **Terraform Plan Validation** - OPA policies block dangerous changes
+- **Risk Scoring** - Automatic assessment of infrastructure changes
+- **Human Approval** - MFA-verified approvals for high-risk changes
+- **Audit Trail** - HMAC-signed entries prevent tampering
+
+## API Endpoints
+
+### Public
+
 ```
+GET /health
+{ "status": "healthy", "version": "5.0.0" }
+
+GET /api/v1/eligibility
+GET /api/v1/eligibility/:wallet
+```
+
+### Authenticated
+
+```
+GET /me/stats
+GET /me/tier-progress
+GET /stats/community
+GET /admin/analytics
+```
+
+## Theme System
+
+### BasicTheme (Free)
+- 3-tier progression (Member, Active, VIP)
+- Token-gated access
+- Basic notifications
+
+### SietchTheme (Premium)
+- 9-tier Dune-themed progression
+- 10 badge types
+- Weekly digest
+- Story fragments
+- Water Sharer badge system
 
 ## Documentation
 
-- **[INSTALLATION.md](INSTALLATION.md)** - Detailed installation guide
-- **[PROCESS.md](PROCESS.md)** - Complete workflow documentation
-- **[CLAUDE.md](CLAUDE.md)** - Claude Code guidance
-- **[CHANGELOG.md](CHANGELOG.md)** - Version history
+| Document | Description |
+|----------|-------------|
+| [sietch-service/README.md](sietch-service/README.md) | Service setup & development |
+| [loa-grimoire/prd.md](loa-grimoire/prd.md) | Product Requirements Document |
+| [loa-grimoire/sdd.md](loa-grimoire/sdd.md) | Software Design Document |
+| [loa-grimoire/sprint.md](loa-grimoire/sprint.md) | Sprint Plan (49 sprints) |
+| [loa-grimoire/deployment/](loa-grimoire/deployment/) | Deployment documentation |
+| [PROCESS.md](PROCESS.md) | Development workflow |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
 
-## Why "Loa"?
+## Built With
 
-In William Gibson's Sprawl trilogy, Loa are AI entities that "ride" humans through neural interfaces, guiding them through cyberspace. These agents don't replace you—they **ride with you**, channeling expertise through the interface.
+- **Runtime**: Node.js 20, TypeScript
+- **Database**: PostgreSQL with Drizzle ORM
+- **Cache**: Redis with ioredis
+- **Queue**: BullMQ
+- **Discord**: discord.js v14
+- **Telegram**: Grammy
+- **Blockchain**: viem
+- **Testing**: Vitest
+- **Framework**: [Loa](https://github.com/0xHoneyJar/loa) agent-driven development
 
 ## License
 
-[AGPL-3.0](LICENSE.md) - You can use, modify, and distribute. If you deploy modifications (including as a network service), you must release source code.
-
-## Links
-
-- [Claude Code](https://claude.ai/code)
-- [Repository](https://github.com/0xHoneyJar/loa)
-- [Issues](https://github.com/0xHoneyJar/loa/issues)
+AGPL-3.0 - See [LICENSE.md](LICENSE.md) for details.
