@@ -144,6 +144,8 @@ npm run test:run
 | `REDIS_URL` | Redis connection string | Yes |
 | `DISCORD_TOKEN` | Discord bot token | Yes |
 | `DISCORD_CLIENT_ID` | Discord application ID | Yes |
+| `API_KEY_PEPPER` | HMAC pepper for API key hashing (generate: `openssl rand -base64 32`) | Production |
+| `RATE_LIMIT_SALT` | Salt for rate limit key hashing (generate: `openssl rand -hex 16`) | Production |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token | Optional |
 | `STRIPE_SECRET_KEY` | Stripe API key | Optional |
 | `SCORE_SERVICE_URL` | Score Service endpoint | Optional |
