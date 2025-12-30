@@ -148,3 +148,31 @@ export {
   type ActivateBackupCallback,
   type HealthMonitorConfig,
 } from './IncumbentHealthMonitor.js';
+
+// Coexistence metrics (Sprint 65)
+export {
+  // Recording functions
+  recordModeTransition,
+  recordDivergence,
+  recordDivergenceResolved,
+  recordMigrationStart,
+  recordMigrationComplete,
+  recordRollback,
+  recordTakeoverComplete,
+  recordHealthCheck,
+  recordAlertSent,
+  recordEmergencyBackup,
+  recordSocialLayerUnlock,
+  recordFeatureUnlock,
+  recordDiscountGenerated,
+  recordDiscountRedeemed,
+  recordDiscountExpired,
+  // Bulk update functions
+  setCommunitiesInMode,
+  setDivergenceCounts,
+  // Export function
+  getCoexistenceMetrics,
+  // Testing utilities
+  resetMetrics,
+  getMetricsState,
+} from './CoexistenceMetrics.js';
