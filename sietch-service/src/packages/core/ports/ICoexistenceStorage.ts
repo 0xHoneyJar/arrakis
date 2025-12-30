@@ -24,6 +24,9 @@ import type {
   ShadowStateSnapshot,
   TierRoleMapping,
   RolePositionStrategy,
+  ChannelStrategy,
+  ParallelChannelTemplate,
+  CustomChannelDefinition,
 } from '../../adapters/storage/schema.js';
 
 // =============================================================================
@@ -566,6 +569,183 @@ export interface ICoexistenceStorage {
    * @param tier - Tier number
    */
   getMembersByTier(communityId: string, tier: number): Promise<string[]>;
+
+  // =========================================================================
+  // Parallel Channel Configuration Methods (Sprint 59)
+  // =========================================================================
+
+  /**
+   * Get parallel channel configuration for a community
+   * @param communityId - Community UUID
+   */
+  getParallelChannelConfig(communityId: string): Promise<StoredParallelChannelConfig | null>;
+
+  /**
+   * Save or update parallel channel configuration
+   * @param input - Configuration data
+   */
+  saveParallelChannelConfig(input: SaveParallelChannelConfigInput): Promise<StoredParallelChannelConfig>;
+
+  /**
+   * Delete parallel channel configuration
+   * @param communityId - Community UUID
+   */
+  deleteParallelChannelConfig(communityId: string): Promise<void>;
+
+  /**
+   * Check if channels are enabled for a community
+   * @param communityId - Community UUID
+   */
+  isChannelsEnabled(communityId: string): Promise<boolean>;
+
+  // =========================================================================
+  // Parallel Channel Methods (Sprint 59)
+  // =========================================================================
+
+  /**
+   * Get a parallel channel by Discord channel ID
+   * @param communityId - Community UUID
+   * @param discordChannelId - Discord channel snowflake
+   */
+  getParallelChannel(
+    communityId: string,
+    discordChannelId: string
+  ): Promise<StoredParallelChannel | null>;
+
+  /**
+   * Get all parallel channels for a community
+   * @param communityId - Community UUID
+   */
+  getParallelChannels(communityId: string): Promise<StoredParallelChannel[]>;
+
+  /**
+   * Get parallel channels by conviction threshold
+   * @param communityId - Community UUID
+   * @param minConviction - Minimum conviction threshold
+   */
+  getParallelChannelsByConviction(
+    communityId: string,
+    minConviction: number
+  ): Promise<StoredParallelChannel[]>;
+
+  /**
+   * Save a new parallel channel (created in Discord)
+   * @param input - Channel data
+   */
+  saveParallelChannel(input: SaveParallelChannelInput): Promise<StoredParallelChannel>;
+
+  /**
+   * Update parallel channel member access count
+   * @param communityId - Community UUID
+   * @param discordChannelId - Discord channel snowflake
+   * @param memberAccessCount - New access count
+   */
+  updateParallelChannelAccessCount(
+    communityId: string,
+    discordChannelId: string,
+    memberAccessCount: number
+  ): Promise<void>;
+
+  /**
+   * Delete a parallel channel (when removed from Discord)
+   * @param communityId - Community UUID
+   * @param discordChannelId - Discord channel snowflake
+   */
+  deleteParallelChannel(communityId: string, discordChannelId: string): Promise<void>;
+
+  /**
+   * Delete all parallel channels for a community
+   * @param communityId - Community UUID
+   */
+  deleteAllParallelChannels(communityId: string): Promise<void>;
+
+  // =========================================================================
+  // Parallel Channel Access Methods (Sprint 59)
+  // =========================================================================
+
+  /**
+   * Get channel access for a member
+   * @param communityId - Community UUID
+   * @param memberId - Discord member ID
+   * @param channelId - Discord channel ID
+   */
+  getParallelChannelAccess(
+    communityId: string,
+    memberId: string,
+    channelId: string
+  ): Promise<StoredParallelChannelAccess | null>;
+
+  /**
+   * Get all channel access records for a member
+   * @param communityId - Community UUID
+   * @param memberId - Discord member ID
+   */
+  getMemberChannelAccess(
+    communityId: string,
+    memberId: string
+  ): Promise<StoredParallelChannelAccess[]>;
+
+  /**
+   * Get all members with access to a channel
+   * @param communityId - Community UUID
+   * @param channelId - Discord channel ID
+   */
+  getChannelAccessMembers(
+    communityId: string,
+    channelId: string
+  ): Promise<StoredParallelChannelAccess[]>;
+
+  /**
+   * Save or update channel access (upsert)
+   * @param input - Access data
+   */
+  saveParallelChannelAccess(
+    input: SaveParallelChannelAccessInput
+  ): Promise<StoredParallelChannelAccess>;
+
+  /**
+   * Batch save channel access records
+   * @param inputs - Array of access data
+   */
+  batchSaveParallelChannelAccess(
+    inputs: SaveParallelChannelAccessInput[]
+  ): Promise<void>;
+
+  /**
+   * Delete channel access record
+   * @param communityId - Community UUID
+   * @param memberId - Discord member ID
+   * @param channelId - Discord channel ID
+   */
+  deleteParallelChannelAccess(
+    communityId: string,
+    memberId: string,
+    channelId: string
+  ): Promise<void>;
+
+  /**
+   * Get members who need access granted (conviction >= threshold, no access)
+   * @param communityId - Community UUID
+   * @param channelId - Discord channel ID
+   * @param minConviction - Threshold for access
+   */
+  getMembersNeedingAccess(
+    communityId: string,
+    channelId: string,
+    minConviction: number
+  ): Promise<string[]>;
+
+  /**
+   * Get members who need access revoked (conviction < threshold, has access)
+   * @param communityId - Community UUID
+   * @param channelId - Discord channel ID
+   * @param minConviction - Threshold for access
+   */
+  getMembersNeedingRevocation(
+    communityId: string,
+    channelId: string,
+    minConviction: number
+  ): Promise<string[]>;
 }
 
 // =============================================================================
@@ -807,6 +987,116 @@ export interface StoredParallelMemberAssignment {
   updatedAt: Date;
 }
 
+// =============================================================================
+// Parallel Channel Types (Sprint 59)
+// =============================================================================
+
+/**
+ * Input for saving/updating parallel channel configuration
+ */
+export interface SaveParallelChannelConfigInput {
+  communityId: string;
+  strategy?: ChannelStrategy;
+  enabled?: boolean;
+  categoryName?: string;
+  categoryId?: string;
+  channelTemplates?: ParallelChannelTemplate[];
+  customChannels?: CustomChannelDefinition[];
+  mirrorSourceChannels?: string[];
+  setupCompletedAt?: Date;
+  lastSyncAt?: Date;
+  totalChannelsCreated?: number;
+}
+
+/**
+ * Stored parallel channel configuration
+ */
+export interface StoredParallelChannelConfig {
+  id: string;
+  communityId: string;
+  strategy: ChannelStrategy;
+  enabled: boolean;
+  categoryName: string;
+  categoryId: string | null;
+  channelTemplates: ParallelChannelTemplate[];
+  customChannels: CustomChannelDefinition[];
+  mirrorSourceChannels: string[];
+  setupCompletedAt: Date | null;
+  lastSyncAt: Date | null;
+  totalChannelsCreated: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Input for saving a parallel channel (created in Discord)
+ */
+export interface SaveParallelChannelInput {
+  communityId: string;
+  discordChannelId: string;
+  channelName: string;
+  channelType: 'text' | 'voice';
+  minConviction: number;
+  categoryId?: string;
+  topic?: string;
+  templateId?: string;
+  isDefault?: boolean;
+  mirrorSourceId?: string;
+  isPublicView?: boolean;
+}
+
+/**
+ * Stored parallel channel record
+ */
+export interface StoredParallelChannel {
+  id: string;
+  communityId: string;
+  discordChannelId: string;
+  channelName: string;
+  channelType: 'text' | 'voice';
+  minConviction: number;
+  categoryId: string | null;
+  topic: string | null;
+  templateId: string | null;
+  isDefault: boolean;
+  mirrorSourceId: string | null;
+  isPublicView: boolean;
+  memberAccessCount: number;
+  lastAccessUpdate: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Input for saving/updating channel access for a member
+ */
+export interface SaveParallelChannelAccessInput {
+  communityId: string;
+  memberId: string;
+  channelId: string;
+  hasAccess?: boolean;
+  currentConviction?: number | null;
+  accessGrantedAt?: Date;
+  lastAccessCheckAt?: Date;
+}
+
+/**
+ * Stored parallel channel access record
+ */
+export interface StoredParallelChannelAccess {
+  id: string;
+  communityId: string;
+  memberId: string;
+  channelId: string;
+  hasAccess: boolean;
+  currentConviction: number | null;
+  accessGrantedAt: Date | null;
+  accessRevokedAt: Date | null;
+  lastAccessCheckAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 /**
  * Re-export schema types for convenience
  */
@@ -821,4 +1111,7 @@ export type {
   ShadowStateSnapshot,
   TierRoleMapping,
   RolePositionStrategy,
+  ChannelStrategy,
+  ParallelChannelTemplate,
+  CustomChannelDefinition,
 };

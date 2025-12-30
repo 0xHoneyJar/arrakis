@@ -1,18 +1,20 @@
 /**
- * Coexistence Adapters - Shadow Mode, Incumbent Detection & Parallel Roles
+ * Coexistence Adapters - Shadow Mode, Incumbent Detection, Parallel Roles & Channels
  *
  * Sprint 56: Shadow Mode Foundation - Incumbent Detection
  * Sprint 57: Shadow Mode Foundation - Shadow Ledger & Sync
  * Sprint 58: Parallel Mode - Namespaced Role Management
+ * Sprint 59: Parallel Mode - Channels & Conviction Gates
  *
  * This module provides adapters for coexisting with incumbent token-gating
  * solutions (Collab.Land, Matrica, Guild.xyz) during migration.
  *
  * Components:
- * - CoexistenceStorage: PostgreSQL storage for incumbent configs, migration states, shadow ledger, parallel roles
+ * - CoexistenceStorage: PostgreSQL storage for incumbent configs, migration states, shadow ledger, parallel roles/channels
  * - IncumbentDetector: Detects incumbent bots using multiple methods
  * - ShadowLedger: Tracks divergences between incumbent and Arrakis access
  * - ParallelRoleManager: Manages namespaced @arrakis-* roles in parallel mode
+ * - ParallelChannelManager: Manages conviction-gated channels in parallel mode
  *
  * @module packages/adapters/coexistence
  */
@@ -56,3 +58,17 @@ export {
   type GetMemberTier,
   type GetMemberTiersBatch,
 } from './ParallelRoleManager.js';
+
+// Parallel channel manager (Sprint 59)
+export {
+  ParallelChannelManager,
+  createParallelChannelManager,
+  DEFAULT_CATEGORY_NAME,
+  DEFAULT_CHANNEL_TEMPLATES,
+  type ChannelSetupOptions,
+  type ChannelSetupResult,
+  type ChannelAccessSyncOptions,
+  type ChannelAccessSyncResult,
+  type GetMemberConviction,
+  type GetMemberConvictionsBatch,
+} from './ParallelChannelManager.js';

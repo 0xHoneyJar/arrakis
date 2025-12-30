@@ -24,6 +24,9 @@ import {
   parallelRoleConfigs,
   parallelRoles,
   parallelMemberAssignments,
+  parallelChannelConfigs,
+  parallelChannels,
+  parallelChannelAccess,
   type CoexistenceMode,
   type MigrationStrategy,
   type HealthStatus,
@@ -34,6 +37,9 @@ import {
   type ShadowStateSnapshot,
   type TierRoleMapping,
   type RolePositionStrategy,
+  type ChannelStrategy,
+  type ParallelChannelTemplate,
+  type CustomChannelDefinition,
 } from '../storage/schema.js';
 import type {
   ICoexistenceStorage,
@@ -56,6 +62,13 @@ import type {
   SaveParallelRoleInput,
   StoredParallelMemberAssignment,
   SaveParallelMemberAssignmentInput,
+  // Sprint 59 - Parallel Channels
+  StoredParallelChannelConfig,
+  SaveParallelChannelConfigInput,
+  StoredParallelChannel,
+  SaveParallelChannelInput,
+  StoredParallelChannelAccess,
+  SaveParallelChannelAccessInput,
 } from '../../core/ports/ICoexistenceStorage.js';
 import { createLogger, type ILogger } from '../../infrastructure/logging/index.js';
 
@@ -1268,6 +1281,487 @@ export class CoexistenceStorage implements ICoexistenceStorage {
   }
 
   // =========================================================================
+  // Parallel Channel Configuration Methods (Sprint 59)
+  // =========================================================================
+
+  async getParallelChannelConfig(communityId: string): Promise<StoredParallelChannelConfig | null> {
+    const result = await this.db
+      .select()
+      .from(parallelChannelConfigs)
+      .where(eq(parallelChannelConfigs.communityId, communityId))
+      .limit(1);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    return this.mapParallelChannelConfig(result[0]);
+  }
+
+  async saveParallelChannelConfig(input: SaveParallelChannelConfigInput): Promise<StoredParallelChannelConfig> {
+    const existing = await this.getParallelChannelConfig(input.communityId);
+    const now = new Date();
+
+    if (existing) {
+      // Update existing
+      const [updated] = await this.db
+        .update(parallelChannelConfigs)
+        .set({
+          strategy: input.strategy ?? existing.strategy,
+          enabled: input.enabled ?? existing.enabled,
+          categoryName: input.categoryName ?? existing.categoryName,
+          categoryId: input.categoryId ?? existing.categoryId,
+          channelTemplates: input.channelTemplates ?? existing.channelTemplates,
+          customChannels: input.customChannels ?? existing.customChannels,
+          mirrorSourceChannels: input.mirrorSourceChannels ?? existing.mirrorSourceChannels,
+          setupCompletedAt: input.setupCompletedAt ?? existing.setupCompletedAt,
+          lastSyncAt: input.lastSyncAt ?? existing.lastSyncAt,
+          totalChannelsCreated: input.totalChannelsCreated ?? existing.totalChannelsCreated,
+          updatedAt: now,
+        })
+        .where(eq(parallelChannelConfigs.communityId, input.communityId))
+        .returning();
+
+      this.logger.debug('Parallel channel config updated', {
+        communityId: input.communityId,
+      });
+
+      return this.mapParallelChannelConfig(updated);
+    } else {
+      // Create new
+      const [created] = await this.db
+        .insert(parallelChannelConfigs)
+        .values({
+          communityId: input.communityId,
+          strategy: input.strategy ?? 'additive_only',
+          enabled: input.enabled ?? false,
+          categoryName: input.categoryName ?? 'Arrakis Channels',
+          categoryId: input.categoryId ?? null,
+          channelTemplates: input.channelTemplates ?? [],
+          customChannels: input.customChannels ?? [],
+          mirrorSourceChannels: input.mirrorSourceChannels ?? [],
+          setupCompletedAt: input.setupCompletedAt ?? null,
+          lastSyncAt: input.lastSyncAt ?? null,
+          totalChannelsCreated: input.totalChannelsCreated ?? 0,
+        })
+        .returning();
+
+      this.logger.debug('Parallel channel config created', {
+        communityId: input.communityId,
+      });
+
+      return this.mapParallelChannelConfig(created);
+    }
+  }
+
+  async deleteParallelChannelConfig(communityId: string): Promise<void> {
+    await this.db
+      .delete(parallelChannelConfigs)
+      .where(eq(parallelChannelConfigs.communityId, communityId));
+
+    this.logger.debug('Parallel channel config deleted', { communityId });
+  }
+
+  async isChannelsEnabled(communityId: string): Promise<boolean> {
+    const config = await this.getParallelChannelConfig(communityId);
+    return config?.enabled ?? false;
+  }
+
+  // =========================================================================
+  // Parallel Channel Methods (Sprint 59)
+  // =========================================================================
+
+  async getParallelChannel(
+    communityId: string,
+    discordChannelId: string
+  ): Promise<StoredParallelChannel | null> {
+    const result = await this.db
+      .select()
+      .from(parallelChannels)
+      .where(
+        and(
+          eq(parallelChannels.communityId, communityId),
+          eq(parallelChannels.discordChannelId, discordChannelId)
+        )
+      )
+      .limit(1);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    return this.mapParallelChannel(result[0]);
+  }
+
+  async getParallelChannels(communityId: string): Promise<StoredParallelChannel[]> {
+    const results = await this.db
+      .select()
+      .from(parallelChannels)
+      .where(eq(parallelChannels.communityId, communityId))
+      .orderBy(parallelChannels.minConviction);
+
+    return results.map(r => this.mapParallelChannel(r));
+  }
+
+  async getParallelChannelsByConviction(
+    communityId: string,
+    minConviction: number
+  ): Promise<StoredParallelChannel[]> {
+    const results = await this.db
+      .select()
+      .from(parallelChannels)
+      .where(
+        and(
+          eq(parallelChannels.communityId, communityId),
+          sql`${parallelChannels.minConviction} <= ${minConviction}`
+        )
+      )
+      .orderBy(parallelChannels.minConviction);
+
+    return results.map(r => this.mapParallelChannel(r));
+  }
+
+  async saveParallelChannel(input: SaveParallelChannelInput): Promise<StoredParallelChannel> {
+    const existing = await this.getParallelChannel(input.communityId, input.discordChannelId);
+    const now = new Date();
+
+    if (existing) {
+      // Update existing
+      const [updated] = await this.db
+        .update(parallelChannels)
+        .set({
+          channelName: input.channelName,
+          channelType: input.channelType,
+          minConviction: input.minConviction,
+          categoryId: input.categoryId ?? existing.categoryId,
+          templateId: input.templateId ?? existing.templateId,
+          mirrorSourceChannelId: input.mirrorSourceId ?? existing.mirrorSourceId,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(parallelChannels.communityId, input.communityId),
+            eq(parallelChannels.discordChannelId, input.discordChannelId)
+          )
+        )
+        .returning();
+
+      this.logger.debug('Parallel channel updated', {
+        communityId: input.communityId,
+        discordChannelId: input.discordChannelId,
+      });
+
+      return this.mapParallelChannel(updated);
+    } else {
+      // Create new
+      const [created] = await this.db
+        .insert(parallelChannels)
+        .values({
+          communityId: input.communityId,
+          discordChannelId: input.discordChannelId,
+          channelName: input.channelName,
+          channelType: input.channelType,
+          minConviction: input.minConviction,
+          categoryId: input.categoryId ?? null,
+          templateId: input.templateId ?? null,
+          mirrorSourceChannelId: input.mirrorSourceId ?? null,
+          sourceType: input.mirrorSourceId ? 'mirror' : (input.templateId ? 'additive' : 'custom'),
+          isConvictionGated: input.minConviction > 0,
+        })
+        .returning();
+
+      this.logger.debug('Parallel channel created', {
+        communityId: input.communityId,
+        discordChannelId: input.discordChannelId,
+        minConviction: input.minConviction,
+      });
+
+      return this.mapParallelChannel(created);
+    }
+  }
+
+  async updateParallelChannelAccessCount(
+    communityId: string,
+    discordChannelId: string,
+    memberAccessCount: number
+  ): Promise<void> {
+    await this.db
+      .update(parallelChannels)
+      .set({
+        memberAccessCount,
+        lastAccessUpdate: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(parallelChannels.communityId, communityId),
+          eq(parallelChannels.discordChannelId, discordChannelId)
+        )
+      );
+
+    this.logger.debug('Parallel channel access count updated', {
+      communityId,
+      discordChannelId,
+      memberAccessCount,
+    });
+  }
+
+  async deleteParallelChannel(communityId: string, discordChannelId: string): Promise<void> {
+    await this.db
+      .delete(parallelChannels)
+      .where(
+        and(
+          eq(parallelChannels.communityId, communityId),
+          eq(parallelChannels.discordChannelId, discordChannelId)
+        )
+      );
+
+    this.logger.debug('Parallel channel deleted', { communityId, discordChannelId });
+  }
+
+  async deleteAllParallelChannels(communityId: string): Promise<void> {
+    await this.db
+      .delete(parallelChannels)
+      .where(eq(parallelChannels.communityId, communityId));
+
+    this.logger.debug('All parallel channels deleted', { communityId });
+  }
+
+  // =========================================================================
+  // Parallel Channel Access Methods (Sprint 59)
+  // =========================================================================
+
+  async getParallelChannelAccess(
+    communityId: string,
+    memberId: string,
+    channelId: string
+  ): Promise<StoredParallelChannelAccess | null> {
+    const result = await this.db
+      .select()
+      .from(parallelChannelAccess)
+      .where(
+        and(
+          eq(parallelChannelAccess.communityId, communityId),
+          eq(parallelChannelAccess.memberId, memberId),
+          eq(parallelChannelAccess.channelId, channelId)
+        )
+      )
+      .limit(1);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    return this.mapParallelChannelAccess(result[0]);
+  }
+
+  async getMemberChannelAccess(
+    communityId: string,
+    memberId: string
+  ): Promise<StoredParallelChannelAccess[]> {
+    const results = await this.db
+      .select()
+      .from(parallelChannelAccess)
+      .where(
+        and(
+          eq(parallelChannelAccess.communityId, communityId),
+          eq(parallelChannelAccess.memberId, memberId)
+        )
+      );
+
+    return results.map(r => this.mapParallelChannelAccess(r));
+  }
+
+  async getChannelAccessMembers(
+    communityId: string,
+    channelId: string
+  ): Promise<StoredParallelChannelAccess[]> {
+    const results = await this.db
+      .select()
+      .from(parallelChannelAccess)
+      .where(
+        and(
+          eq(parallelChannelAccess.communityId, communityId),
+          eq(parallelChannelAccess.channelId, channelId),
+          eq(parallelChannelAccess.hasAccess, true)
+        )
+      );
+
+    return results.map(r => this.mapParallelChannelAccess(r));
+  }
+
+  async saveParallelChannelAccess(
+    input: SaveParallelChannelAccessInput
+  ): Promise<StoredParallelChannelAccess> {
+    const existing = await this.getParallelChannelAccess(
+      input.communityId,
+      input.memberId,
+      input.channelId
+    );
+    const now = new Date();
+
+    if (existing) {
+      // Update existing
+      const [updated] = await this.db
+        .update(parallelChannelAccess)
+        .set({
+          hasAccess: input.hasAccess ?? existing.hasAccess,
+          convictionAtGrant: input.currentConviction ?? existing.currentConviction,
+          grantedAt: input.accessGrantedAt ?? existing.accessGrantedAt,
+          revokedAt: input.hasAccess === false ? now : existing.accessRevokedAt,
+          lastCheckAt: input.lastAccessCheckAt ?? now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(parallelChannelAccess.communityId, input.communityId),
+            eq(parallelChannelAccess.memberId, input.memberId),
+            eq(parallelChannelAccess.channelId, input.channelId)
+          )
+        )
+        .returning();
+
+      return this.mapParallelChannelAccess(updated);
+    } else {
+      // Create new
+      const [created] = await this.db
+        .insert(parallelChannelAccess)
+        .values({
+          communityId: input.communityId,
+          memberId: input.memberId,
+          channelId: input.channelId,
+          hasAccess: input.hasAccess ?? false,
+          convictionAtGrant: input.currentConviction ?? null,
+          grantedAt: input.hasAccess ? (input.accessGrantedAt ?? now) : null,
+          lastCheckAt: input.lastAccessCheckAt ?? now,
+        })
+        .returning();
+
+      return this.mapParallelChannelAccess(created);
+    }
+  }
+
+  async batchSaveParallelChannelAccess(
+    inputs: SaveParallelChannelAccessInput[]
+  ): Promise<void> {
+    if (inputs.length === 0) return;
+
+    const now = new Date();
+
+    // Use upsert pattern for batch efficiency
+    for (const input of inputs) {
+      await this.db
+        .insert(parallelChannelAccess)
+        .values({
+          communityId: input.communityId,
+          memberId: input.memberId,
+          channelId: input.channelId,
+          hasAccess: input.hasAccess ?? false,
+          convictionAtGrant: input.currentConviction ?? null,
+          grantedAt: input.hasAccess ? (input.accessGrantedAt ?? now) : null,
+          lastCheckAt: input.lastAccessCheckAt ?? now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            parallelChannelAccess.communityId,
+            parallelChannelAccess.memberId,
+            parallelChannelAccess.channelId,
+          ],
+          set: {
+            hasAccess: input.hasAccess ?? false,
+            convictionAtGrant: input.currentConviction ?? null,
+            grantedAt: input.hasAccess ? (input.accessGrantedAt ?? now) : null,
+            revokedAt: input.hasAccess === false ? now : null,
+            lastCheckAt: input.lastAccessCheckAt ?? now,
+            updatedAt: now,
+          },
+        });
+    }
+
+    this.logger.debug('Batch parallel channel access saved', {
+      count: inputs.length,
+    });
+  }
+
+  async deleteParallelChannelAccess(
+    communityId: string,
+    memberId: string,
+    channelId: string
+  ): Promise<void> {
+    await this.db
+      .delete(parallelChannelAccess)
+      .where(
+        and(
+          eq(parallelChannelAccess.communityId, communityId),
+          eq(parallelChannelAccess.memberId, memberId),
+          eq(parallelChannelAccess.channelId, channelId)
+        )
+      );
+
+    this.logger.debug('Parallel channel access deleted', { communityId, memberId, channelId });
+  }
+
+  async getMembersNeedingAccess(
+    communityId: string,
+    channelId: string,
+    minConviction: number
+  ): Promise<string[]> {
+    // Find members who:
+    // 1. Have conviction >= minConviction (from shadowMemberStates)
+    // 2. Don't have access to the channel yet
+    const results = await this.db
+      .select({ memberId: shadowMemberStates.memberId })
+      .from(shadowMemberStates)
+      .leftJoin(
+        parallelChannelAccess,
+        and(
+          eq(parallelChannelAccess.communityId, shadowMemberStates.communityId),
+          eq(parallelChannelAccess.memberId, shadowMemberStates.memberId),
+          eq(parallelChannelAccess.channelId, channelId)
+        )
+      )
+      .where(
+        and(
+          eq(shadowMemberStates.communityId, communityId),
+          gte(shadowMemberStates.arrakisConviction, minConviction),
+          sql`(${parallelChannelAccess.hasAccess} IS NULL OR ${parallelChannelAccess.hasAccess} = false)`
+        )
+      );
+
+    return results.map(r => r.memberId);
+  }
+
+  async getMembersNeedingRevocation(
+    communityId: string,
+    channelId: string,
+    minConviction: number
+  ): Promise<string[]> {
+    // Find members who:
+    // 1. Have access to the channel
+    // 2. Have conviction < minConviction (or no record)
+    const results = await this.db
+      .select({ memberId: parallelChannelAccess.memberId })
+      .from(parallelChannelAccess)
+      .leftJoin(
+        shadowMemberStates,
+        and(
+          eq(shadowMemberStates.communityId, parallelChannelAccess.communityId),
+          eq(shadowMemberStates.memberId, parallelChannelAccess.memberId)
+        )
+      )
+      .where(
+        and(
+          eq(parallelChannelAccess.communityId, communityId),
+          eq(parallelChannelAccess.channelId, channelId),
+          eq(parallelChannelAccess.hasAccess, true),
+          sql`(${shadowMemberStates.arrakisConviction} IS NULL OR ${shadowMemberStates.arrakisConviction} < ${minConviction})`
+        )
+      );
+
+    return results.map(r => r.memberId);
+  }
+
+  // =========================================================================
   // Private Helpers
   // =========================================================================
 
@@ -1424,6 +1918,68 @@ export class CoexistenceStorage implements ICoexistenceStorage {
       incumbentRoleIds: (row.incumbentRoleIds as string[]) ?? [],
       lastAssignmentAt: row.lastAssignmentAt,
       lastSyncAt: row.lastSyncAt,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private mapParallelChannelConfig(
+    row: typeof parallelChannelConfigs.$inferSelect
+  ): StoredParallelChannelConfig {
+    return {
+      id: row.id,
+      communityId: row.communityId,
+      strategy: row.strategy as ChannelStrategy,
+      enabled: row.enabled,
+      categoryName: row.categoryName,
+      categoryId: row.categoryId,
+      channelTemplates: (row.channelTemplates as ParallelChannelTemplate[]) ?? [],
+      customChannels: (row.customChannels as CustomChannelDefinition[]) ?? [],
+      mirrorSourceChannels: (row.mirrorSourceChannels as string[]) ?? [],
+      setupCompletedAt: row.setupCompletedAt,
+      lastSyncAt: row.lastSyncAt,
+      totalChannelsCreated: row.totalChannelsCreated,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private mapParallelChannel(
+    row: typeof parallelChannels.$inferSelect
+  ): StoredParallelChannel {
+    return {
+      id: row.id,
+      communityId: row.communityId,
+      discordChannelId: row.discordChannelId,
+      channelName: row.channelName,
+      channelType: row.channelType as 'text' | 'voice',
+      minConviction: row.minConviction,
+      categoryId: row.categoryId,
+      topic: null, // Topic stored separately or in Discord
+      templateId: row.templateId,
+      isDefault: row.templateId !== null, // Default if created from template
+      mirrorSourceId: row.mirrorSourceChannelId,
+      isPublicView: !row.isConvictionGated,
+      memberAccessCount: row.memberAccessCount,
+      lastAccessUpdate: row.lastAccessUpdate,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private mapParallelChannelAccess(
+    row: typeof parallelChannelAccess.$inferSelect
+  ): StoredParallelChannelAccess {
+    return {
+      id: row.id,
+      communityId: row.communityId,
+      memberId: row.memberId,
+      channelId: row.channelId,
+      hasAccess: row.hasAccess,
+      currentConviction: row.convictionAtGrant,
+      accessGrantedAt: row.grantedAt,
+      accessRevokedAt: row.revokedAt,
+      lastAccessCheckAt: row.lastCheckAt,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

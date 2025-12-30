@@ -1124,3 +1124,249 @@ export const parallelMemberAssignmentsRelations = relations(
 
 export type ParallelMemberAssignment = typeof parallelMemberAssignments.$inferSelect;
 export type NewParallelMemberAssignment = typeof parallelMemberAssignments.$inferInsert;
+
+// =============================================================================
+// Parallel Channel Tables (Sprint 59 - Channels & Conviction Gates)
+// =============================================================================
+
+/**
+ * Channel strategy options for parallel mode
+ *
+ * - `none`: No channels created (roles only)
+ * - `additive_only`: Create conviction-gated channels only (no mirroring)
+ * - `parallel_mirror`: Create Arrakis versions of incumbent channels
+ * - `custom`: Admin-defined channel configuration
+ */
+export type ChannelStrategy = 'none' | 'additive_only' | 'parallel_mirror' | 'custom';
+
+/**
+ * Parallel Channel Configuration - Channel strategy and settings per community
+ *
+ * Stores configuration for Arrakis-managed channels that provide differentiated
+ * value through conviction-gated access that incumbents cannot offer.
+ *
+ * RLS Policy: community_id = current_setting('app.current_tenant')::UUID
+ */
+export const parallelChannelConfigs = pgTable(
+  'parallel_channel_configs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' })
+      .unique(),
+
+    // Strategy configuration
+    strategy: text('strategy').notNull().default('additive_only'), // ChannelStrategy
+    enabled: boolean('enabled').notNull().default(false),
+
+    // Category settings
+    categoryName: text('category_name').notNull().default('Arrakis Channels'), // Parent category name
+    categoryId: text('category_id'), // Discord category snowflake (once created)
+
+    // Channel templates to create
+    channelTemplates: jsonb('channel_templates').$type<ChannelTemplate[]>().default([]),
+
+    // Custom channel definitions (for 'custom' strategy)
+    customChannels: jsonb('custom_channels').$type<CustomChannelDefinition[]>().default([]),
+
+    // Mirror configuration (for 'parallel_mirror' strategy)
+    mirrorSourceChannels: jsonb('mirror_source_channels').$type<string[]>().default([]), // Channel IDs to mirror
+
+    // Tracking
+    setupCompletedAt: timestamp('setup_completed_at', { withTimezone: true }),
+    lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+    totalChannelsCreated: integer('total_channels_created').notNull().default(0),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    communityIdx: index('idx_parallel_channel_configs_community').on(table.communityId),
+    strategyIdx: index('idx_parallel_channel_configs_strategy').on(table.strategy),
+    enabledIdx: index('idx_parallel_channel_configs_enabled').on(table.enabled),
+  })
+);
+
+/**
+ * Parallel channel template definition for additive channels
+ * Named ParallelChannelTemplate to avoid conflict with IThemeProvider.ChannelTemplate
+ */
+export interface ParallelChannelTemplate {
+  /** Unique template ID */
+  templateId: string;
+  /** Channel name (without prefix) */
+  name: string;
+  /** Channel topic/description */
+  topic: string;
+  /** Minimum conviction score required (0-100) */
+  minConviction: number;
+  /** Whether this is a default template */
+  isDefault: boolean;
+  /** Channel type: 'text' | 'voice' */
+  type: 'text' | 'voice';
+  /** Optional emoji for the channel name */
+  emoji?: string;
+}
+
+/**
+ * Alias for backward compatibility and internal use
+ * @deprecated Use ParallelChannelTemplate directly
+ */
+export type ChannelTemplate = ParallelChannelTemplate;
+
+/**
+ * Custom channel definition (admin-defined)
+ */
+export interface CustomChannelDefinition {
+  /** Channel name */
+  name: string;
+  /** Channel topic */
+  topic: string;
+  /** Minimum conviction required */
+  minConviction: number;
+  /** Channel type */
+  type: 'text' | 'voice';
+  /** Whether to grant @everyone view permission (private if false) */
+  isPublicView: boolean;
+  /** Optional role IDs that can always access (in addition to conviction) */
+  additionalRoleIds?: string[];
+}
+
+/**
+ * Parallel channel config relations
+ */
+export const parallelChannelConfigsRelations = relations(parallelChannelConfigs, ({ one }) => ({
+  community: one(communities, {
+    fields: [parallelChannelConfigs.communityId],
+    references: [communities.id],
+  }),
+}));
+
+export type ParallelChannelConfig = typeof parallelChannelConfigs.$inferSelect;
+export type NewParallelChannelConfig = typeof parallelChannelConfigs.$inferInsert;
+
+/**
+ * Parallel Channels - Tracks created Arrakis channels in Discord
+ *
+ * Each row represents a channel created and managed by Arrakis during parallel mode.
+ * These channels provide conviction-gated access that incumbents cannot offer.
+ *
+ * RLS Policy: community_id = current_setting('app.current_tenant')::UUID
+ */
+export const parallelChannels = pgTable(
+  'parallel_channels',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+
+    // Discord channel information
+    discordChannelId: text('discord_channel_id').notNull(), // Discord snowflake
+    channelName: text('channel_name').notNull(),
+    channelType: text('channel_type').notNull().default('text'), // 'text' | 'voice'
+
+    // Category association
+    categoryId: text('category_id'), // Discord category snowflake
+
+    // Conviction gating
+    minConviction: integer('min_conviction').notNull().default(0), // 0-100
+    isConvictionGated: boolean('is_conviction_gated').notNull().default(true),
+
+    // Source tracking (for mirrored channels)
+    sourceType: text('source_type').notNull().default('additive'), // 'additive' | 'mirror' | 'custom'
+    mirrorSourceChannelId: text('mirror_source_channel_id'), // Original channel ID if mirrored
+
+    // Template reference
+    templateId: text('template_id'), // Reference to ChannelTemplate.templateId
+
+    // Member access tracking
+    memberAccessCount: integer('member_access_count').notNull().default(0),
+    lastAccessUpdate: timestamp('last_access_update', { withTimezone: true }),
+
+    // Lifecycle
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    communityIdx: index('idx_parallel_channels_community').on(table.communityId),
+    discordChannelIdx: index('idx_parallel_channels_discord').on(table.discordChannelId),
+    convictionIdx: index('idx_parallel_channels_conviction').on(table.minConviction),
+    uniqueChannel: uniqueIndex('idx_parallel_channels_unique').on(
+      table.communityId,
+      table.discordChannelId
+    ),
+  })
+);
+
+/**
+ * Parallel channel relations
+ */
+export const parallelChannelsRelations = relations(parallelChannels, ({ one }) => ({
+  community: one(communities, {
+    fields: [parallelChannels.communityId],
+    references: [communities.id],
+  }),
+}));
+
+export type ParallelChannel = typeof parallelChannels.$inferSelect;
+export type NewParallelChannel = typeof parallelChannels.$inferInsert;
+
+/**
+ * Parallel Channel Access - Tracks member access to conviction-gated channels
+ *
+ * Tracks which members have access to which conviction-gated channels.
+ * Access is granted/revoked based on conviction score thresholds.
+ *
+ * RLS Policy: community_id = current_setting('app.current_tenant')::UUID
+ */
+export const parallelChannelAccess = pgTable(
+  'parallel_channel_access',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    memberId: text('member_id').notNull(), // Discord user ID
+    channelId: text('channel_id').notNull(), // Discord channel snowflake
+
+    // Access state
+    hasAccess: boolean('has_access').notNull().default(false),
+    convictionAtGrant: integer('conviction_at_grant'), // Conviction when access was granted
+
+    // Tracking
+    grantedAt: timestamp('granted_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastCheckAt: timestamp('last_check_at', { withTimezone: true }).notNull().defaultNow(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    communityMemberIdx: index('idx_parallel_channel_access_community_member').on(
+      table.communityId,
+      table.memberId
+    ),
+    channelIdx: index('idx_parallel_channel_access_channel').on(table.channelId),
+    accessIdx: index('idx_parallel_channel_access_has_access').on(table.hasAccess),
+    uniqueAccess: uniqueIndex('idx_parallel_channel_access_unique').on(
+      table.communityId,
+      table.memberId,
+      table.channelId
+    ),
+  })
+);
+
+/**
+ * Parallel channel access relations
+ */
+export const parallelChannelAccessRelations = relations(parallelChannelAccess, ({ one }) => ({
+  community: one(communities, {
+    fields: [parallelChannelAccess.communityId],
+    references: [communities.id],
+  }),
+}));
+
+export type ParallelChannelAccess = typeof parallelChannelAccess.$inferSelect;
+export type NewParallelChannelAccess = typeof parallelChannelAccess.$inferInsert;
