@@ -1,13 +1,17 @@
 /**
- * Migration Engine - Strategy Selection & Execution
+ * Migration Engine - Strategy Selection, Execution, Rollback & Takeover
  *
  * Sprint 62: Migration Engine - Strategy Selection & Execution
+ * Sprint 63: Migration Engine - Rollback & Takeover
  *
  * Orchestrates migration from incumbent token-gating to Arrakis with:
  * - Strategy selection (instant, gradual, parallel_forever, arrakis_primary)
  * - Readiness checks (min shadow days, min accuracy)
  * - Execution logic for different migration paths
  * - State machine transitions (shadow → parallel → primary → exclusive)
+ * - Rollback system for emergency reverts (Sprint 63)
+ * - Auto-rollback triggers on access loss / error rate (Sprint 63)
+ * - Role takeover flow for exclusive mode transition (Sprint 63)
  *
  * CRITICAL: All migrations require readiness checks to pass.
  * This prevents premature migrations that could disrupt community access.
@@ -39,6 +43,25 @@ export const DEFAULT_BATCH_SIZE = 100;
 
 /** Default gradual migration duration in days */
 export const DEFAULT_GRADUAL_DURATION_DAYS = 7;
+
+// =============================================================================
+// Sprint 63 Constants - Rollback & Takeover
+// =============================================================================
+
+/** Access loss percentage that triggers auto-rollback in 1 hour window */
+export const AUTO_ROLLBACK_ACCESS_LOSS_PERCENT = 5;
+
+/** Error rate percentage that triggers auto-rollback in 15 min window */
+export const AUTO_ROLLBACK_ERROR_RATE_PERCENT = 10;
+
+/** Time window for access loss detection (milliseconds) */
+export const ACCESS_LOSS_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+/** Time window for error rate detection (milliseconds) */
+export const ERROR_RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+/** Maximum rollbacks before requiring manual intervention */
+export const MAX_AUTO_ROLLBACKS = 3;
 
 // =============================================================================
 // Types
@@ -168,6 +191,175 @@ export type ApplyRolesCallback = (
 export type GetGuildMembersCallback = (guildId: string) => Promise<string[]>;
 
 // =============================================================================
+// Sprint 63 Types - Rollback & Takeover
+// =============================================================================
+
+/**
+ * Rollback trigger type
+ */
+export type RollbackTrigger = 'manual' | 'auto_access_loss' | 'auto_error_rate' | 'auto_health_check';
+
+/**
+ * Options for rollback operation
+ */
+export interface RollbackOptions {
+  /** Reason for rollback */
+  reason: string;
+  /** Trigger type */
+  trigger: RollbackTrigger;
+  /** Admin who initiated (for manual rollbacks) */
+  initiatedBy?: string;
+  /** Whether to preserve incumbent roles during rollback */
+  preserveIncumbentRoles?: boolean;
+}
+
+/**
+ * Result of rollback operation
+ */
+export interface RollbackResult {
+  /** Whether rollback succeeded */
+  success: boolean;
+  /** Previous mode before rollback */
+  previousMode: CoexistenceMode;
+  /** New mode after rollback */
+  newMode: CoexistenceMode;
+  /** Error message if failed */
+  error?: string;
+  /** Trigger that caused rollback */
+  trigger: RollbackTrigger;
+  /** Timestamp of rollback */
+  rolledBackAt: Date;
+  /** Total rollback count for this community */
+  rollbackCount: number;
+}
+
+/**
+ * Access loss metrics for auto-rollback detection
+ */
+export interface AccessMetrics {
+  /** Community ID */
+  communityId: string;
+  /** Total members with access before period */
+  previousAccessCount: number;
+  /** Total members with access now */
+  currentAccessCount: number;
+  /** Percentage of access lost */
+  accessLossPercent: number;
+  /** Whether threshold exceeded */
+  thresholdExceeded: boolean;
+  /** Time window start */
+  windowStart: Date;
+  /** Time window end */
+  windowEnd: Date;
+}
+
+/**
+ * Error rate metrics for auto-rollback detection
+ */
+export interface ErrorMetrics {
+  /** Community ID */
+  communityId: string;
+  /** Total operations in window */
+  totalOperations: number;
+  /** Failed operations in window */
+  failedOperations: number;
+  /** Error rate percentage */
+  errorRatePercent: number;
+  /** Whether threshold exceeded */
+  thresholdExceeded: boolean;
+  /** Time window start */
+  windowStart: Date;
+  /** Time window end */
+  windowEnd: Date;
+}
+
+/**
+ * Auto-rollback check result
+ */
+export interface AutoRollbackCheckResult {
+  /** Whether auto-rollback should trigger */
+  shouldRollback: boolean;
+  /** Trigger reason if should rollback */
+  trigger?: RollbackTrigger;
+  /** Detailed reason */
+  reason?: string;
+  /** Access metrics (if checked) */
+  accessMetrics?: AccessMetrics;
+  /** Error metrics (if checked) */
+  errorMetrics?: ErrorMetrics;
+  /** Whether max rollbacks reached */
+  maxRollbacksReached: boolean;
+}
+
+/**
+ * Takeover confirmation step
+ */
+export type TakeoverStep = 'community_name' | 'acknowledge_risks' | 'rollback_plan';
+
+/**
+ * Takeover confirmation state
+ */
+export interface TakeoverConfirmationState {
+  /** Community ID */
+  communityId: string;
+  /** Admin initiating takeover */
+  adminId: string;
+  /** Steps completed */
+  completedSteps: TakeoverStep[];
+  /** Community name confirmation */
+  communityNameConfirmed?: boolean;
+  /** Risk acknowledgment */
+  risksAcknowledged?: boolean;
+  /** Rollback plan acknowledged */
+  rollbackPlanAcknowledged?: boolean;
+  /** When confirmation started */
+  startedAt: Date;
+  /** Confirmation expires after 5 minutes */
+  expiresAt: Date;
+}
+
+/**
+ * Takeover result
+ */
+export interface TakeoverResult {
+  /** Whether takeover succeeded */
+  success: boolean;
+  /** Previous mode */
+  previousMode: CoexistenceMode;
+  /** New mode (should be exclusive) */
+  newMode: CoexistenceMode;
+  /** Error message if failed */
+  error?: string;
+  /** Roles renamed during takeover */
+  rolesRenamed: number;
+  /** Timestamp of takeover */
+  takenOverAt: Date;
+}
+
+/**
+ * Callback for renaming Discord roles (remove namespace prefix)
+ */
+export type RenameRolesCallback = (
+  guildId: string,
+  roleRenames: Array<{ roleId: string; newName: string }>
+) => Promise<void>;
+
+/**
+ * Callback for notifying admin of auto-rollback
+ */
+export type NotifyAdminCallback = (
+  guildId: string,
+  adminUserId: string,
+  message: string,
+  details: {
+    trigger: RollbackTrigger;
+    previousMode: CoexistenceMode;
+    newMode: CoexistenceMode;
+    rollbackCount: number;
+  }
+) => Promise<void>;
+
+// =============================================================================
 // Migration Engine
 // =============================================================================
 
@@ -176,6 +368,7 @@ export type GetGuildMembersCallback = (guildId: string) => Promise<string[]>;
  *
  * Orchestrates migration from incumbent token-gating to Arrakis.
  * Supports multiple strategies with strict readiness checks.
+ * Handles rollback and takeover operations (Sprint 63).
  */
 export class MigrationEngine {
   private readonly logger: ILogger;
@@ -184,6 +377,8 @@ export class MigrationEngine {
     private readonly storage: ICoexistenceStorage,
     private readonly applyRoles?: ApplyRolesCallback,
     private readonly getGuildMembers?: GetGuildMembersCallback,
+    private readonly renameRoles?: RenameRolesCallback,
+    private readonly notifyAdmin?: NotifyAdminCallback,
     logger?: ILogger
   ) {
     this.logger = logger ?? createLogger({ service: 'MigrationEngine' });
@@ -741,6 +936,605 @@ export class MigrationEngine {
       readiness,
     };
   }
+
+  // ===========================================================================
+  // Rollback System (Sprint 63 - TASK-63.1)
+  // ===========================================================================
+
+  /**
+   * Rollback to previous mode
+   *
+   * Performs a rollback from current mode to the previous safe mode.
+   * Cannot rollback from exclusive mode (that's a one-way transition).
+   *
+   * Mode rollback paths:
+   * - exclusive -> BLOCKED (cannot rollback)
+   * - primary -> parallel
+   * - parallel -> shadow
+   * - shadow -> BLOCKED (already at base mode)
+   */
+  async rollback(
+    communityId: string,
+    options: RollbackOptions
+  ): Promise<RollbackResult> {
+    const rolledBackAt = new Date();
+
+    this.logger.info('Initiating rollback', {
+      communityId,
+      trigger: options.trigger,
+      reason: options.reason,
+    });
+
+    // Get current state
+    const state = await this.storage.getMigrationState(communityId);
+    if (!state) {
+      return {
+        success: false,
+        previousMode: 'shadow',
+        newMode: 'shadow',
+        error: 'No migration state found',
+        trigger: options.trigger,
+        rolledBackAt,
+        rollbackCount: 0,
+      };
+    }
+
+    const previousMode = state.currentMode;
+
+    // Cannot rollback from exclusive mode
+    if (previousMode === 'exclusive') {
+      this.logger.warn('Cannot rollback from exclusive mode', { communityId });
+      return {
+        success: false,
+        previousMode,
+        newMode: previousMode,
+        error: 'Cannot rollback from exclusive mode - this is a one-way transition',
+        trigger: options.trigger,
+        rolledBackAt,
+        rollbackCount: state.rollbackCount,
+      };
+    }
+
+    // Cannot rollback from shadow mode (already at base)
+    if (previousMode === 'shadow') {
+      this.logger.warn('Cannot rollback from shadow mode - already at base', { communityId });
+      return {
+        success: false,
+        previousMode,
+        newMode: previousMode,
+        error: 'Cannot rollback from shadow mode - already at base mode',
+        trigger: options.trigger,
+        rolledBackAt,
+        rollbackCount: state.rollbackCount,
+      };
+    }
+
+    // Determine target mode for rollback
+    let targetMode: CoexistenceMode;
+    switch (previousMode) {
+      case 'primary':
+        targetMode = 'parallel';
+        break;
+      case 'parallel':
+        targetMode = 'shadow';
+        break;
+      default:
+        targetMode = 'shadow';
+    }
+
+    try {
+      // Record rollback in storage
+      await this.storage.recordRollback(communityId, options.reason, targetMode);
+
+      // Update mode
+      await this.storage.updateMode(
+        communityId,
+        targetMode,
+        `Rollback: ${options.reason}`
+      );
+
+      // Get updated rollback count
+      const updatedState = await this.storage.getMigrationState(communityId);
+      const rollbackCount = updatedState?.rollbackCount ?? state.rollbackCount + 1;
+
+      this.logger.info('Rollback completed', {
+        communityId,
+        previousMode,
+        newMode: targetMode,
+        trigger: options.trigger,
+        rollbackCount,
+      });
+
+      return {
+        success: true,
+        previousMode,
+        newMode: targetMode,
+        trigger: options.trigger,
+        rolledBackAt,
+        rollbackCount,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error('Rollback failed', {
+        communityId,
+        error: errorMessage,
+      });
+      return {
+        success: false,
+        previousMode,
+        newMode: previousMode,
+        error: errorMessage,
+        trigger: options.trigger,
+        rolledBackAt,
+        rollbackCount: state.rollbackCount,
+      };
+    }
+  }
+
+  // ===========================================================================
+  // Auto-Rollback Detection (Sprint 63 - TASK-63.3, TASK-63.4, TASK-63.5)
+  // ===========================================================================
+
+  /**
+   * Check if auto-rollback should be triggered
+   *
+   * Auto-rollback triggers:
+   * - >5% access loss in 1 hour window
+   * - >10% error rate in 15 minute window
+   * - Max 3 auto-rollbacks before requiring manual intervention
+   */
+  async checkAutoRollback(
+    communityId: string,
+    accessMetrics?: AccessMetrics,
+    errorMetrics?: ErrorMetrics
+  ): Promise<AutoRollbackCheckResult> {
+    // Get current state
+    const state = await this.storage.getMigrationState(communityId);
+    if (!state) {
+      return {
+        shouldRollback: false,
+        maxRollbacksReached: false,
+      };
+    }
+
+    // Cannot auto-rollback from shadow or exclusive
+    if (state.currentMode === 'shadow' || state.currentMode === 'exclusive') {
+      return {
+        shouldRollback: false,
+        maxRollbacksReached: false,
+      };
+    }
+
+    // Check if max rollbacks reached
+    const maxRollbacksReached = state.rollbackCount >= MAX_AUTO_ROLLBACKS;
+    if (maxRollbacksReached) {
+      this.logger.warn('Max auto-rollbacks reached - manual intervention required', {
+        communityId,
+        rollbackCount: state.rollbackCount,
+      });
+      return {
+        shouldRollback: false,
+        maxRollbacksReached: true,
+        reason: `Max auto-rollbacks (${MAX_AUTO_ROLLBACKS}) reached - manual intervention required`,
+      };
+    }
+
+    // Check access loss threshold
+    if (accessMetrics?.thresholdExceeded) {
+      return {
+        shouldRollback: true,
+        trigger: 'auto_access_loss',
+        reason: `Access loss of ${accessMetrics.accessLossPercent.toFixed(1)}% exceeds threshold of ${AUTO_ROLLBACK_ACCESS_LOSS_PERCENT}%`,
+        accessMetrics,
+        maxRollbacksReached: false,
+      };
+    }
+
+    // Check error rate threshold
+    if (errorMetrics?.thresholdExceeded) {
+      return {
+        shouldRollback: true,
+        trigger: 'auto_error_rate',
+        reason: `Error rate of ${errorMetrics.errorRatePercent.toFixed(1)}% exceeds threshold of ${AUTO_ROLLBACK_ERROR_RATE_PERCENT}%`,
+        errorMetrics,
+        maxRollbacksReached: false,
+      };
+    }
+
+    return {
+      shouldRollback: false,
+      accessMetrics,
+      errorMetrics,
+      maxRollbacksReached: false,
+    };
+  }
+
+  /**
+   * Calculate access loss metrics for a community
+   *
+   * Compares member access counts over the specified time window.
+   */
+  async calculateAccessMetrics(
+    communityId: string,
+    previousAccessCount: number,
+    currentAccessCount: number
+  ): Promise<AccessMetrics> {
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - ACCESS_LOSS_WINDOW_MS);
+
+    // Calculate access loss
+    const accessLost = Math.max(0, previousAccessCount - currentAccessCount);
+    const accessLossPercent = previousAccessCount > 0
+      ? (accessLost / previousAccessCount) * 100
+      : 0;
+
+    const thresholdExceeded = accessLossPercent > AUTO_ROLLBACK_ACCESS_LOSS_PERCENT;
+
+    return {
+      communityId,
+      previousAccessCount,
+      currentAccessCount,
+      accessLossPercent,
+      thresholdExceeded,
+      windowStart,
+      windowEnd: now,
+    };
+  }
+
+  /**
+   * Calculate error rate metrics for a community
+   *
+   * Tracks failed operations over the specified time window.
+   */
+  async calculateErrorMetrics(
+    communityId: string,
+    totalOperations: number,
+    failedOperations: number
+  ): Promise<ErrorMetrics> {
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - ERROR_RATE_WINDOW_MS);
+
+    // Calculate error rate
+    const errorRatePercent = totalOperations > 0
+      ? (failedOperations / totalOperations) * 100
+      : 0;
+
+    const thresholdExceeded = errorRatePercent > AUTO_ROLLBACK_ERROR_RATE_PERCENT;
+
+    return {
+      communityId,
+      totalOperations,
+      failedOperations,
+      errorRatePercent,
+      thresholdExceeded,
+      windowStart,
+      windowEnd: now,
+    };
+  }
+
+  /**
+   * Execute auto-rollback if conditions are met
+   *
+   * Called by the rollback watcher job to check and execute auto-rollbacks.
+   * Notifies admin after successful rollback.
+   */
+  async executeAutoRollbackIfNeeded(
+    communityId: string,
+    guildId: string,
+    adminUserId: string,
+    accessMetrics?: AccessMetrics,
+    errorMetrics?: ErrorMetrics
+  ): Promise<RollbackResult | null> {
+    // Check if auto-rollback should trigger
+    const check = await this.checkAutoRollback(communityId, accessMetrics, errorMetrics);
+
+    if (!check.shouldRollback) {
+      return null;
+    }
+
+    // Execute rollback
+    const result = await this.rollback(communityId, {
+      reason: check.reason ?? 'Auto-rollback triggered',
+      trigger: check.trigger ?? 'auto_access_loss',
+    });
+
+    // Notify admin if rollback succeeded
+    if (result.success && this.notifyAdmin) {
+      try {
+        await this.notifyAdmin(
+          guildId,
+          adminUserId,
+          `⚠️ Auto-rollback triggered for your community.\n\nReason: ${check.reason}`,
+          {
+            trigger: result.trigger,
+            previousMode: result.previousMode,
+            newMode: result.newMode,
+            rollbackCount: result.rollbackCount,
+          }
+        );
+      } catch (notifyError) {
+        this.logger.error('Failed to notify admin of auto-rollback', {
+          communityId,
+          error: notifyError instanceof Error ? notifyError.message : String(notifyError),
+        });
+      }
+    }
+
+    return result;
+  }
+
+  // ===========================================================================
+  // Takeover System (Sprint 63 - TASK-63.7, TASK-63.8, TASK-63.9)
+  // ===========================================================================
+
+  /**
+   * Check if takeover is available for a community
+   *
+   * Takeover is only available when:
+   * - Community is in primary mode
+   * - All readiness checks pass
+   */
+  async canTakeover(communityId: string): Promise<{
+    canTakeover: boolean;
+    currentMode: CoexistenceMode;
+    reason?: string;
+  }> {
+    const state = await this.storage.getMigrationState(communityId);
+    if (!state) {
+      return {
+        canTakeover: false,
+        currentMode: 'shadow',
+        reason: 'No migration state found',
+      };
+    }
+
+    // Must be in primary mode to takeover
+    if (state.currentMode !== 'primary') {
+      return {
+        canTakeover: false,
+        currentMode: state.currentMode,
+        reason: `Cannot takeover from ${state.currentMode} mode - must be in primary mode`,
+      };
+    }
+
+    // Already in exclusive mode
+    if (state.currentMode === 'exclusive') {
+      return {
+        canTakeover: false,
+        currentMode: state.currentMode,
+        reason: 'Already in exclusive mode',
+      };
+    }
+
+    return {
+      canTakeover: true,
+      currentMode: state.currentMode,
+    };
+  }
+
+  /**
+   * Create takeover confirmation state
+   *
+   * Starts the three-step confirmation process for takeover.
+   */
+  createTakeoverConfirmation(
+    communityId: string,
+    adminId: string
+  ): TakeoverConfirmationState {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes
+
+    return {
+      communityId,
+      adminId,
+      completedSteps: [],
+      startedAt: now,
+      expiresAt,
+    };
+  }
+
+  /**
+   * Validate and update takeover confirmation step
+   */
+  validateTakeoverStep(
+    confirmation: TakeoverConfirmationState,
+    step: TakeoverStep,
+    input: string,
+    expectedValue?: string
+  ): { valid: boolean; error?: string; updatedConfirmation: TakeoverConfirmationState } {
+    // Check if expired
+    if (new Date() > confirmation.expiresAt) {
+      return {
+        valid: false,
+        error: 'Confirmation expired - please start again',
+        updatedConfirmation: confirmation,
+      };
+    }
+
+    // Validate based on step
+    switch (step) {
+      case 'community_name':
+        if (expectedValue && input.toLowerCase() !== expectedValue.toLowerCase()) {
+          return {
+            valid: false,
+            error: 'Community name does not match',
+            updatedConfirmation: confirmation,
+          };
+        }
+        return {
+          valid: true,
+          updatedConfirmation: {
+            ...confirmation,
+            completedSteps: [...confirmation.completedSteps, step],
+            communityNameConfirmed: true,
+          },
+        };
+
+      case 'acknowledge_risks':
+        if (input.toLowerCase() !== 'i understand') {
+          return {
+            valid: false,
+            error: 'Please type "I understand" to acknowledge risks',
+            updatedConfirmation: confirmation,
+          };
+        }
+        return {
+          valid: true,
+          updatedConfirmation: {
+            ...confirmation,
+            completedSteps: [...confirmation.completedSteps, step],
+            risksAcknowledged: true,
+          },
+        };
+
+      case 'rollback_plan':
+        if (input.toLowerCase() !== 'confirmed') {
+          return {
+            valid: false,
+            error: 'Please type "confirmed" to acknowledge rollback plan',
+            updatedConfirmation: confirmation,
+          };
+        }
+        return {
+          valid: true,
+          updatedConfirmation: {
+            ...confirmation,
+            completedSteps: [...confirmation.completedSteps, step],
+            rollbackPlanAcknowledged: true,
+          },
+        };
+
+      default:
+        return {
+          valid: false,
+          error: `Unknown confirmation step: ${step}`,
+          updatedConfirmation: confirmation,
+        };
+    }
+  }
+
+  /**
+   * Check if all takeover confirmation steps are complete
+   */
+  isTakeoverConfirmationComplete(confirmation: TakeoverConfirmationState): boolean {
+    const requiredSteps: TakeoverStep[] = ['community_name', 'acknowledge_risks', 'rollback_plan'];
+    return requiredSteps.every(step => confirmation.completedSteps.includes(step));
+  }
+
+  /**
+   * Execute takeover
+   *
+   * Transitions from primary to exclusive mode and renames roles.
+   * REQUIRES all three confirmation steps to be completed.
+   */
+  async executeTakeover(
+    communityId: string,
+    guildId: string,
+    confirmation: TakeoverConfirmationState
+  ): Promise<TakeoverResult> {
+    const takenOverAt = new Date();
+
+    this.logger.info('Executing takeover', { communityId, guildId });
+
+    // Verify all confirmation steps completed
+    if (!this.isTakeoverConfirmationComplete(confirmation)) {
+      const missingSteps = ['community_name', 'acknowledge_risks', 'rollback_plan']
+        .filter(step => !confirmation.completedSteps.includes(step as TakeoverStep));
+      return {
+        success: false,
+        previousMode: 'primary',
+        newMode: 'primary',
+        error: `Missing confirmation steps: ${missingSteps.join(', ')}`,
+        rolesRenamed: 0,
+        takenOverAt,
+      };
+    }
+
+    // Verify confirmation not expired
+    if (new Date() > confirmation.expiresAt) {
+      return {
+        success: false,
+        previousMode: 'primary',
+        newMode: 'primary',
+        error: 'Confirmation expired - please start again',
+        rolesRenamed: 0,
+        takenOverAt,
+      };
+    }
+
+    // Check if takeover is allowed
+    const canTakeoverResult = await this.canTakeover(communityId);
+    if (!canTakeoverResult.canTakeover) {
+      return {
+        success: false,
+        previousMode: canTakeoverResult.currentMode,
+        newMode: canTakeoverResult.currentMode,
+        error: canTakeoverResult.reason,
+        rolesRenamed: 0,
+        takenOverAt,
+      };
+    }
+
+    try {
+      // Get parallel roles to rename
+      const parallelRoles = await this.storage.getParallelRoles(communityId);
+      let rolesRenamed = 0;
+
+      // Rename roles (remove namespace prefix)
+      if (this.renameRoles && parallelRoles.length > 0) {
+        const roleRenames = parallelRoles.map(role => ({
+          roleId: role.discordRoleId,
+          newName: role.baseName, // Remove @arrakis- prefix
+        }));
+
+        await this.renameRoles(guildId, roleRenames);
+        rolesRenamed = roleRenames.length;
+
+        this.logger.info('Roles renamed during takeover', {
+          communityId,
+          rolesRenamed,
+        });
+      }
+
+      // Transition to exclusive mode
+      await this.storage.updateMode(communityId, 'exclusive', 'Takeover completed');
+
+      // Update migration state
+      await this.storage.saveMigrationState({
+        communityId,
+        currentMode: 'exclusive',
+        targetMode: 'exclusive',
+        exclusiveEnabledAt: takenOverAt,
+      });
+
+      this.logger.info('Takeover completed', {
+        communityId,
+        rolesRenamed,
+      });
+
+      return {
+        success: true,
+        previousMode: 'primary',
+        newMode: 'exclusive',
+        rolesRenamed,
+        takenOverAt,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error('Takeover failed', {
+        communityId,
+        error: errorMessage,
+      });
+      return {
+        success: false,
+        previousMode: 'primary',
+        newMode: 'primary',
+        error: errorMessage,
+        rolesRenamed: 0,
+        takenOverAt,
+      };
+    }
+  }
 }
 
 // =============================================================================
@@ -749,12 +1543,21 @@ export class MigrationEngine {
 
 /**
  * Create a new MigrationEngine instance
+ *
+ * @param storage - Coexistence storage adapter
+ * @param applyRoles - Callback for applying/removing Discord roles
+ * @param getGuildMembers - Callback for getting guild member IDs
+ * @param renameRoles - Callback for renaming Discord roles (Sprint 63 takeover)
+ * @param notifyAdmin - Callback for notifying admin of auto-rollback (Sprint 63)
+ * @param logger - Optional custom logger
  */
 export function createMigrationEngine(
   storage: ICoexistenceStorage,
   applyRoles?: ApplyRolesCallback,
   getGuildMembers?: GetGuildMembersCallback,
+  renameRoles?: RenameRolesCallback,
+  notifyAdmin?: NotifyAdminCallback,
   logger?: ILogger
 ): MigrationEngine {
-  return new MigrationEngine(storage, applyRoles, getGuildMembers, logger);
+  return new MigrationEngine(storage, applyRoles, getGuildMembers, renameRoles, notifyAdmin, logger);
 }

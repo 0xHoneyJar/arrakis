@@ -2,6 +2,7 @@
  * MigrationEngine Tests
  *
  * Sprint 62: Migration Engine - Strategy Selection & Execution
+ * Sprint 63: Migration Engine - Rollback & Takeover
  *
  * Tests for the MigrationEngine service that orchestrates migration
  * from incumbent token-gating to Arrakis.
@@ -15,9 +16,16 @@ import {
   MIN_ACCURACY_PERCENT,
   DEFAULT_BATCH_SIZE,
   DEFAULT_GRADUAL_DURATION_DAYS,
+  AUTO_ROLLBACK_ACCESS_LOSS_PERCENT,
+  AUTO_ROLLBACK_ERROR_RATE_PERCENT,
+  MAX_AUTO_ROLLBACKS,
   type ReadinessCheckResult,
   type MigrationPlan,
   type MigrationExecutionResult,
+  type RollbackOptions,
+  type RollbackResult,
+  type TakeoverConfirmationState,
+  type TakeoverResult,
 } from '../../../../../src/packages/adapters/coexistence/MigrationEngine.js';
 import type {
   ICoexistenceStorage,
@@ -146,6 +154,9 @@ function createMockStorage(
     saveParallelChannelConfig: vi.fn().mockResolvedValue(undefined),
     getParallelChannelConfigs: vi.fn().mockResolvedValue([]),
     deleteParallelChannelConfig: vi.fn().mockResolvedValue(undefined),
+
+    // Parallel roles (Sprint 63 takeover)
+    getParallelRoles: vi.fn().mockResolvedValue([]),
   } as unknown as ICoexistenceStorage;
 }
 
@@ -825,6 +836,841 @@ describe('MigrationEngine', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('No migration state found');
+    });
+  });
+
+  // ===========================================================================
+  // Sprint 63: Rollback Tests (TASK-63.10)
+  // ===========================================================================
+
+  describe('rollback', () => {
+    it('rolls back from primary to parallel mode', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'primary',
+          targetMode: 'exclusive',
+          strategy: 'arrakis_primary',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          primaryEnabledAt: new Date(),
+          exclusiveEnabledAt: null,
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      const result = await engine.rollback(TEST_COMMUNITY_ID, {
+        reason: 'Manual rollback for testing',
+        trigger: 'manual',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.previousMode).toBe('primary');
+      expect(result.newMode).toBe('parallel');
+      expect(result.trigger).toBe('manual');
+      expect(storage.recordRollback).toHaveBeenCalledWith(
+        TEST_COMMUNITY_ID,
+        'Manual rollback for testing',
+        'parallel'
+      );
+    });
+
+    it('rolls back from parallel to shadow mode', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'parallel',
+          targetMode: 'primary',
+          strategy: 'instant',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(),
+          primaryEnabledAt: null,
+          exclusiveEnabledAt: null,
+          rollbackCount: 1,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      const result = await engine.rollback(TEST_COMMUNITY_ID, {
+        reason: 'Access issues detected',
+        trigger: 'auto_access_loss',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.previousMode).toBe('parallel');
+      expect(result.newMode).toBe('shadow');
+      expect(result.trigger).toBe('auto_access_loss');
+    });
+
+    it('blocks rollback from exclusive mode (TASK-63.12)', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'exclusive',
+          targetMode: 'exclusive',
+          strategy: 'arrakis_primary',
+          shadowStartedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          primaryEnabledAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+          exclusiveEnabledAt: new Date(),
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 98,
+          shadowDays: 30,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      const result = await engine.rollback(TEST_COMMUNITY_ID, {
+        reason: 'Want to go back',
+        trigger: 'manual',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Cannot rollback from exclusive mode');
+      expect(result.previousMode).toBe('exclusive');
+      expect(result.newMode).toBe('exclusive');
+    });
+
+    it('blocks rollback from shadow mode (already at base)', async () => {
+      const storage = createMockStorage(); // Default is shadow mode
+      const engine = createMigrationEngine(storage);
+
+      const result = await engine.rollback(TEST_COMMUNITY_ID, {
+        reason: 'Want to go back further',
+        trigger: 'manual',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Cannot rollback from shadow mode');
+    });
+
+    it('returns error when no migration state exists', async () => {
+      const storage = createMockStorage({
+        migrationState: null,
+      });
+      const engine = createMigrationEngine(storage);
+
+      const result = await engine.rollback(TEST_COMMUNITY_ID, {
+        reason: 'Test',
+        trigger: 'manual',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('No migration state found');
+    });
+  });
+
+  // ===========================================================================
+  // Sprint 63: Auto-Rollback Tests (TASK-63.10)
+  // ===========================================================================
+
+  describe('checkAutoRollback', () => {
+    it('triggers rollback when access loss exceeds threshold', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'parallel',
+          targetMode: 'primary',
+          strategy: 'instant',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(),
+          primaryEnabledAt: null,
+          exclusiveEnabledAt: null,
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      // Calculate access metrics with >5% loss
+      const accessMetrics = await engine.calculateAccessMetrics(
+        TEST_COMMUNITY_ID,
+        100, // previous
+        90   // current - 10% loss
+      );
+
+      const result = await engine.checkAutoRollback(
+        TEST_COMMUNITY_ID,
+        accessMetrics,
+        undefined
+      );
+
+      expect(result.shouldRollback).toBe(true);
+      expect(result.trigger).toBe('auto_access_loss');
+      expect(result.accessMetrics?.thresholdExceeded).toBe(true);
+    });
+
+    it('triggers rollback when error rate exceeds threshold', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'primary',
+          targetMode: 'exclusive',
+          strategy: 'arrakis_primary',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          primaryEnabledAt: new Date(),
+          exclusiveEnabledAt: null,
+          rollbackCount: 1,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      // Calculate error metrics with >10% error rate
+      const errorMetrics = await engine.calculateErrorMetrics(
+        TEST_COMMUNITY_ID,
+        100, // total
+        15   // failed - 15% error rate
+      );
+
+      const result = await engine.checkAutoRollback(
+        TEST_COMMUNITY_ID,
+        undefined,
+        errorMetrics
+      );
+
+      expect(result.shouldRollback).toBe(true);
+      expect(result.trigger).toBe('auto_error_rate');
+      expect(result.errorMetrics?.thresholdExceeded).toBe(true);
+    });
+
+    it('does not trigger when thresholds not exceeded', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'parallel',
+          targetMode: 'primary',
+          strategy: 'instant',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(),
+          primaryEnabledAt: null,
+          exclusiveEnabledAt: null,
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      // Normal metrics - below threshold
+      const accessMetrics = await engine.calculateAccessMetrics(
+        TEST_COMMUNITY_ID,
+        100,
+        98 // 2% loss - below 5% threshold
+      );
+
+      const errorMetrics = await engine.calculateErrorMetrics(
+        TEST_COMMUNITY_ID,
+        100,
+        5 // 5% error rate - below 10% threshold
+      );
+
+      const result = await engine.checkAutoRollback(
+        TEST_COMMUNITY_ID,
+        accessMetrics,
+        errorMetrics
+      );
+
+      expect(result.shouldRollback).toBe(false);
+      expect(result.maxRollbacksReached).toBe(false);
+    });
+
+    it('blocks auto-rollback when max rollbacks reached', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'parallel',
+          targetMode: 'primary',
+          strategy: 'instant',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(),
+          primaryEnabledAt: null,
+          exclusiveEnabledAt: null,
+          rollbackCount: MAX_AUTO_ROLLBACKS, // At max
+          lastRollbackAt: new Date(),
+          lastRollbackReason: 'Previous rollback',
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      // Even with high access loss, should not trigger
+      const accessMetrics = await engine.calculateAccessMetrics(
+        TEST_COMMUNITY_ID,
+        100,
+        50 // 50% loss
+      );
+
+      const result = await engine.checkAutoRollback(
+        TEST_COMMUNITY_ID,
+        accessMetrics,
+        undefined
+      );
+
+      expect(result.shouldRollback).toBe(false);
+      expect(result.maxRollbacksReached).toBe(true);
+      expect(result.reason).toContain('manual intervention required');
+    });
+
+    it('does not trigger for shadow or exclusive modes', async () => {
+      const shadowStorage = createMockStorage(); // Default is shadow
+      const engine1 = createMigrationEngine(shadowStorage);
+
+      const result1 = await engine1.checkAutoRollback(TEST_COMMUNITY_ID);
+      expect(result1.shouldRollback).toBe(false);
+
+      const exclusiveStorage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'exclusive',
+          targetMode: 'exclusive',
+          strategy: 'arrakis_primary',
+          shadowStartedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          primaryEnabledAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+          exclusiveEnabledAt: new Date(),
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 98,
+          shadowDays: 30,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine2 = createMigrationEngine(exclusiveStorage);
+
+      const result2 = await engine2.checkAutoRollback(TEST_COMMUNITY_ID);
+      expect(result2.shouldRollback).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // Sprint 63: Access & Error Metrics Tests
+  // ===========================================================================
+
+  describe('calculateAccessMetrics', () => {
+    it('calculates access loss percentage correctly', async () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const metrics = await engine.calculateAccessMetrics(
+        TEST_COMMUNITY_ID,
+        100,
+        90
+      );
+
+      expect(metrics.previousAccessCount).toBe(100);
+      expect(metrics.currentAccessCount).toBe(90);
+      expect(metrics.accessLossPercent).toBe(10);
+      expect(metrics.thresholdExceeded).toBe(true);
+    });
+
+    it('handles zero previous count', async () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const metrics = await engine.calculateAccessMetrics(
+        TEST_COMMUNITY_ID,
+        0,
+        0
+      );
+
+      expect(metrics.accessLossPercent).toBe(0);
+      expect(metrics.thresholdExceeded).toBe(false);
+    });
+
+    it('sets threshold exceeded flag correctly', async () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      // Exactly at threshold (should not exceed)
+      const metrics1 = await engine.calculateAccessMetrics(
+        TEST_COMMUNITY_ID,
+        100,
+        95 // Exactly 5% loss
+      );
+      expect(metrics1.thresholdExceeded).toBe(false);
+
+      // Just above threshold
+      const metrics2 = await engine.calculateAccessMetrics(
+        TEST_COMMUNITY_ID,
+        100,
+        94 // 6% loss
+      );
+      expect(metrics2.thresholdExceeded).toBe(true);
+    });
+  });
+
+  describe('calculateErrorMetrics', () => {
+    it('calculates error rate percentage correctly', async () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const metrics = await engine.calculateErrorMetrics(
+        TEST_COMMUNITY_ID,
+        100,
+        15
+      );
+
+      expect(metrics.totalOperations).toBe(100);
+      expect(metrics.failedOperations).toBe(15);
+      expect(metrics.errorRatePercent).toBe(15);
+      expect(metrics.thresholdExceeded).toBe(true);
+    });
+
+    it('handles zero total operations', async () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const metrics = await engine.calculateErrorMetrics(
+        TEST_COMMUNITY_ID,
+        0,
+        0
+      );
+
+      expect(metrics.errorRatePercent).toBe(0);
+      expect(metrics.thresholdExceeded).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // Sprint 63: Takeover Tests (TASK-63.11)
+  // ===========================================================================
+
+  describe('canTakeover', () => {
+    it('allows takeover from primary mode', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'primary',
+          targetMode: 'exclusive',
+          strategy: 'arrakis_primary',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          primaryEnabledAt: new Date(),
+          exclusiveEnabledAt: null,
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      const result = await engine.canTakeover(TEST_COMMUNITY_ID);
+
+      expect(result.canTakeover).toBe(true);
+      expect(result.currentMode).toBe('primary');
+      expect(result.reason).toBeUndefined();
+    });
+
+    it('blocks takeover from shadow mode', async () => {
+      const storage = createMockStorage(); // Default is shadow
+      const engine = createMigrationEngine(storage);
+
+      const result = await engine.canTakeover(TEST_COMMUNITY_ID);
+
+      expect(result.canTakeover).toBe(false);
+      expect(result.currentMode).toBe('shadow');
+      expect(result.reason).toContain('must be in primary mode');
+    });
+
+    it('blocks takeover from parallel mode', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'parallel',
+          targetMode: 'primary',
+          strategy: 'instant',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(),
+          primaryEnabledAt: null,
+          exclusiveEnabledAt: null,
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      const result = await engine.canTakeover(TEST_COMMUNITY_ID);
+
+      expect(result.canTakeover).toBe(false);
+      expect(result.reason).toContain('must be in primary mode');
+    });
+  });
+
+  describe('takeover confirmation', () => {
+    it('creates confirmation with 5-minute expiration', () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const confirmation = engine.createTakeoverConfirmation(
+        TEST_COMMUNITY_ID,
+        'admin-123'
+      );
+
+      expect(confirmation.communityId).toBe(TEST_COMMUNITY_ID);
+      expect(confirmation.adminId).toBe('admin-123');
+      expect(confirmation.completedSteps).toEqual([]);
+      expect(confirmation.expiresAt.getTime()).toBeGreaterThan(Date.now());
+      expect(confirmation.expiresAt.getTime()).toBeLessThanOrEqual(
+        Date.now() + 5 * 60 * 1000 + 1000 // 5 min + 1 sec buffer
+      );
+    });
+
+    it('validates community_name step correctly', () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const confirmation = engine.createTakeoverConfirmation(
+        TEST_COMMUNITY_ID,
+        'admin-123'
+      );
+
+      // Correct name
+      const result1 = engine.validateTakeoverStep(
+        confirmation,
+        'community_name',
+        'Test Community',
+        'Test Community'
+      );
+      expect(result1.valid).toBe(true);
+      expect(result1.updatedConfirmation.completedSteps).toContain('community_name');
+
+      // Wrong name
+      const result2 = engine.validateTakeoverStep(
+        confirmation,
+        'community_name',
+        'Wrong Name',
+        'Test Community'
+      );
+      expect(result2.valid).toBe(false);
+      expect(result2.error).toContain('does not match');
+    });
+
+    it('validates acknowledge_risks step correctly', () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const confirmation = engine.createTakeoverConfirmation(
+        TEST_COMMUNITY_ID,
+        'admin-123'
+      );
+
+      // Correct acknowledgment
+      const result1 = engine.validateTakeoverStep(
+        confirmation,
+        'acknowledge_risks',
+        'I understand'
+      );
+      expect(result1.valid).toBe(true);
+
+      // Case insensitive
+      const result2 = engine.validateTakeoverStep(
+        confirmation,
+        'acknowledge_risks',
+        'i understand'
+      );
+      expect(result2.valid).toBe(true);
+
+      // Wrong input
+      const result3 = engine.validateTakeoverStep(
+        confirmation,
+        'acknowledge_risks',
+        'yes'
+      );
+      expect(result3.valid).toBe(false);
+    });
+
+    it('validates rollback_plan step correctly', () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const confirmation = engine.createTakeoverConfirmation(
+        TEST_COMMUNITY_ID,
+        'admin-123'
+      );
+
+      // Correct confirmation
+      const result1 = engine.validateTakeoverStep(
+        confirmation,
+        'rollback_plan',
+        'confirmed'
+      );
+      expect(result1.valid).toBe(true);
+
+      // Wrong input
+      const result2 = engine.validateTakeoverStep(
+        confirmation,
+        'rollback_plan',
+        'yes'
+      );
+      expect(result2.valid).toBe(false);
+    });
+
+    it('detects expired confirmation', () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      // Create expired confirmation
+      const confirmation: TakeoverConfirmationState = {
+        communityId: TEST_COMMUNITY_ID,
+        adminId: 'admin-123',
+        completedSteps: [],
+        startedAt: new Date(Date.now() - 10 * 60 * 1000), // 10 min ago
+        expiresAt: new Date(Date.now() - 5 * 60 * 1000),  // Expired 5 min ago
+      };
+
+      const result = engine.validateTakeoverStep(
+        confirmation,
+        'community_name',
+        'Test',
+        'Test'
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('expired');
+    });
+
+    it('checks if confirmation is complete', () => {
+      const storage = createMockStorage();
+      const engine = createMigrationEngine(storage);
+
+      const incomplete: TakeoverConfirmationState = {
+        communityId: TEST_COMMUNITY_ID,
+        adminId: 'admin-123',
+        completedSteps: ['community_name', 'acknowledge_risks'],
+        startedAt: new Date(),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      };
+
+      const complete: TakeoverConfirmationState = {
+        ...incomplete,
+        completedSteps: ['community_name', 'acknowledge_risks', 'rollback_plan'],
+      };
+
+      expect(engine.isTakeoverConfirmationComplete(incomplete)).toBe(false);
+      expect(engine.isTakeoverConfirmationComplete(complete)).toBe(true);
+    });
+  });
+
+  describe('executeTakeover', () => {
+    it('transitions to exclusive mode with complete confirmation', async () => {
+      const mockRenameRoles = vi.fn().mockResolvedValue(undefined);
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'primary',
+          targetMode: 'exclusive',
+          strategy: 'arrakis_primary',
+          shadowStartedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+          parallelEnabledAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          primaryEnabledAt: new Date(),
+          exclusiveEnabledAt: null,
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+
+      // Mock parallel roles
+      const mockParallelRoles = [
+        { discordRoleId: 'role-1', baseName: 'Gold' },
+        { discordRoleId: 'role-2', baseName: 'Silver' },
+      ];
+      vi.mocked(storage.getParallelRoles).mockResolvedValue(mockParallelRoles as never);
+
+      const engine = createMigrationEngine(
+        storage,
+        undefined,
+        undefined,
+        mockRenameRoles
+      );
+
+      const confirmation: TakeoverConfirmationState = {
+        communityId: TEST_COMMUNITY_ID,
+        adminId: 'admin-123',
+        completedSteps: ['community_name', 'acknowledge_risks', 'rollback_plan'],
+        communityNameConfirmed: true,
+        risksAcknowledged: true,
+        rollbackPlanAcknowledged: true,
+        startedAt: new Date(),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      };
+
+      const result = await engine.executeTakeover(
+        TEST_COMMUNITY_ID,
+        'guild-456',
+        confirmation
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.previousMode).toBe('primary');
+      expect(result.newMode).toBe('exclusive');
+      expect(result.rolesRenamed).toBe(2);
+      expect(storage.updateMode).toHaveBeenCalledWith(
+        TEST_COMMUNITY_ID,
+        'exclusive',
+        'Takeover completed'
+      );
+      expect(mockRenameRoles).toHaveBeenCalledWith('guild-456', [
+        { roleId: 'role-1', newName: 'Gold' },
+        { roleId: 'role-2', newName: 'Silver' },
+      ]);
+    });
+
+    it('fails with incomplete confirmation', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'primary',
+          targetMode: 'exclusive',
+          strategy: 'arrakis_primary',
+          shadowStartedAt: new Date(),
+          parallelEnabledAt: new Date(),
+          primaryEnabledAt: new Date(),
+          exclusiveEnabledAt: null,
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      const incompleteConfirmation: TakeoverConfirmationState = {
+        communityId: TEST_COMMUNITY_ID,
+        adminId: 'admin-123',
+        completedSteps: ['community_name'], // Missing other steps
+        startedAt: new Date(),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      };
+
+      const result = await engine.executeTakeover(
+        TEST_COMMUNITY_ID,
+        'guild-456',
+        incompleteConfirmation
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Missing confirmation steps');
+    });
+
+    it('fails with expired confirmation', async () => {
+      const storage = createMockStorage({
+        migrationState: {
+          id: 'state-123',
+          communityId: TEST_COMMUNITY_ID,
+          currentMode: 'primary',
+          targetMode: 'exclusive',
+          strategy: 'arrakis_primary',
+          shadowStartedAt: new Date(),
+          parallelEnabledAt: new Date(),
+          primaryEnabledAt: new Date(),
+          exclusiveEnabledAt: null,
+          rollbackCount: 0,
+          lastRollbackAt: null,
+          lastRollbackReason: null,
+          readinessCheckPassed: true,
+          accuracyPercent: 96,
+          shadowDays: 20,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const engine = createMigrationEngine(storage);
+
+      const expiredConfirmation: TakeoverConfirmationState = {
+        communityId: TEST_COMMUNITY_ID,
+        adminId: 'admin-123',
+        completedSteps: ['community_name', 'acknowledge_risks', 'rollback_plan'],
+        startedAt: new Date(Date.now() - 10 * 60 * 1000),
+        expiresAt: new Date(Date.now() - 5 * 60 * 1000), // Expired
+      };
+
+      const result = await engine.executeTakeover(
+        TEST_COMMUNITY_ID,
+        'guild-456',
+        expiredConfirmation
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('expired');
     });
   });
 });

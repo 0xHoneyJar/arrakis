@@ -7,6 +7,7 @@
  * Sprint 59: Parallel Mode - Channels & Conviction Gates
  * Sprint 61: Glimpse Mode - Social Layer Preview
  * Sprint 62: Migration Engine - Strategy Selection & Execution
+ * Sprint 63: Migration Engine - Rollback & Takeover
  *
  * This module provides adapters for coexisting with incumbent token-gating
  * solutions (Collab.Land, Matrica, Guild.xyz) during migration.
@@ -18,7 +19,7 @@
  * - ParallelRoleManager: Manages namespaced @arrakis-* roles in parallel mode
  * - ParallelChannelManager: Manages conviction-gated channels in parallel mode
  * - GlimpseMode: Shows blurred/locked previews of social features
- * - MigrationEngine: Orchestrates migration with strategy selection and readiness checks
+ * - MigrationEngine: Orchestrates migration with strategy selection, rollback, and takeover
  *
  * @module packages/adapters/coexistence
  */
@@ -90,14 +91,22 @@ export {
   type TellAdminRequest,
 } from './GlimpseMode.js';
 
-// Migration engine (Sprint 62)
+// Migration engine (Sprint 62 + Sprint 63)
 export {
   MigrationEngine,
   createMigrationEngine,
+  // Sprint 62 constants
   MIN_SHADOW_DAYS,
   MIN_ACCURACY_PERCENT,
   DEFAULT_BATCH_SIZE,
   DEFAULT_GRADUAL_DURATION_DAYS,
+  // Sprint 63 constants - Rollback thresholds
+  AUTO_ROLLBACK_ACCESS_LOSS_PERCENT,
+  AUTO_ROLLBACK_ERROR_RATE_PERCENT,
+  ACCESS_LOSS_WINDOW_MS,
+  ERROR_RATE_WINDOW_MS,
+  MAX_AUTO_ROLLBACKS,
+  // Sprint 62 types
   type ReadinessCheckResult,
   type MigrationPlan,
   type MigrationExecutionOptions,
@@ -105,4 +114,17 @@ export {
   type GradualBatchInfo,
   type ApplyRolesCallback,
   type GetGuildMembersCallback,
+  // Sprint 63 types - Rollback
+  type RollbackTrigger,
+  type RollbackOptions,
+  type RollbackResult,
+  type AccessMetrics,
+  type ErrorMetrics,
+  type AutoRollbackCheckResult,
+  // Sprint 63 types - Takeover
+  type TakeoverStep,
+  type TakeoverConfirmationState,
+  type TakeoverResult,
+  type RenameRolesCallback,
+  type NotifyAdminCallback,
 } from './MigrationEngine.js';
