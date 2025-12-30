@@ -24,6 +24,7 @@ import {
   integer,
   jsonb,
   unique,
+  uniqueIndex,
   index,
   boolean,
 } from 'drizzle-orm/pg-core';
@@ -705,3 +706,202 @@ export const migrationStatesRelations = relations(migrationStates, ({ one }) => 
 
 export type MigrationState = typeof migrationStates.$inferSelect;
 export type NewMigrationState = typeof migrationStates.$inferInsert;
+
+// =============================================================================
+// Shadow Mode Tables (Sprint 57 - Shadow Ledger & Sync)
+// =============================================================================
+
+/**
+ * Shadow Member States - Tracks incumbent vs Arrakis access comparison
+ *
+ * This table stores the "shadow ledger" - what access each member would have
+ * under Arrakis vs what the incumbent bot actually provides. Zero Discord
+ * mutations; purely observation data for accuracy measurement.
+ *
+ * RLS Policy: community_id = current_setting('app.current_tenant')::UUID
+ */
+export const shadowMemberStates = pgTable(
+  'shadow_member_states',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    memberId: text('member_id').notNull(), // Discord user ID
+
+    // Incumbent state (what the incumbent bot gave them)
+    incumbentRoles: jsonb('incumbent_roles').$type<string[]>().default([]),
+    incumbentTier: integer('incumbent_tier'), // If incumbent uses tiers
+    incumbentLastUpdate: timestamp('incumbent_last_update', { withTimezone: true }),
+
+    // Arrakis prediction (what we would give them)
+    arrakisRoles: jsonb('arrakis_roles').$type<string[]>().default([]),
+    arrakisTier: integer('arrakis_tier'),
+    arrakisConviction: integer('arrakis_conviction'), // 0-100
+    arrakisLastCalculated: timestamp('arrakis_last_calculated', { withTimezone: true }),
+
+    // Divergence tracking
+    divergenceType: text('divergence_type'), // 'match', 'arrakis_higher', 'arrakis_lower', 'mismatch'
+    divergenceReason: text('divergence_reason'), // Why the divergence occurred
+    divergenceDetectedAt: timestamp('divergence_detected_at', { withTimezone: true }),
+
+    // Metadata
+    lastSyncAt: timestamp('last_sync_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Primary lookup: community + member
+    communityMemberIdx: index('idx_shadow_member_states_community_member').on(
+      table.communityId,
+      table.memberId
+    ),
+    // Query by divergence type
+    divergenceIdx: index('idx_shadow_member_states_divergence').on(table.divergenceType),
+    // Query by last sync time
+    syncIdx: index('idx_shadow_member_states_sync').on(table.lastSyncAt),
+    // Unique constraint: one record per member per community
+    uniqueMember: uniqueIndex('idx_shadow_member_states_unique').on(
+      table.communityId,
+      table.memberId
+    ),
+  })
+);
+
+/**
+ * Valid divergence types for shadow comparison
+ */
+export type DivergenceType = 'match' | 'arrakis_higher' | 'arrakis_lower' | 'mismatch';
+
+/**
+ * Shadow member state relations
+ */
+export const shadowMemberStatesRelations = relations(shadowMemberStates, ({ one }) => ({
+  community: one(communities, {
+    fields: [shadowMemberStates.communityId],
+    references: [communities.id],
+  }),
+}));
+
+export type ShadowMemberState = typeof shadowMemberStates.$inferSelect;
+export type NewShadowMemberState = typeof shadowMemberStates.$inferInsert;
+
+/**
+ * Shadow Divergences - Historical record of divergences for trending
+ *
+ * Each time a sync detects a divergence, it's logged here for historical
+ * analysis. This enables accuracy trending over time and identifies
+ * patterns in divergence types.
+ *
+ * RLS Policy: community_id = current_setting('app.current_tenant')::UUID
+ */
+export const shadowDivergences = pgTable(
+  'shadow_divergences',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    memberId: text('member_id').notNull(),
+
+    // Divergence details
+    divergenceType: text('divergence_type').notNull(), // DivergenceType
+    incumbentState: jsonb('incumbent_state').$type<ShadowStateSnapshot>().notNull(),
+    arrakisState: jsonb('arrakis_state').$type<ShadowStateSnapshot>().notNull(),
+    reason: text('reason'),
+
+    // When this divergence was detected
+    detectedAt: timestamp('detected_at', { withTimezone: true }).notNull().defaultNow(),
+
+    // Was this divergence resolved?
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolutionType: text('resolution_type'), // 'member_action', 'sync_corrected', 'manual'
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    communityIdx: index('idx_shadow_divergences_community').on(table.communityId),
+    memberIdx: index('idx_shadow_divergences_member').on(table.memberId),
+    typeIdx: index('idx_shadow_divergences_type').on(table.divergenceType),
+    detectedIdx: index('idx_shadow_divergences_detected').on(table.detectedAt),
+  })
+);
+
+/**
+ * Snapshot of shadow state for historical comparison
+ */
+export interface ShadowStateSnapshot {
+  roles: string[];
+  tier: number | null;
+  conviction?: number | null;
+}
+
+/**
+ * Shadow divergence relations
+ */
+export const shadowDivergencesRelations = relations(shadowDivergences, ({ one }) => ({
+  community: one(communities, {
+    fields: [shadowDivergences.communityId],
+    references: [communities.id],
+  }),
+}));
+
+export type ShadowDivergence = typeof shadowDivergences.$inferSelect;
+export type NewShadowDivergence = typeof shadowDivergences.$inferInsert;
+
+/**
+ * Shadow Predictions - Tracks prediction accuracy for validation
+ *
+ * When Arrakis predicts a member should have certain access, this table
+ * tracks whether that prediction was accurate. Used to calculate
+ * accuracy percentage for readiness assessment.
+ *
+ * RLS Policy: community_id = current_setting('app.current_tenant')::UUID
+ */
+export const shadowPredictions = pgTable(
+  'shadow_predictions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+    memberId: text('member_id').notNull(),
+
+    // What Arrakis predicted
+    predictedRoles: jsonb('predicted_roles').$type<string[]>().notNull(),
+    predictedTier: integer('predicted_tier'),
+    predictedConviction: integer('predicted_conviction'),
+    predictedAt: timestamp('predicted_at', { withTimezone: true }).notNull().defaultNow(),
+
+    // What actually happened (validated against incumbent)
+    actualRoles: jsonb('actual_roles').$type<string[]>(),
+    actualTier: integer('actual_tier'),
+    validatedAt: timestamp('validated_at', { withTimezone: true }),
+
+    // Accuracy assessment
+    accurate: boolean('accurate'), // null = not yet validated
+    accuracyScore: integer('accuracy_score'), // 0-100 (percentage match)
+    accuracyDetails: text('accuracy_details'), // Explanation of score
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    communityIdx: index('idx_shadow_predictions_community').on(table.communityId),
+    memberIdx: index('idx_shadow_predictions_member').on(table.memberId),
+    accurateIdx: index('idx_shadow_predictions_accurate').on(table.accurate),
+    predictedAtIdx: index('idx_shadow_predictions_predicted_at').on(table.predictedAt),
+  })
+);
+
+/**
+ * Shadow prediction relations
+ */
+export const shadowPredictionsRelations = relations(shadowPredictions, ({ one }) => ({
+  community: one(communities, {
+    fields: [shadowPredictions.communityId],
+    references: [communities.id],
+  }),
+}));
+
+export type ShadowPrediction = typeof shadowPredictions.$inferSelect;
+export type NewShadowPrediction = typeof shadowPredictions.$inferInsert;

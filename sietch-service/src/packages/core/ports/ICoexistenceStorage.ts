@@ -20,6 +20,8 @@ import type {
   MigrationStrategy,
   DetectedRole,
   IncumbentCapabilities,
+  DivergenceType,
+  ShadowStateSnapshot,
 } from '../../adapters/storage/schema.js';
 
 // =============================================================================
@@ -281,6 +283,257 @@ export interface ICoexistenceStorage {
    * @returns Map of communityId -> healthStatus
    */
   getIncumbentHealthOverview(): Promise<Map<string, HealthStatus>>;
+
+  // =========================================================================
+  // Shadow Member State Methods (Sprint 57)
+  // =========================================================================
+
+  /**
+   * Get shadow member state by community and member
+   * @param communityId - Community UUID
+   * @param memberId - Discord member ID
+   */
+  getShadowMemberState(
+    communityId: string,
+    memberId: string
+  ): Promise<StoredShadowMemberState | null>;
+
+  /**
+   * Get all shadow member states for a community
+   * @param communityId - Community UUID
+   * @param options - Pagination and filter options
+   */
+  getShadowMemberStates(
+    communityId: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+      divergenceType?: DivergenceType;
+    }
+  ): Promise<StoredShadowMemberState[]>;
+
+  /**
+   * Save or update a shadow member state (upsert)
+   * @param input - Shadow member state data
+   */
+  saveShadowMemberState(input: SaveShadowMemberInput): Promise<StoredShadowMemberState>;
+
+  /**
+   * Batch save shadow member states (for sync efficiency)
+   * @param inputs - Array of shadow member state data
+   */
+  batchSaveShadowMemberStates(inputs: SaveShadowMemberInput[]): Promise<void>;
+
+  /**
+   * Delete shadow member state
+   * @param communityId - Community UUID
+   * @param memberId - Discord member ID
+   */
+  deleteShadowMemberState(communityId: string, memberId: string): Promise<void>;
+
+  // =========================================================================
+  // Shadow Divergence Methods (Sprint 57)
+  // =========================================================================
+
+  /**
+   * Save a new divergence record
+   * @param input - Divergence data
+   */
+  saveDivergence(input: SaveDivergenceInput): Promise<StoredDivergence>;
+
+  /**
+   * Get divergences for a community
+   * @param communityId - Community UUID
+   * @param options - Pagination and filter options
+   */
+  getDivergences(
+    communityId: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+      divergenceType?: DivergenceType;
+      since?: Date;
+      unresolved?: boolean;
+    }
+  ): Promise<StoredDivergence[]>;
+
+  /**
+   * Mark a divergence as resolved
+   * @param divergenceId - Divergence UUID
+   * @param resolutionType - How it was resolved
+   */
+  resolveDivergence(
+    divergenceId: string,
+    resolutionType: 'member_action' | 'sync_corrected' | 'manual'
+  ): Promise<void>;
+
+  /**
+   * Get divergence summary for a community
+   * @param communityId - Community UUID
+   */
+  getDivergenceSummary(communityId: string): Promise<DivergenceSummary>;
+
+  // =========================================================================
+  // Shadow Prediction Methods (Sprint 57)
+  // =========================================================================
+
+  /**
+   * Save a new prediction
+   * @param input - Prediction data
+   */
+  savePrediction(input: SavePredictionInput): Promise<StoredPrediction>;
+
+  /**
+   * Validate a prediction against actual outcome
+   * @param input - Validation data
+   */
+  validatePrediction(input: ValidatePredictionInput): Promise<void>;
+
+  /**
+   * Get unvalidated predictions for a community
+   * @param communityId - Community UUID
+   * @param limit - Max predictions to return
+   */
+  getUnvalidatedPredictions(
+    communityId: string,
+    limit?: number
+  ): Promise<StoredPrediction[]>;
+
+  /**
+   * Calculate accuracy percentage for a community
+   * @param communityId - Community UUID
+   * @param since - Only consider predictions after this date
+   */
+  calculateAccuracy(communityId: string, since?: Date): Promise<number>;
+}
+
+// =============================================================================
+// Shadow Member State Types (Sprint 57)
+// =============================================================================
+
+/**
+ * Input for saving/updating a shadow member state
+ */
+export interface SaveShadowMemberInput {
+  communityId: string;
+  memberId: string;
+  incumbentRoles?: string[];
+  incumbentTier?: number | null;
+  incumbentLastUpdate?: Date;
+  arrakisRoles?: string[];
+  arrakisTier?: number | null;
+  arrakisConviction?: number | null;
+  arrakisLastCalculated?: Date;
+  divergenceType?: DivergenceType | null;
+  divergenceReason?: string | null;
+  divergenceDetectedAt?: Date | null;
+}
+
+/**
+ * Stored shadow member state
+ */
+export interface StoredShadowMemberState {
+  id: string;
+  communityId: string;
+  memberId: string;
+  incumbentRoles: string[];
+  incumbentTier: number | null;
+  incumbentLastUpdate: Date | null;
+  arrakisRoles: string[];
+  arrakisTier: number | null;
+  arrakisConviction: number | null;
+  arrakisLastCalculated: Date | null;
+  divergenceType: DivergenceType | null;
+  divergenceReason: string | null;
+  divergenceDetectedAt: Date | null;
+  lastSyncAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Input for saving a divergence record
+ */
+export interface SaveDivergenceInput {
+  communityId: string;
+  memberId: string;
+  divergenceType: DivergenceType;
+  incumbentState: ShadowStateSnapshot;
+  arrakisState: ShadowStateSnapshot;
+  reason?: string;
+}
+
+/**
+ * Stored divergence record
+ */
+export interface StoredDivergence {
+  id: string;
+  communityId: string;
+  memberId: string;
+  divergenceType: DivergenceType;
+  incumbentState: ShadowStateSnapshot;
+  arrakisState: ShadowStateSnapshot;
+  reason: string | null;
+  detectedAt: Date;
+  resolvedAt: Date | null;
+  resolutionType: string | null;
+  createdAt: Date;
+}
+
+/**
+ * Input for saving a prediction record
+ */
+export interface SavePredictionInput {
+  communityId: string;
+  memberId: string;
+  predictedRoles: string[];
+  predictedTier?: number | null;
+  predictedConviction?: number | null;
+}
+
+/**
+ * Input for validating a prediction
+ */
+export interface ValidatePredictionInput {
+  predictionId: string;
+  actualRoles: string[];
+  actualTier?: number | null;
+  accurate: boolean;
+  accuracyScore: number;
+  accuracyDetails?: string;
+}
+
+/**
+ * Stored prediction record
+ */
+export interface StoredPrediction {
+  id: string;
+  communityId: string;
+  memberId: string;
+  predictedRoles: string[];
+  predictedTier: number | null;
+  predictedConviction: number | null;
+  predictedAt: Date;
+  actualRoles: string[] | null;
+  actualTier: number | null;
+  validatedAt: Date | null;
+  accurate: boolean | null;
+  accuracyScore: number | null;
+  accuracyDetails: string | null;
+  createdAt: Date;
+}
+
+/**
+ * Summary of divergences for a community
+ */
+export interface DivergenceSummary {
+  communityId: string;
+  totalMembers: number;
+  matchCount: number;
+  arrakisHigherCount: number;
+  arrakisLowerCount: number;
+  mismatchCount: number;
+  accuracyPercent: number;
 }
 
 /**
@@ -293,4 +546,6 @@ export type {
   MigrationStrategy,
   DetectedRole,
   IncumbentCapabilities,
+  DivergenceType,
+  ShadowStateSnapshot,
 };

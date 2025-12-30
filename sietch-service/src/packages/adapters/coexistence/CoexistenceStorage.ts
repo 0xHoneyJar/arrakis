@@ -13,17 +13,22 @@
  * @module packages/adapters/coexistence/CoexistenceStorage
  */
 
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull, gte, sql, count } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   incumbentConfigs,
   migrationStates,
+  shadowMemberStates,
+  shadowDivergences,
+  shadowPredictions,
   type CoexistenceMode,
   type MigrationStrategy,
   type HealthStatus,
   type IncumbentProvider,
   type DetectedRole,
   type IncumbentCapabilities,
+  type DivergenceType,
+  type ShadowStateSnapshot,
 } from '../storage/schema.js';
 import type {
   ICoexistenceStorage,
@@ -32,6 +37,14 @@ import type {
   UpdateHealthInput,
   StoredMigrationState,
   SaveMigrationStateInput,
+  StoredShadowMemberState,
+  SaveShadowMemberInput,
+  StoredDivergence,
+  SaveDivergenceInput,
+  StoredPrediction,
+  SavePredictionInput,
+  ValidatePredictionInput,
+  DivergenceSummary,
 } from '../../core/ports/ICoexistenceStorage.js';
 import { createLogger, type ILogger } from '../../infrastructure/logging/index.js';
 
@@ -392,6 +405,405 @@ export class CoexistenceStorage implements ICoexistenceStorage {
   }
 
   // =========================================================================
+  // Shadow Member State Methods (Sprint 57)
+  // =========================================================================
+
+  async getShadowMemberState(
+    communityId: string,
+    memberId: string
+  ): Promise<StoredShadowMemberState | null> {
+    const result = await this.db
+      .select()
+      .from(shadowMemberStates)
+      .where(
+        and(
+          eq(shadowMemberStates.communityId, communityId),
+          eq(shadowMemberStates.memberId, memberId)
+        )
+      )
+      .limit(1);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    return this.mapShadowMemberState(result[0]);
+  }
+
+  async getShadowMemberStates(
+    communityId: string,
+    options: {
+      limit?: number;
+      offset?: number;
+      divergenceType?: DivergenceType;
+    } = {}
+  ): Promise<StoredShadowMemberState[]> {
+    const { limit = 100, offset = 0, divergenceType } = options;
+
+    const conditions = [eq(shadowMemberStates.communityId, communityId)];
+    if (divergenceType) {
+      conditions.push(eq(shadowMemberStates.divergenceType, divergenceType));
+    }
+
+    const results = await this.db
+      .select()
+      .from(shadowMemberStates)
+      .where(and(...conditions))
+      .limit(limit)
+      .offset(offset);
+
+    return results.map(r => this.mapShadowMemberState(r));
+  }
+
+  async saveShadowMemberState(input: SaveShadowMemberInput): Promise<StoredShadowMemberState> {
+    const existing = await this.getShadowMemberState(input.communityId, input.memberId);
+    const now = new Date();
+
+    if (existing) {
+      // Update existing
+      const [updated] = await this.db
+        .update(shadowMemberStates)
+        .set({
+          incumbentRoles: input.incumbentRoles ?? existing.incumbentRoles,
+          incumbentTier: input.incumbentTier !== undefined ? input.incumbentTier : existing.incumbentTier,
+          incumbentLastUpdate: input.incumbentLastUpdate ?? existing.incumbentLastUpdate,
+          arrakisRoles: input.arrakisRoles ?? existing.arrakisRoles,
+          arrakisTier: input.arrakisTier !== undefined ? input.arrakisTier : existing.arrakisTier,
+          arrakisConviction: input.arrakisConviction !== undefined ? input.arrakisConviction : existing.arrakisConviction,
+          arrakisLastCalculated: input.arrakisLastCalculated ?? existing.arrakisLastCalculated,
+          divergenceType: input.divergenceType !== undefined ? input.divergenceType : existing.divergenceType,
+          divergenceReason: input.divergenceReason !== undefined ? input.divergenceReason : existing.divergenceReason,
+          divergenceDetectedAt: input.divergenceDetectedAt !== undefined ? input.divergenceDetectedAt : existing.divergenceDetectedAt,
+          lastSyncAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(shadowMemberStates.communityId, input.communityId),
+            eq(shadowMemberStates.memberId, input.memberId)
+          )
+        )
+        .returning();
+
+      return this.mapShadowMemberState(updated);
+    }
+
+    // Create new
+    const [created] = await this.db
+      .insert(shadowMemberStates)
+      .values({
+        communityId: input.communityId,
+        memberId: input.memberId,
+        incumbentRoles: input.incumbentRoles ?? [],
+        incumbentTier: input.incumbentTier ?? null,
+        incumbentLastUpdate: input.incumbentLastUpdate ?? null,
+        arrakisRoles: input.arrakisRoles ?? [],
+        arrakisTier: input.arrakisTier ?? null,
+        arrakisConviction: input.arrakisConviction ?? null,
+        arrakisLastCalculated: input.arrakisLastCalculated ?? null,
+        divergenceType: input.divergenceType ?? null,
+        divergenceReason: input.divergenceReason ?? null,
+        divergenceDetectedAt: input.divergenceDetectedAt ?? null,
+        lastSyncAt: now,
+      })
+      .returning();
+
+    this.logger.debug('Shadow member state created', {
+      communityId: input.communityId,
+      memberId: input.memberId,
+    });
+
+    return this.mapShadowMemberState(created);
+  }
+
+  async batchSaveShadowMemberStates(inputs: SaveShadowMemberInput[]): Promise<void> {
+    if (inputs.length === 0) return;
+
+    const now = new Date();
+
+    // Use upsert pattern for batch operations
+    for (const input of inputs) {
+      await this.db
+        .insert(shadowMemberStates)
+        .values({
+          communityId: input.communityId,
+          memberId: input.memberId,
+          incumbentRoles: input.incumbentRoles ?? [],
+          incumbentTier: input.incumbentTier ?? null,
+          incumbentLastUpdate: input.incumbentLastUpdate ?? null,
+          arrakisRoles: input.arrakisRoles ?? [],
+          arrakisTier: input.arrakisTier ?? null,
+          arrakisConviction: input.arrakisConviction ?? null,
+          arrakisLastCalculated: input.arrakisLastCalculated ?? null,
+          divergenceType: input.divergenceType ?? null,
+          divergenceReason: input.divergenceReason ?? null,
+          divergenceDetectedAt: input.divergenceDetectedAt ?? null,
+          lastSyncAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [shadowMemberStates.communityId, shadowMemberStates.memberId],
+          set: {
+            incumbentRoles: input.incumbentRoles ?? [],
+            incumbentTier: input.incumbentTier ?? null,
+            incumbentLastUpdate: input.incumbentLastUpdate ?? null,
+            arrakisRoles: input.arrakisRoles ?? [],
+            arrakisTier: input.arrakisTier ?? null,
+            arrakisConviction: input.arrakisConviction ?? null,
+            arrakisLastCalculated: input.arrakisLastCalculated ?? null,
+            divergenceType: input.divergenceType ?? null,
+            divergenceReason: input.divergenceReason ?? null,
+            divergenceDetectedAt: input.divergenceDetectedAt ?? null,
+            lastSyncAt: now,
+            updatedAt: now,
+          },
+        });
+    }
+
+    this.logger.debug('Batch saved shadow member states', {
+      count: inputs.length,
+      communityId: inputs[0]?.communityId,
+    });
+  }
+
+  async deleteShadowMemberState(communityId: string, memberId: string): Promise<void> {
+    await this.db
+      .delete(shadowMemberStates)
+      .where(
+        and(
+          eq(shadowMemberStates.communityId, communityId),
+          eq(shadowMemberStates.memberId, memberId)
+        )
+      );
+
+    this.logger.debug('Shadow member state deleted', { communityId, memberId });
+  }
+
+  // =========================================================================
+  // Shadow Divergence Methods (Sprint 57)
+  // =========================================================================
+
+  async saveDivergence(input: SaveDivergenceInput): Promise<StoredDivergence> {
+    const [created] = await this.db
+      .insert(shadowDivergences)
+      .values({
+        communityId: input.communityId,
+        memberId: input.memberId,
+        divergenceType: input.divergenceType,
+        incumbentState: input.incumbentState,
+        arrakisState: input.arrakisState,
+        reason: input.reason ?? null,
+      })
+      .returning();
+
+    this.logger.debug('Divergence recorded', {
+      communityId: input.communityId,
+      memberId: input.memberId,
+      type: input.divergenceType,
+    });
+
+    return this.mapDivergence(created);
+  }
+
+  async getDivergences(
+    communityId: string,
+    options: {
+      limit?: number;
+      offset?: number;
+      divergenceType?: DivergenceType;
+      since?: Date;
+      unresolved?: boolean;
+    } = {}
+  ): Promise<StoredDivergence[]> {
+    const { limit = 100, offset = 0, divergenceType, since, unresolved } = options;
+
+    const conditions = [eq(shadowDivergences.communityId, communityId)];
+    if (divergenceType) {
+      conditions.push(eq(shadowDivergences.divergenceType, divergenceType));
+    }
+    if (since) {
+      conditions.push(gte(shadowDivergences.detectedAt, since));
+    }
+    if (unresolved) {
+      conditions.push(isNull(shadowDivergences.resolvedAt));
+    }
+
+    const results = await this.db
+      .select()
+      .from(shadowDivergences)
+      .where(and(...conditions))
+      .limit(limit)
+      .offset(offset)
+      .orderBy(shadowDivergences.detectedAt);
+
+    return results.map(r => this.mapDivergence(r));
+  }
+
+  async resolveDivergence(
+    divergenceId: string,
+    resolutionType: 'member_action' | 'sync_corrected' | 'manual'
+  ): Promise<void> {
+    await this.db
+      .update(shadowDivergences)
+      .set({
+        resolvedAt: new Date(),
+        resolutionType,
+      })
+      .where(eq(shadowDivergences.id, divergenceId));
+
+    this.logger.debug('Divergence resolved', { divergenceId, resolutionType });
+  }
+
+  async getDivergenceSummary(communityId: string): Promise<DivergenceSummary> {
+    // Get counts by divergence type
+    const results = await this.db
+      .select({
+        divergenceType: shadowMemberStates.divergenceType,
+        count: count(),
+      })
+      .from(shadowMemberStates)
+      .where(eq(shadowMemberStates.communityId, communityId))
+      .groupBy(shadowMemberStates.divergenceType);
+
+    let totalMembers = 0;
+    let matchCount = 0;
+    let arrakisHigherCount = 0;
+    let arrakisLowerCount = 0;
+    let mismatchCount = 0;
+
+    for (const r of results) {
+      const c = Number(r.count);
+      totalMembers += c;
+      switch (r.divergenceType) {
+        case 'match':
+          matchCount = c;
+          break;
+        case 'arrakis_higher':
+          arrakisHigherCount = c;
+          break;
+        case 'arrakis_lower':
+          arrakisLowerCount = c;
+          break;
+        case 'mismatch':
+          mismatchCount = c;
+          break;
+      }
+    }
+
+    // Accuracy = match / total (as percentage)
+    const accuracyPercent = totalMembers > 0 ? (matchCount / totalMembers) * 100 : 0;
+
+    return {
+      communityId,
+      totalMembers,
+      matchCount,
+      arrakisHigherCount,
+      arrakisLowerCount,
+      mismatchCount,
+      accuracyPercent,
+    };
+  }
+
+  // =========================================================================
+  // Shadow Prediction Methods (Sprint 57)
+  // =========================================================================
+
+  async savePrediction(input: SavePredictionInput): Promise<StoredPrediction> {
+    const [created] = await this.db
+      .insert(shadowPredictions)
+      .values({
+        communityId: input.communityId,
+        memberId: input.memberId,
+        predictedRoles: input.predictedRoles,
+        predictedTier: input.predictedTier ?? null,
+        predictedConviction: input.predictedConviction ?? null,
+      })
+      .returning();
+
+    this.logger.debug('Prediction saved', {
+      communityId: input.communityId,
+      memberId: input.memberId,
+    });
+
+    return this.mapPrediction(created);
+  }
+
+  async validatePrediction(input: ValidatePredictionInput): Promise<void> {
+    await this.db
+      .update(shadowPredictions)
+      .set({
+        actualRoles: input.actualRoles,
+        actualTier: input.actualTier ?? null,
+        validatedAt: new Date(),
+        accurate: input.accurate,
+        accuracyScore: input.accuracyScore,
+        accuracyDetails: input.accuracyDetails ?? null,
+      })
+      .where(eq(shadowPredictions.id, input.predictionId));
+
+    this.logger.debug('Prediction validated', {
+      predictionId: input.predictionId,
+      accurate: input.accurate,
+      score: input.accuracyScore,
+    });
+  }
+
+  async getUnvalidatedPredictions(
+    communityId: string,
+    limit: number = 100
+  ): Promise<StoredPrediction[]> {
+    const results = await this.db
+      .select()
+      .from(shadowPredictions)
+      .where(
+        and(
+          eq(shadowPredictions.communityId, communityId),
+          isNull(shadowPredictions.validatedAt)
+        )
+      )
+      .limit(limit)
+      .orderBy(shadowPredictions.predictedAt);
+
+    return results.map(r => this.mapPrediction(r));
+  }
+
+  async calculateAccuracy(communityId: string, since?: Date): Promise<number> {
+    const conditions = [
+      eq(shadowPredictions.communityId, communityId),
+      eq(shadowPredictions.accurate, true),
+    ];
+
+    if (since) {
+      conditions.push(gte(shadowPredictions.predictedAt, since));
+    }
+
+    // Count accurate predictions
+    const [accurateResult] = await this.db
+      .select({ count: count() })
+      .from(shadowPredictions)
+      .where(and(...conditions));
+
+    // Count total validated predictions
+    const totalConditions = [
+      eq(shadowPredictions.communityId, communityId),
+      sql`${shadowPredictions.accurate} IS NOT NULL`,
+    ];
+
+    if (since) {
+      totalConditions.push(gte(shadowPredictions.predictedAt, since));
+    }
+
+    const [totalResult] = await this.db
+      .select({ count: count() })
+      .from(shadowPredictions)
+      .where(and(...totalConditions));
+
+    const accurate = Number(accurateResult?.count ?? 0);
+    const total = Number(totalResult?.count ?? 0);
+
+    return total > 0 ? (accurate / total) * 100 : 0;
+  }
+
+  // =========================================================================
   // Private Helpers
   // =========================================================================
 
@@ -434,6 +846,62 @@ export class CoexistenceStorage implements ICoexistenceStorage {
       shadowDays: row.shadowDays,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+    };
+  }
+
+  private mapShadowMemberState(row: typeof shadowMemberStates.$inferSelect): StoredShadowMemberState {
+    return {
+      id: row.id,
+      communityId: row.communityId,
+      memberId: row.memberId,
+      incumbentRoles: (row.incumbentRoles as string[]) ?? [],
+      incumbentTier: row.incumbentTier,
+      incumbentLastUpdate: row.incumbentLastUpdate,
+      arrakisRoles: (row.arrakisRoles as string[]) ?? [],
+      arrakisTier: row.arrakisTier,
+      arrakisConviction: row.arrakisConviction,
+      arrakisLastCalculated: row.arrakisLastCalculated,
+      divergenceType: row.divergenceType as DivergenceType | null,
+      divergenceReason: row.divergenceReason,
+      divergenceDetectedAt: row.divergenceDetectedAt,
+      lastSyncAt: row.lastSyncAt,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private mapDivergence(row: typeof shadowDivergences.$inferSelect): StoredDivergence {
+    return {
+      id: row.id,
+      communityId: row.communityId,
+      memberId: row.memberId,
+      divergenceType: row.divergenceType as DivergenceType,
+      incumbentState: row.incumbentState as ShadowStateSnapshot,
+      arrakisState: row.arrakisState as ShadowStateSnapshot,
+      reason: row.reason,
+      detectedAt: row.detectedAt,
+      resolvedAt: row.resolvedAt,
+      resolutionType: row.resolutionType,
+      createdAt: row.createdAt,
+    };
+  }
+
+  private mapPrediction(row: typeof shadowPredictions.$inferSelect): StoredPrediction {
+    return {
+      id: row.id,
+      communityId: row.communityId,
+      memberId: row.memberId,
+      predictedRoles: (row.predictedRoles as string[]) ?? [],
+      predictedTier: row.predictedTier,
+      predictedConviction: row.predictedConviction,
+      predictedAt: row.predictedAt,
+      actualRoles: (row.actualRoles as string[]) ?? null,
+      actualTier: row.actualTier,
+      validatedAt: row.validatedAt,
+      accurate: row.accurate,
+      accuracyScore: row.accuracyScore,
+      accuracyDetails: row.accuracyDetails,
+      createdAt: row.createdAt,
     };
   }
 }
