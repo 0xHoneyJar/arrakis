@@ -1276,40 +1276,40 @@ This phase enables Arrakis to coexist alongside incumbent token-gating solutions
 
 **Duration:** 1 week
 **Dates:** Week 23
-**Status:** PLANNED
+**Status:** REVIEW_APPROVED
 **Type:** Coexistence (Phase 9.1)
 
 #### Sprint Goal
 Implement incumbent bot detection and the shadow ledger database schema for tracking "what Arrakis would do" without any Discord mutations.
 
 #### Deliverables
-- [ ] `packages/adapters/coexistence/IncumbentDetector.ts`
-- [ ] Shadow Ledger database schema (6 tables)
-- [ ] `packages/adapters/coexistence/storage/ICoexistenceStorage.ts`
-- [ ] `packages/adapters/coexistence/storage/CoexistenceStorage.ts`
-- [ ] Unit tests for incumbent detection
+- [x] `packages/adapters/coexistence/IncumbentDetector.ts`
+- [x] Shadow Ledger database schema (6 tables)
+- [x] `packages/adapters/coexistence/storage/ICoexistenceStorage.ts`
+- [x] `packages/adapters/coexistence/storage/CoexistenceStorage.ts`
+- [x] Unit tests for incumbent detection
 
 #### Acceptance Criteria
-- [ ] Detect Collab.Land by bot ID `704521096837464076`
-- [ ] Detect verification channels (`#collabland-join`, `#matrica-verify`)
-- [ ] Confidence score (0-1) for detection accuracy
-- [ ] `incumbent_configs` table with RLS
-- [ ] `migration_states` table with mode enum
-- [ ] Manual override for `other` incumbents
-- [ ] Zero Discord role mutations in any code path
+- [x] Detect Collab.Land by bot ID `704521096837464076`
+- [x] Detect verification channels (`#collabland-join`, `#matrica-verify`)
+- [x] Confidence score (0-1) for detection accuracy
+- [x] `incumbent_configs` table with RLS
+- [x] `migration_states` table with mode enum
+- [x] Manual override for `other` incumbents
+- [x] Zero Discord role mutations in any code path
 
 #### Technical Tasks
-- [ ] TASK-56.1: Create Drizzle migration for `incumbent_configs` table
-- [ ] TASK-56.2: Create Drizzle migration for `migration_states` table
-- [ ] TASK-56.3: Add RLS policies for both tables
-- [ ] TASK-56.4: Define `ICoexistenceStorage` port interface
-- [ ] TASK-56.5: Implement `CoexistenceStorage` adapter
-- [ ] TASK-56.6: Define `KNOWN_INCUMBENTS` configuration
-- [ ] TASK-56.7: Implement `IncumbentDetector.detectIncumbent()`
-- [ ] TASK-56.8: Implement `IncumbentDetector.buildIncumbentInfo()`
-- [ ] TASK-56.9: Write unit tests for bot ID detection
-- [ ] TASK-56.10: Write unit tests for channel pattern detection
-- [ ] TASK-56.11: Write integration test with test guild
+- [x] TASK-56.1: Create Drizzle migration for `incumbent_configs` table
+- [x] TASK-56.2: Create Drizzle migration for `migration_states` table
+- [x] TASK-56.3: Add RLS policies for both tables
+- [x] TASK-56.4: Define `ICoexistenceStorage` port interface
+- [x] TASK-56.5: Implement `CoexistenceStorage` adapter
+- [x] TASK-56.6: Define `KNOWN_INCUMBENTS` configuration
+- [x] TASK-56.7: Implement `IncumbentDetector.detectIncumbent()`
+- [x] TASK-56.8: Implement `IncumbentDetector.buildIncumbentInfo()`
+- [x] TASK-56.9: Write unit tests for bot ID detection
+- [x] TASK-56.10: Write unit tests for channel pattern detection
+- [x] TASK-56.11: Write integration test with test guild
 
 #### Dependencies
 - Sprint 55: Discord service decomposition complete
