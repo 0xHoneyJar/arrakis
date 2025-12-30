@@ -1601,37 +1601,37 @@ Implement "Glimpse Mode" that shows blurred/locked previews of social features t
 
 **Duration:** 1 week
 **Dates:** Week 29
-**Status:** PLANNED
+**Status:** ✅ COMPLETED (2025-12-30)
 **Type:** Coexistence (Phase 9.4)
 
 #### Sprint Goal
 Implement the migration engine with strategy selection, readiness checks, and execution logic for different migration paths.
 
 #### Deliverables
-- [ ] `packages/adapters/coexistence/MigrationEngine.ts`
-- [ ] Migration strategy configuration
-- [ ] Readiness check system
-- [ ] Strategy execution logic
+- [x] `packages/adapters/coexistence/MigrationEngine.ts`
+- [x] Migration strategy configuration
+- [x] Readiness check system
+- [x] Strategy execution logic
 
 #### Acceptance Criteria
-- [ ] Strategies: `instant`, `gradual`, `parallel_forever`, `arrakis_primary`
-- [ ] Readiness checks: min shadow days (14), min accuracy (95%)
-- [ ] `gradual` migrates new members immediately, existing over N days
-- [ ] `parallel_forever` keeps both systems indefinitely
-- [ ] Strategy selection via admin dashboard/command
+- [x] Strategies: `instant`, `gradual`, `parallel_forever`, `arrakis_primary`
+- [x] Readiness checks: min shadow days (14), min accuracy (95%)
+- [x] `gradual` migrates new members immediately, existing over N days
+- [x] `parallel_forever` keeps both systems indefinitely
+- [x] Strategy selection via admin dashboard/command
 
 #### Technical Tasks
-- [ ] TASK-62.1: Define `MigrationStrategy` type
-- [ ] TASK-62.2: Define `MigrationPlan` interface with readiness checks
-- [ ] TASK-62.3: Implement `MigrationEngine.checkReadiness()`
-- [ ] TASK-62.4: Implement `MigrationEngine.executeMigration()`
-- [ ] TASK-62.5: Implement `executeInstantMigration()` private method
-- [ ] TASK-62.6: Implement `executeGradualMigration()` private method
-- [ ] TASK-62.7: Implement `enableParallelMode()` private method
-- [ ] TASK-62.8: Implement `enablePrimaryMode()` private method
-- [ ] TASK-62.9: Create admin `/arrakis migrate` command
-- [ ] TASK-62.10: Write test: readiness check blocks unready migration
-- [ ] TASK-62.11: Write test: gradual migration batches correctly
+- [x] TASK-62.1: Define `MigrationStrategy` type
+- [x] TASK-62.2: Define `MigrationPlan` interface with readiness checks
+- [x] TASK-62.3: Implement `MigrationEngine.checkReadiness()`
+- [x] TASK-62.4: Implement `MigrationEngine.executeMigration()`
+- [x] TASK-62.5: Implement `executeInstantMigration()` private method
+- [x] TASK-62.6: Implement `executeGradualMigration()` private method
+- [x] TASK-62.7: Implement `enableParallelMode()` private method
+- [x] TASK-62.8: Implement `enablePrimaryMode()` private method
+- [x] TASK-62.9: Create admin `/arrakis migrate` command
+- [x] TASK-62.10: Write test: readiness check blocks unready migration
+- [x] TASK-62.11: Write test: gradual migration batches correctly
 
 #### Dependencies
 - Sprint 61: Glimpse mode complete
@@ -1654,41 +1654,41 @@ Implement the migration engine with strategy selection, readiness checks, and ex
 
 **Duration:** 1 week
 **Dates:** Week 30
-**Status:** PLANNED
+**Status:** REVIEW_APPROVED
 **Type:** Coexistence (Phase 9.4)
 
 #### Sprint Goal
 Implement rollback system for emergency reverts and role takeover flow for exclusive mode transition.
 
 #### Deliverables
-- [ ] Rollback system implementation
-- [ ] Auto-rollback triggers
-- [ ] Role takeover flow (`/arrakis takeover`)
-- [ ] Three-step confirmation system
+- [x] Rollback system implementation
+- [x] Auto-rollback triggers
+- [x] Role takeover flow (`/arrakis takeover`)
+- [x] Three-step confirmation system
 
 #### Acceptance Criteria
-- [ ] One-click rollback to previous mode
-- [ ] Auto-trigger on: >5% access loss in 1 hour, error rate >10% in 15 min
-- [ ] Preserve incumbent roles during rollback
-- [ ] Admin notification on auto-rollback
-- [ ] Audit log of all rollback events
-- [ ] Manual takeover command only (`/arrakis takeover`)
-- [ ] Three-step confirmation (community name, acknowledge, rollback plan)
-- [ ] Rename namespaced roles to final names
+- [x] One-click rollback to previous mode
+- [x] Auto-trigger on: >5% access loss in 1 hour, error rate >10% in 15 min
+- [x] Preserve incumbent roles during rollback
+- [x] Admin notification on auto-rollback
+- [x] Audit log of all rollback events
+- [x] Manual takeover command only (`/arrakis takeover`)
+- [x] Three-step confirmation (community name, acknowledge, rollback plan)
+- [x] Rename namespaced roles to final names
 
 #### Technical Tasks
-- [ ] TASK-63.1: Implement `MigrationEngine.rollback()`
-- [ ] TASK-63.2: Create `rollbackWatcherJob` (hourly check)
-- [ ] TASK-63.3: Implement access loss detection
-- [ ] TASK-63.4: Implement error rate detection
-- [ ] TASK-63.5: Implement auto-rollback trigger logic
-- [ ] TASK-63.6: Create admin rollback notification
-- [ ] TASK-63.7: Implement `/arrakis takeover` command
-- [ ] TASK-63.8: Implement three-step confirmation modal
-- [ ] TASK-63.9: Implement role rename logic (remove namespace)
-- [ ] TASK-63.10: Write test: auto-rollback on threshold breach
-- [ ] TASK-63.11: Write test: takeover three-step confirmation
-- [ ] TASK-63.12: Write test: cannot rollback from exclusive mode
+- [x] TASK-63.1: Implement `MigrationEngine.rollback()`
+- [x] TASK-63.2: Create `rollbackWatcherJob` (hourly check)
+- [x] TASK-63.3: Implement access loss detection
+- [x] TASK-63.4: Implement error rate detection
+- [x] TASK-63.5: Implement auto-rollback trigger logic
+- [x] TASK-63.6: Create admin rollback notification
+- [x] TASK-63.7: Implement `/arrakis takeover` command
+- [x] TASK-63.8: Implement three-step confirmation modal
+- [x] TASK-63.9: Implement role rename logic (remove namespace)
+- [x] TASK-63.10: Write test: auto-rollback on threshold breach
+- [x] TASK-63.11: Write test: takeover three-step confirmation
+- [x] TASK-63.12: Write test: cannot rollback from exclusive mode
 
 #### Dependencies
 - Sprint 62: Migration strategy execution
