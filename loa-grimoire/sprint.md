@@ -1040,7 +1040,7 @@ Address all 5 CRITICAL security issues identified in the comprehensive security 
 - [x] Rate limit salt loaded from `RATE_LIMIT_SALT` env var ✅
 - [x] Kill switch uses pipelined Redis deletions (non-blocking) ✅
 - [x] All CRITICAL issues from security audit resolved ✅
-- [ ] Security audit re-run passes with no CRITICAL/HIGH issues (pending `/audit-sprint sprint-53`)
+- [x] Security audit re-run passes with no CRITICAL/HIGH issues ✅
 
 #### Technical Tasks
 
@@ -1093,8 +1093,167 @@ Address all 5 CRITICAL security issues identified in the comprehensive security 
 - ✅ Fail-closed security principles applied throughout
 - ✅ Tests updated and passing (71 tests in affected files)
 - ✅ Code review approved (2025-12-30)
-- [ ] 0 CRITICAL issues in security re-audit (pending `/audit-sprint sprint-53`)
-- [ ] 0 HIGH issues in security re-audit (pending `/audit-sprint sprint-53`)
+- ✅ Security audit approved (2025-12-30) - "APPROVED - LET'S FUCKING GO"
+- ✅ 0 CRITICAL issues in security re-audit
+- ✅ 0 HIGH issues in security re-audit
+
+---
+
+### Sprint 54: Database & API Decomposition
+
+**Duration:** 1 week
+**Dates:** Week 21
+**Status:** PLANNED
+**Type:** Technical Debt (Phase 8)
+**Implementation Prompt:** `loa-grimoire/context/CODE_ORGANIZATION_REFACTOR_PROMPT.md`
+
+#### Sprint Goal
+Extract `queries.ts` (3,214 lines) and `routes.ts` (1,493 lines) into domain modules with zero breaking changes.
+
+#### Deliverables
+- [ ] `src/db/connection.ts` - Database lifecycle functions
+- [ ] `src/db/queries/` - 13 domain query modules
+- [ ] `src/db/queries/index.ts` - Re-exports for backward compatibility
+- [ ] `src/api/routes/` - 6 route modules
+- [ ] `src/api/routes/index.ts` - Combined router
+- [ ] All tests passing
+
+#### Acceptance Criteria
+- [ ] Original `src/db/queries.ts` deleted (all functions moved)
+- [ ] Original `src/api/routes.ts` deleted (all routes moved)
+- [ ] All imports via `src/db/index.ts` work unchanged
+- [ ] All API endpoints respond correctly
+- [ ] Zero TypeScript errors
+- [ ] All existing tests pass
+- [ ] No circular dependencies (`madge --circular` clean)
+
+#### Technical Tasks
+
+**Phase 1: Database Query Decomposition**
+- [ ] TASK-54.1: Create `src/db/connection.ts` with lifecycle functions
+- [ ] TASK-54.2: Create `src/db/queries/eligibility-queries.ts`
+- [ ] TASK-54.3: Create `src/db/queries/profile-queries.ts`
+- [ ] TASK-54.4: Create `src/db/queries/badge-queries.ts`
+- [ ] TASK-54.5: Create `src/db/queries/activity-queries.ts`
+- [ ] TASK-54.6: Create `src/db/queries/directory-queries.ts`
+- [ ] TASK-54.7: Create `src/db/queries/naib-queries.ts`
+- [ ] TASK-54.8: Create `src/db/queries/waitlist-queries.ts`
+- [ ] TASK-54.9: Create `src/db/queries/threshold-queries.ts`
+- [ ] TASK-54.10: Create `src/db/queries/notification-queries.ts`
+- [ ] TASK-54.11: Create `src/db/queries/tier-queries.ts`
+- [ ] TASK-54.12: Create `src/db/queries/audit-queries.ts`
+- [ ] TASK-54.13: Create `src/db/queries/wallet-queries.ts`
+- [ ] TASK-54.14: Create `src/db/queries/index.ts` re-exports
+- [ ] TASK-54.15: Update `src/db/index.ts` for backward compatibility
+
+**Phase 2: API Routes Decomposition**
+- [ ] TASK-54.16: Create `src/api/routes/public.routes.ts`
+- [ ] TASK-54.17: Create `src/api/routes/admin.routes.ts`
+- [ ] TASK-54.18: Create `src/api/routes/member.routes.ts`
+- [ ] TASK-54.19: Create `src/api/routes/naib.routes.ts`
+- [ ] TASK-54.20: Create `src/api/routes/threshold.routes.ts`
+- [ ] TASK-54.21: Create `src/api/routes/notification.routes.ts`
+- [ ] TASK-54.22: Create `src/api/routes/index.ts` combined router
+
+**Verification**
+- [ ] TASK-54.23: Run full test suite, fix any failures
+- [ ] TASK-54.24: Verify all API endpoints respond correctly
+- [ ] TASK-54.25: Run `madge --circular src/` to verify no cycles
+
+#### Dependencies
+- Sprint 53: Security hardening complete
+
+#### Risks & Mitigation
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| Missing re-export | Low | Medium | TypeScript compiler will catch |
+| Circular dependency | Medium | Medium | Extract shared types first |
+| Test import breakage | Low | Low | Update test imports if needed |
+
+#### Success Metrics
+- 0 breaking changes to external imports
+- All 80%+ test coverage maintained
+- <500 lines per new file
+
+---
+
+### Sprint 55: Discord Service & Cleanup
+
+**Duration:** 1 week
+**Dates:** Week 22
+**Status:** PLANNED
+**Type:** Technical Debt (Phase 8)
+**Implementation Prompt:** `loa-grimoire/context/CODE_ORGANIZATION_REFACTOR_PROMPT.md`
+
+#### Sprint Goal
+Decompose `discord.ts` (1,192 lines), clean up nested directories, delete original monolithic files.
+
+#### Deliverables
+- [ ] `src/services/discord/` - 10 modules
+- [ ] `src/services/discord/DiscordService.ts` - Slimmed orchestrator
+- [ ] `src/services/discord/index.ts` - Re-exports
+- [ ] Nested `sietch-service/sietch-service/` deleted
+- [ ] Original monolithic files deleted
+- [ ] CHANGELOG.md updated
+
+#### Acceptance Criteria
+- [ ] `discordService` export works unchanged
+- [ ] All Discord interactions functional
+- [ ] No circular dependencies (`madge` clean)
+- [ ] All tests pass
+- [ ] No TypeScript errors
+- [ ] Each new file < 500 lines
+
+#### Technical Tasks
+
+**Phase 1: Discord Handlers**
+- [ ] TASK-55.1: Create `src/services/discord/handlers/InteractionHandler.ts`
+- [ ] TASK-55.2: Create `src/services/discord/handlers/EventHandler.ts`
+- [ ] TASK-55.3: Create `src/services/discord/handlers/AutocompleteHandler.ts`
+- [ ] TASK-55.4: Create `src/services/discord/handlers/index.ts`
+
+**Phase 2: Discord Operations**
+- [ ] TASK-55.5: Create `src/services/discord/operations/RoleOperations.ts`
+- [ ] TASK-55.6: Create `src/services/discord/operations/GuildOperations.ts`
+- [ ] TASK-55.7: Create `src/services/discord/operations/NotificationOps.ts`
+- [ ] TASK-55.8: Create `src/services/discord/operations/index.ts`
+
+**Phase 3: Discord Embeds**
+- [ ] TASK-55.9: Create `src/services/discord/embeds/EligibilityEmbeds.ts`
+- [ ] TASK-55.10: Create `src/services/discord/embeds/LeaderboardEmbeds.ts`
+- [ ] TASK-55.11: Create `src/services/discord/embeds/AnnouncementEmbeds.ts`
+- [ ] TASK-55.12: Create `src/services/discord/embeds/index.ts`
+
+**Phase 4: Discord Processors**
+- [ ] TASK-55.13: Create `src/services/discord/processors/EligibilityProcessor.ts`
+- [ ] TASK-55.14: Create `src/services/discord/processors/index.ts`
+
+**Phase 5: Integration**
+- [ ] TASK-55.15: Refactor `DiscordService.ts` to use extracted modules
+- [ ] TASK-55.16: Create `src/services/discord/index.ts` exports
+- [ ] TASK-55.17: Update `src/services/index.ts` import
+
+**Phase 6: Cleanup**
+- [ ] TASK-55.18: Delete `sietch-service/sietch-service/` nested directory
+- [ ] TASK-55.19: Run `madge --circular src/` to verify no cycles
+- [ ] TASK-55.20: Run full test suite, fix any failures
+- [ ] TASK-55.21: Delete original monolithic files (after verification)
+- [ ] TASK-55.22: Update CHANGELOG.md with v5.2 refactoring notes
+
+#### Dependencies
+- Sprint 54: Database & API decomposition complete
+
+#### Risks & Mitigation
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| Class method binding issues | Medium | Medium | Use arrow functions or bind in constructor |
+| Missing private method access | Low | Medium | Pass as constructor dependencies |
+| Discord.js client state | Low | Low | Keep client in main service |
+
+#### Success Metrics
+- 0 breaking changes to `discordService` export
+- `madge --circular` reports clean
+- All Discord bot functionality verified
 
 ---
 
@@ -1164,11 +1323,18 @@ Phase 6 (Sprint 48-49)
 v5.0 COMPLETE
          │
          ▼
-Phase 7 (Sprint 50-52)
+Phase 7 (Sprint 50-53)
   Post-Audit Hardening
          │
          ▼
 v5.1 HARDENED
+         │
+         ▼
+Phase 8 (Sprint 54-55)
+  Code Organization
+         │
+         ▼
+v5.2 MAINTAINABLE
 ```
 
 ---
@@ -1244,6 +1410,14 @@ v5.1 HARDENED
 | SecureSessionStore | 51 | Planned |
 | ApiError | 51 | Planned |
 | CircuitBreakerMetrics | 51 | Planned |
+| **Code Organization Components (v5.2)** | | |
+| `src/db/connection.ts` | 54 | Planned |
+| `src/db/queries/*.ts` (13 modules) | 54 | Planned |
+| `src/api/routes/*.ts` (6 modules) | 54 | Planned |
+| `src/services/discord/handlers/*.ts` | 55 | Planned |
+| `src/services/discord/operations/*.ts` | 55 | Planned |
+| `src/services/discord/embeds/*.ts` | 55 | Planned |
+| `src/services/discord/processors/*.ts` | 55 | Planned |
 
 ### C. Files to Delete After Migration
 
@@ -1251,6 +1425,10 @@ v5.1 HARDENED
 |------|-------|-----------|
 | `src/services/chain.ts` | 0 | After Sprint 35 tests pass |
 | `profiles.db` | 2 | After Sprint 41 migration complete |
+| `src/db/queries.ts` | 8 | After Sprint 54 (all query modules created and tests pass) |
+| `src/api/routes.ts` | 8 | After Sprint 54 (all route modules created and tests pass) |
+| `src/services/discord.ts` | 8 | After Sprint 55 (all discord modules created and tests pass) |
+| `sietch-service/sietch-service/` | 8 | Sprint 55 (empty nested directory - immediate) |
 
 ### D. Environment Variables Change
 
@@ -1293,9 +1471,10 @@ PRIVATE_KEY  # Moved to Vault
 |---------|------|---------|
 | 4.1 | 2025-12-27 | v4.1 "The Crossing" - Telegram integration (Sprints 30-33) |
 | 5.0 | 2025-12-28 | v5.0 "The Transformation" - SaaS platform (Sprints 34-49) |
-| 5.1 | 2025-12-29 | v5.1 Post-Audit Hardening - Security hardening (Sprints 50-52) |
+| 5.1 | 2025-12-29 | v5.1 Post-Audit Hardening - Security hardening (Sprints 50-53) |
+| 5.2 | 2025-12-30 | v5.2 Code Organization - Structural refactoring (Sprints 54-55) |
 
 ---
 
-*Sprint Plan v5.1 generated by Loa planning workflow*
+*Sprint Plan v5.2 generated by Loa planning workflow*
 *Based on: PRD v5.1, SDD v5.1, External Code Review (2025-12-29)*
