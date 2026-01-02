@@ -576,7 +576,7 @@ A sprint is complete when:
 
 **Duration:** 1.5 days
 
-**Status:** REVIEW_APPROVED
+**Status:** COMPLETED
 
 ### Context
 
