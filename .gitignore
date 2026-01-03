@@ -107,6 +107,16 @@ loa-grimoire/research/*
 !loa-grimoire/research/README.md
 
 # =============================================================================
+# LOA CONSTRUCTS (licensed skills, user-specific)
+# =============================================================================
+# Constructs packs and skills are downloaded per-user with individual licenses.
+# These should NOT be committed to version control:
+# - Licenses are user-specific (contain watermarks, user_id)
+# - Content is copyrighted and licensed per-user
+# - Users should install via /skill-pack-install command
+.claude/constructs/
+
+# =============================================================================
 # PROJECT-SPECIFIC EXCLUSIONS (for repos that use loa as a base)
 # =============================================================================
 # Beads graph memory (sprint task tracking)

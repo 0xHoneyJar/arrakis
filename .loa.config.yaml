@@ -197,6 +197,43 @@ jit_retrieval:
   max_line_range: 100
 
 # =============================================================================
+# Registry Integration (v0.9.2+)
+# =============================================================================
+# Loa Constructs for third-party skill management
+# Production API: https://loa-constructs-api.fly.dev
+registry:
+  # Master toggle for registry features
+  enabled: true
+  # Default registry API URL (can be overridden with LOA_REGISTRY_URL env var)
+  # Note: Production API endpoint for Loa Constructs
+  default_url: "https://loa-constructs-api.fly.dev/v1"
+  # Cache public keys for N hours (reduces API calls)
+  public_key_cache_hours: 24
+  # Load registry skills during /setup
+  load_on_startup: true
+  # Validate license signatures (disable only for testing)
+  # NOTE: Disabled for sk_test_ keys - HS256 tokens not supported by RS256 validator
+  validate_licenses: false
+  # Offline grace period in hours (tier-based, this is default for free/pro)
+  offline_grace_hours: 24
+  # Auto-refresh threshold: warn if license expires within N hours
+  auto_refresh_threshold_hours: 24
+  # Check for skill updates during /setup
+  check_updates_on_setup: true
+  # Reserved skill names (cannot be installed from registry)
+  reserved_skill_names:
+    - discovering-requirements
+    - designing-architecture
+    - planning-sprints
+    - implementing-tasks
+    - reviewing-code
+    - auditing-security
+    - deploying-infrastructure
+    - riding-codebase
+    - mounting-framework
+    - translating-for-executives
+
+# =============================================================================
 # Behavior Preferences
 # =============================================================================
 preferences:

@@ -41,6 +41,7 @@ jobs:
             "loa-grimoire/reality/"
             "loa-grimoire/analytics/"
             "loa-grimoire/research/"
+            ".claude/constructs/"
           )
 
           VIOLATIONS=()
@@ -74,7 +75,8 @@ jobs:
               echo "  - $file"
             done
             echo ""
-            echo "These files are project-specific and should be gitignored."
+            echo "These files are project-specific or contain licensed content and should be gitignored."
+            echo "Note: .claude/constructs/ contains user-licensed skills that should never be committed."
             echo "If this is intentional, add [skip-template-guard] to commit message."
             echo "============================================================"
             exit 1
