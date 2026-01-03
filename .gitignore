@@ -132,3 +132,6 @@ app/package.json
 app/package-lock.json
 app/tsconfig.json
 app/ecosystem.config.js
+
+# GTM artifacts (private - not for public repos)
+gtm-grimoire/
