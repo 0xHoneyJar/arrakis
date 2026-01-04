@@ -135,3 +135,24 @@ app/ecosystem.config.js
 
 # GTM artifacts (private - not for public repos)
 gtm-grimoire/
+
+# GTM commands (installed from constructs packs, not for public repos)
+.claude/commands/analyze-market.md
+.claude/commands/announce-release.md
+.claude/commands/create-deck.md
+.claude/commands/gtm-adopt.md
+.claude/commands/gtm-feature-requests.md
+.claude/commands/gtm-setup.md
+.claude/commands/plan-devrel.md
+.claude/commands/plan-launch.md
+.claude/commands/plan-partnerships.md
+.claude/commands/position.md
+.claude/commands/price.md
+.claude/commands/review-gtm.md
+.claude/commands/sync-from-dev.md
+.claude/commands/sync-from-gtm.md
+
+# Reap migration artifacts (abandoned in favor of Paddle)
+loa-grimoire/prd-reap-migration.md
+loa-grimoire/sdd-reap-migration.md
+loa-grimoire/sprint-reap-migration.md
