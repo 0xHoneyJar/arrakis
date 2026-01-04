@@ -1,5 +1,5 @@
 /**
- * Badge API Routes (v4.0 - Sprint 27)
+ * Badge API Routes (v5.0 - Sprint 2 Paddle Migration)
  *
  * Handles score badge endpoints:
  * - GET /badge/entitlement/:memberId - Check badge access
@@ -21,11 +21,12 @@ import {
   ValidationError,
   NotFoundError,
 } from './middleware.js';
-import { config } from '../config.js';
+import { config, isPaddleEnabled } from '../config.js';
 import { badgeService } from '../services/badge/BadgeService.js';
-import { stripeService } from '../services/billing/StripeService.js';
+import { createBillingProvider } from '../packages/adapters/billing/index.js';
 import { getMemberProfileById } from '../db/index.js';
 import { logger } from '../utils/logger.js';
+import type { IBillingProvider } from '../packages/core/ports/IBillingProvider.js';
 import type {
   BadgeEntitlementResponse,
   BadgeDisplayResponse,
@@ -41,6 +42,29 @@ export const badgeRouter = Router();
 
 // Apply rate limiting to all routes
 badgeRouter.use(memberRateLimiter);
+
+// =============================================================================
+// Billing Provider Initialization
+// =============================================================================
+
+let billingProvider: IBillingProvider | null = null;
+
+/**
+ * Get or initialize the billing provider
+ */
+function getBillingProvider(): IBillingProvider {
+  if (!billingProvider) {
+    if (!isPaddleEnabled()) {
+      throw new Error('Paddle billing is not configured');
+    }
+
+    billingProvider = createBillingProvider({
+      provider: 'paddle',
+      paddle: config.paddle,
+    });
+  }
+  return billingProvider;
+}
 
 // =============================================================================
 // Middleware: Check Badge Feature Enabled
@@ -114,7 +138,7 @@ badgeRouter.get(
       // Add price info if purchase required
       if (entitlement.purchaseRequired && entitlement.priceInCents) {
         response.price = `$${(entitlement.priceInCents / 100).toFixed(2)}`;
-        if (entitlement.stripePriceId) {
+        if (entitlement.priceId) {
           response.purchaseUrl = `/api/badge/purchase`;
         }
       }
@@ -132,7 +156,7 @@ badgeRouter.get(
 
 /**
  * POST /badge/purchase
- * Initiate badge purchase flow via Stripe Checkout
+ * Initiate badge purchase flow via Paddle Checkout
  */
 badgeRouter.post(
   '/purchase',
@@ -164,22 +188,24 @@ badgeRouter.post(
         throw new NotFoundError('Member not found');
       }
 
-      // Create Stripe Checkout session for badge purchase
-      const priceId = config.stripe?.priceIds?.get('badge');
+      // Create Paddle Checkout session for badge purchase
+      const priceId = config.paddle?.oneTimePriceIds?.badge;
       if (!priceId) {
         throw new Error('Badge price ID not configured');
       }
 
-      // Get or create Stripe customer
-      const customerId = await stripeService.getOrCreateCustomer(
+      const provider = getBillingProvider();
+
+      // Get or create Paddle customer
+      const customerId = await provider.getOrCreateCustomer(
         communityId,
         undefined, // email
         profile.nym // name
       );
 
-      // Create checkout session using StripeService
+      // Create checkout session using Paddle provider
       const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-      const result = await stripeService.createOneTimeCheckoutSession({
+      const result = await provider.createOneTimeCheckoutSession({
         customerId,
         priceId,
         successUrl: successUrl || `${baseUrl}/badge/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -193,7 +219,11 @@ badgeRouter.post(
 
       logger.info({ memberId, communityId, sessionId: result.sessionId }, 'Badge purchase initiated');
 
-      res.json(result);
+      res.json({
+        sessionId: result.sessionId,
+        url: result.url,
+        clientToken: result.clientToken,
+      });
     } catch (error) {
       logger.error({ error }, 'Badge purchase failed');
       if (error instanceof ValidationError || error instanceof NotFoundError) {

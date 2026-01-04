@@ -1,16 +1,16 @@
 /**
- * Billing API Routes (v4.0 - Sprint 25)
+ * Billing API Routes (v5.0 - Sprint 2 Paddle Migration)
  *
  * Handles billing-related endpoints:
- * - POST /checkout - Create Stripe Checkout session
- * - POST /portal - Create Stripe Customer Portal session
+ * - POST /checkout - Create Paddle Checkout session
+ * - POST /portal - Create Paddle Customer Portal session
  * - GET /subscription - Get current subscription status
  * - GET /entitlements - Get feature entitlements (cached)
  * - POST /feature-check - Check access to specific feature
- * - POST /webhook - Handle Stripe webhooks
+ * - POST /webhook - Handle Paddle webhooks
  *
  * All routes except webhook require authentication.
- * Webhook uses Stripe signature verification.
+ * Webhook uses Paddle signature verification.
  */
 
 import { Router } from 'express';
@@ -23,8 +23,9 @@ import {
   ValidationError,
   NotFoundError,
 } from './middleware.js';
-import { config, isBillingEnabled, SUBSCRIPTION_TIERS } from '../config.js';
-import { stripeService, webhookService, gatekeeperService } from '../services/billing/index.js';
+import { config, isBillingEnabled, isPaddleEnabled, SUBSCRIPTION_TIERS } from '../config.js';
+import { createBillingProvider } from '../packages/adapters/billing/index.js';
+import { webhookService, gatekeeperService } from '../services/billing/index.js';
 import {
   getSubscriptionByCommunityId,
   getActiveFeeWaiver,
@@ -41,6 +42,7 @@ import type {
   PortalResult,
   Feature,
 } from '../types/billing.js';
+import type { IBillingProvider } from '../packages/core/ports/IBillingProvider.js';
 
 // =============================================================================
 // Router Setup
@@ -50,6 +52,32 @@ export const billingRouter = Router();
 
 // Apply rate limiting to all routes
 billingRouter.use(memberRateLimiter);
+
+// =============================================================================
+// Billing Provider Initialization
+// =============================================================================
+
+let billingProvider: IBillingProvider | null = null;
+
+/**
+ * Get or initialize the billing provider
+ */
+function getBillingProvider(): IBillingProvider {
+  if (!billingProvider) {
+    if (!isPaddleEnabled()) {
+      throw new Error('Paddle billing is not configured');
+    }
+
+    billingProvider = createBillingProvider({
+      provider: 'paddle',
+      paddle: config.paddle,
+    });
+
+    // Inject provider into webhook service
+    webhookService.setBillingProvider(billingProvider);
+  }
+  return billingProvider;
+}
 
 // =============================================================================
 // Middleware: Check Billing Enabled
@@ -70,40 +98,101 @@ function requireBillingEnabled(req: Request, res: Response, next: Function) {
 }
 
 // =============================================================================
+// URL Validation
+// =============================================================================
+
+/**
+ * Allowed domains for redirect URLs (security: prevent open redirects)
+ * Add production domains and development localhost
+ */
+const ALLOWED_REDIRECT_DOMAINS = [
+  'arrakis.thj.bot',
+  'sietch.io',
+  'app.sietch.io',
+  'localhost',
+  '127.0.0.1',
+];
+
+/**
+ * Validate that a redirect URL points to an allowed domain
+ * Prevents phishing attacks via malicious redirect URLs
+ */
+function validateRedirectUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ALLOWED_REDIRECT_DOMAINS.some(
+      (domain) => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
+// =============================================================================
 // Schema Definitions
 // =============================================================================
 
 /**
  * Checkout session creation schema
+ * Security: URL validation prevents open redirect attacks
  */
 const createCheckoutSchema = z.object({
   tier: z.enum(['basic', 'premium', 'exclusive', 'elite']),
-  success_url: z.string().url(),
-  cancel_url: z.string().url(),
-  community_id: z.string().default('default'),
+  success_url: z
+    .string()
+    .url()
+    .max(2048, 'URL too long')
+    .refine(validateRedirectUrl, { message: 'Invalid redirect domain - must be an allowed domain' }),
+  cancel_url: z
+    .string()
+    .url()
+    .max(2048, 'URL too long')
+    .refine(validateRedirectUrl, { message: 'Invalid redirect domain - must be an allowed domain' }),
+  community_id: z
+    .string()
+    .min(1, 'Community ID required')
+    .max(128, 'Community ID too long')
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Community ID must be alphanumeric'),
 });
 
 /**
  * Portal session creation schema
+ * Security: URL validation prevents open redirect attacks
  */
 const createPortalSchema = z.object({
-  return_url: z.string().url(),
-  community_id: z.string().default('default'),
+  return_url: z
+    .string()
+    .url()
+    .max(2048, 'URL too long')
+    .refine(validateRedirectUrl, { message: 'Invalid redirect domain - must be an allowed domain' }),
+  community_id: z
+    .string()
+    .min(1, 'Community ID required')
+    .max(128, 'Community ID too long')
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Community ID must be alphanumeric'),
 });
 
 /**
  * Subscription query schema
  */
 const subscriptionQuerySchema = z.object({
-  community_id: z.string().default('default'),
+  community_id: z
+    .string()
+    .max(128, 'Community ID too long')
+    .regex(/^[a-zA-Z0-9_-]*$/, 'Community ID must be alphanumeric')
+    .default('default'),
 });
 
 /**
  * Feature check schema
  */
 const featureCheckSchema = z.object({
-  community_id: z.string().default('default'),
-  feature: z.string(),
+  community_id: z
+    .string()
+    .max(128, 'Community ID too long')
+    .regex(/^[a-zA-Z0-9_-]*$/, 'Community ID must be alphanumeric')
+    .default('default'),
+  feature: z.string().min(1).max(64),
 });
 
 // =============================================================================
@@ -112,7 +201,7 @@ const featureCheckSchema = z.object({
 
 /**
  * POST /billing/checkout
- * Create a Stripe Checkout session for subscription purchase
+ * Create a Paddle Checkout session for subscription purchase
  */
 billingRouter.post(
   '/checkout',
@@ -129,7 +218,8 @@ billingRouter.post(
     const { tier, success_url, cancel_url, community_id } = result.data;
 
     try {
-      const checkout: CheckoutResult = await stripeService.createCheckoutSession({
+      const provider = getBillingProvider();
+      const checkout: CheckoutResult = await provider.createCheckoutSession({
         communityId: community_id,
         tier: tier as SubscriptionTier,
         successUrl: success_url,
@@ -142,6 +232,7 @@ billingRouter.post(
           tier,
           communityId: community_id,
           sessionId: checkout.sessionId,
+          provider: 'paddle',
         },
         community_id,
         req.adminName
@@ -150,6 +241,7 @@ billingRouter.post(
       res.json({
         session_id: checkout.sessionId,
         url: checkout.url,
+        client_token: checkout.clientToken, // For Paddle.js embedded checkout
       });
     } catch (error) {
       logger.error({ error, tier, communityId: community_id }, 'Failed to create checkout session');
@@ -160,7 +252,7 @@ billingRouter.post(
 
 /**
  * POST /billing/portal
- * Create a Stripe Customer Portal session
+ * Create a Paddle Customer Portal session
  */
 billingRouter.post(
   '/portal',
@@ -177,7 +269,8 @@ billingRouter.post(
     const { return_url, community_id } = result.data;
 
     try {
-      const portal: PortalResult = await stripeService.createPortalSession({
+      const provider = getBillingProvider();
+      const portal: PortalResult = await provider.createPortalSession({
         communityId: community_id,
         returnUrl: return_url,
       });
@@ -331,24 +424,37 @@ billingRouter.post(
 
 /**
  * POST /billing/webhook
- * Handle Stripe webhooks
+ * Handle Paddle webhooks
  *
- * Note: This endpoint needs raw body for signature verification.
- * Configure Express with a raw body parser for this route.
+ * SECURITY REQUIREMENTS:
+ * 1. Raw body middleware MUST be configured in server.ts for this route
+ * 2. Signature verification uses HMAC-SHA256 via Paddle SDK
+ * 3. Content-Type must be application/json
+ *
+ * Configure Express with: express.raw({ type: 'application/json' }) for /billing/webhook
  */
 billingRouter.post('/webhook', async (req: Request, res: Response) => {
   // Webhook doesn't require billing to be fully enabled
   // (we want to process events even if feature flags are off)
 
-  const signature = req.headers['stripe-signature'];
+  // Security: Validate Content-Type header
+  const contentType = req.headers['content-type'];
+  if (!contentType || !contentType.includes('application/json')) {
+    res.status(400).json({ error: 'Invalid Content-Type - must be application/json' });
+    return;
+  }
+
+  const signature = req.headers['paddle-signature'];
 
   if (!signature || typeof signature !== 'string') {
-    res.status(400).json({ error: 'Missing stripe-signature header' });
+    res.status(400).json({ error: 'Missing paddle-signature header' });
     return;
   }
 
   try {
-    // Verify webhook signature and get event
+    // Ensure billing provider is initialized for webhook processing
+    getBillingProvider();
+
     // Note: req.body should be raw Buffer for signature verification
     // The raw body middleware is configured in server.ts
     const rawBody = (req as RawBodyRequest).rawBody;
@@ -383,9 +489,6 @@ billingRouter.post('/webhook', async (req: Request, res: Response) => {
     });
   }
 });
-
-// Note: Webhook event processing is now handled by WebhookService
-// (Sprint 24) for better separation of concerns and testability
 
 // =============================================================================
 // Helper Functions

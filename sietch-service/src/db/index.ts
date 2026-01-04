@@ -197,7 +197,7 @@ export {
 export {
   // Subscriptions
   getSubscriptionByCommunityId,
-  getSubscriptionByStripeId,
+  getSubscriptionByPaymentId,
   getSubscriptionById,
   createSubscription,
   updateSubscription,

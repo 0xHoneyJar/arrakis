@@ -1,26 +1,26 @@
 /**
- * Webhook Service (v4.0 - Sprint 24)
+ * Webhook Service (v5.0 - Sprint 2 Paddle Migration)
  *
- * Processes Stripe webhooks with idempotency guarantees:
- * - Signature verification (HMAC-SHA256)
+ * Processes Paddle webhooks with idempotency guarantees:
+ * - Signature verification via IBillingProvider
  * - Idempotent event processing (Redis + database deduplication)
  * - Event-specific handlers for subscription lifecycle
  * - Grace period management on payment failures
  * - Entitlement cache invalidation on subscription changes
  *
- * Supported webhook events:
- * - checkout.session.completed
- * - invoice.paid
- * - invoice.payment_failed
- * - customer.subscription.updated
- * - customer.subscription.deleted
+ * Supported webhook events (normalized):
+ * - subscription.created
+ * - subscription.activated
+ * - subscription.updated
+ * - subscription.canceled
+ * - payment.completed
+ * - payment.failed
  */
 
-import type Stripe from 'stripe';
-import { stripeService } from './StripeService.js';
 import { redisService } from '../cache/RedisService.js';
 import {
   getSubscriptionByCommunityId,
+  getSubscriptionByPaymentId,
   createSubscription,
   updateSubscription,
   isWebhookEventProcessed,
@@ -29,6 +29,12 @@ import {
 } from '../../db/billing-queries.js';
 import { boostService } from '../boost/BoostService.js';
 import { logger } from '../../utils/logger.js';
+import type {
+  IBillingProvider,
+  ProviderWebhookEvent,
+  NormalizedEventType,
+  ProviderSubscription,
+} from '../../packages/core/ports/IBillingProvider.js';
 import type { SubscriptionTier, SubscriptionStatus } from '../../types/billing.js';
 
 // =============================================================================
@@ -38,16 +44,15 @@ import type { SubscriptionTier, SubscriptionStatus } from '../../types/billing.j
 /** Grace period duration in milliseconds (24 hours) */
 const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
 
-/** Supported webhook event types */
-const SUPPORTED_EVENTS = [
-  'checkout.session.completed',
-  'invoice.paid',
-  'invoice.payment_failed',
-  'customer.subscription.updated',
-  'customer.subscription.deleted',
-] as const;
-
-type SupportedEventType = (typeof SUPPORTED_EVENTS)[number];
+/** Supported webhook event types (normalized) */
+const SUPPORTED_EVENTS: NormalizedEventType[] = [
+  'subscription.created',
+  'subscription.activated',
+  'subscription.updated',
+  'subscription.canceled',
+  'payment.completed',
+  'payment.failed',
+];
 
 // =============================================================================
 // Types
@@ -59,7 +64,7 @@ type SupportedEventType = (typeof SUPPORTED_EVENTS)[number];
 export interface WebhookResult {
   /** Processing status */
   status: 'processed' | 'duplicate' | 'skipped' | 'failed';
-  /** Stripe event ID */
+  /** Provider event ID */
   eventId: string;
   /** Event type */
   eventType: string;
@@ -74,28 +79,50 @@ export interface WebhookResult {
 // =============================================================================
 
 class WebhookService {
+  private billingProvider: IBillingProvider | null = null;
+
+  /**
+   * Set the billing provider (dependency injection)
+   */
+  setBillingProvider(provider: IBillingProvider): void {
+    this.billingProvider = provider;
+  }
+
+  /**
+   * Get the billing provider
+   */
+  private getProvider(): IBillingProvider {
+    if (!this.billingProvider) {
+      throw new Error('Billing provider not configured. Call setBillingProvider first.');
+    }
+    return this.billingProvider;
+  }
+
   // ---------------------------------------------------------------------------
   // Signature Verification
   // ---------------------------------------------------------------------------
 
   /**
-   * Verify Stripe webhook signature
+   * Verify webhook signature and parse event
    *
    * @param payload - Raw request body (string or Buffer)
-   * @param signature - Stripe-Signature header value
-   * @returns Verified Stripe event
+   * @param signature - Paddle-Signature header value
+   * @returns Verified provider event
    * @throws Error if signature invalid
    */
-  verifySignature(payload: string | Buffer, signature: string): Stripe.Event {
-    try {
-      return stripeService.constructWebhookEvent(payload, signature);
-    } catch (error) {
+  verifySignature(payload: string | Buffer, signature: string): ProviderWebhookEvent {
+    const provider = this.getProvider();
+    const result = provider.verifyWebhook(payload, signature);
+
+    if (!result.valid || !result.event) {
       logger.warn(
-        { error: (error as Error).message },
+        { error: result.error },
         'Invalid webhook signature'
       );
-      throw new Error('Invalid webhook signature');
+      throw new Error(result.error || 'Invalid webhook signature');
     }
+
+    return result.event;
   }
 
   // ---------------------------------------------------------------------------
@@ -103,7 +130,7 @@ class WebhookService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Process a Stripe webhook event with idempotency
+   * Process a webhook event with idempotency
    *
    * Flow:
    * 1. Check Redis for event ID (fast)
@@ -114,14 +141,14 @@ class WebhookService {
    * 6. Mark event in Redis
    * 7. Release lock
    *
-   * @param event - Verified Stripe event
+   * @param event - Verified provider event
    * @returns Processing result
    */
-  async processEvent(event: Stripe.Event): Promise<WebhookResult> {
+  async processEvent(event: ProviderWebhookEvent): Promise<WebhookResult> {
     const eventId = event.id;
     const eventType = event.type;
 
-    logger.info({ eventId, eventType }, 'Processing webhook event');
+    logger.info({ eventId, eventType, rawType: event.rawType }, 'Processing webhook event');
 
     // Step 1: Check Redis for duplicate (fast path)
     if (await redisService.isEventProcessed(eventId)) {
@@ -206,6 +233,7 @@ class WebhookService {
         eventId,
         eventType,
         error: errorMessage,
+        provider: 'paddle',
       });
 
       return {
@@ -227,33 +255,37 @@ class WebhookService {
   /**
    * Check if event type is supported
    */
-  private isSupportedEvent(eventType: string): eventType is SupportedEventType {
-    return (SUPPORTED_EVENTS as readonly string[]).includes(eventType);
+  private isSupportedEvent(eventType: string): eventType is NormalizedEventType {
+    return (SUPPORTED_EVENTS as string[]).includes(eventType);
   }
 
   /**
    * Route event to appropriate handler
    */
-  private async handleEvent(event: Stripe.Event): Promise<void> {
+  private async handleEvent(event: ProviderWebhookEvent): Promise<void> {
     switch (event.type) {
-      case 'checkout.session.completed':
-        await this.handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      case 'subscription.created':
+        await this.handleSubscriptionCreated(event);
         break;
 
-      case 'invoice.paid':
-        await this.handleInvoicePaid(event.data.object as Stripe.Invoice);
+      case 'subscription.activated':
+        await this.handleSubscriptionActivated(event);
         break;
 
-      case 'invoice.payment_failed':
-        await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+      case 'subscription.updated':
+        await this.handleSubscriptionUpdated(event);
         break;
 
-      case 'customer.subscription.updated':
-        await this.handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
+      case 'subscription.canceled':
+        await this.handleSubscriptionCanceled(event);
         break;
 
-      case 'customer.subscription.deleted':
-        await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+      case 'payment.completed':
+        await this.handlePaymentCompleted(event);
+        break;
+
+      case 'payment.failed':
+        await this.handlePaymentFailed(event);
         break;
 
       default:
@@ -266,64 +298,25 @@ class WebhookService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Handle checkout.session.completed
-   * Routes to appropriate handler based on checkout type (subscription vs one-time payment)
+   * Handle subscription.created
+   * Creates initial subscription record
    */
-  private async handleCheckoutCompleted(
-    session: Stripe.Checkout.Session
-  ): Promise<void> {
-    const paymentType = session.metadata?.type;
-
-    // Route to boost payment handler for boost purchases
-    if (paymentType === 'boost_purchase') {
-      await this.handleBoostPaymentCompleted(session);
-      return;
-    }
-
-    // Route to badge payment handler for badge purchases
-    if (paymentType === 'badge_purchase') {
-      await this.handleBadgePaymentCompleted(session);
-      return;
-    }
-
-    // Default: Handle as subscription checkout
-    await this.handleSubscriptionCheckoutCompleted(session);
-  }
-
-  /**
-   * Handle subscription checkout completion
-   * Creates or updates subscription record when checkout succeeds
-   */
-  private async handleSubscriptionCheckoutCompleted(
-    session: Stripe.Checkout.Session
-  ): Promise<void> {
-    const communityId = session.metadata?.community_id;
-    const tier = session.metadata?.tier as SubscriptionTier;
+  private async handleSubscriptionCreated(event: ProviderWebhookEvent): Promise<void> {
+    const data = event.data as Record<string, unknown>;
+    const customData = data.customData as Record<string, string> | undefined;
+    const communityId = customData?.community_id;
+    const tier = customData?.tier as SubscriptionTier;
 
     if (!communityId) {
       logger.warn(
-        { sessionId: session.id },
-        'Checkout session missing community_id metadata'
+        { eventId: event.id },
+        'Subscription created event missing community_id metadata'
       );
       return;
     }
 
-    // Get or fetch subscription details from Stripe
-    const subscriptionId =
-      typeof session.subscription === 'string'
-        ? session.subscription
-        : session.subscription?.id;
-
-    const customerId =
-      typeof session.customer === 'string' ? session.customer : session.customer?.id;
-
-    if (!subscriptionId || !customerId) {
-      logger.warn(
-        { sessionId: session.id, communityId },
-        'Checkout session missing subscription or customer'
-      );
-      return;
-    }
+    const subscriptionId = data.id as string;
+    const customerId = data.customerId as string;
 
     // Check if subscription already exists
     const existing = getSubscriptionByCommunityId(communityId);
@@ -331,25 +324,23 @@ class WebhookService {
     if (existing) {
       // Update existing subscription
       updateSubscription(communityId, {
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscriptionId,
+        paymentCustomerId: customerId,
+        paymentSubscriptionId: subscriptionId,
+        paymentProvider: 'paddle',
         tier: tier || existing.tier,
-        status: 'active',
-        graceUntil: null, // Clear any grace period
+        status: 'trialing', // Created but not yet activated
       });
     } else {
       // Create new subscription
       createSubscription({
         communityId,
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscriptionId,
+        paymentCustomerId: customerId,
+        paymentSubscriptionId: subscriptionId,
+        paymentProvider: 'paddle',
         tier: tier || 'basic',
-        status: 'active',
+        status: 'trialing',
       });
     }
-
-    // Invalidate entitlement cache
-    await redisService.invalidateEntitlements(communityId);
 
     // Log audit event
     logBillingAuditEvent(
@@ -357,168 +348,44 @@ class WebhookService {
       {
         communityId,
         tier,
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscriptionId,
+        paymentCustomerId: customerId,
+        paymentSubscriptionId: subscriptionId,
+        paymentProvider: 'paddle',
       },
       communityId
     );
 
     logger.info(
-      { communityId, tier, sessionId: session.id },
-      'Checkout completed, subscription created/updated'
+      { communityId, tier, subscriptionId },
+      'Subscription created'
     );
   }
 
   /**
-   * Handle boost purchase payment completion
-   * Records boost purchase and updates community stats
+   * Handle subscription.activated
+   * Updates subscription to active status
    */
-  private async handleBoostPaymentCompleted(
-    session: Stripe.Checkout.Session
-  ): Promise<void> {
-    const { metadata } = session;
-    const communityId = metadata?.community_id;
-    const memberId = metadata?.member_id;
-    const months = parseInt(metadata?.months || '0', 10);
+  private async handleSubscriptionActivated(event: ProviderWebhookEvent): Promise<void> {
+    const data = event.data as Record<string, unknown>;
+    const customData = data.customData as Record<string, string> | undefined;
+    const communityId = customData?.community_id;
 
-    if (!communityId || !memberId || !months) {
-      logger.warn(
-        { sessionId: session.id, metadata },
-        'Boost checkout session missing required metadata'
-      );
-      return;
-    }
-
-    const amountPaid = session.amount_total || 0;
-    const paymentIntentId =
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : session.payment_intent?.id;
-
-    try {
-      // Process the boost payment through BoostService
-      const purchase = await boostService.processBoostPayment({
-        stripeSessionId: session.id,
-        stripePaymentId: paymentIntentId || session.id,
-        memberId,
-        communityId,
-        months,
-        amountPaidCents: amountPaid,
-      });
-
-      logger.info(
-        {
-          communityId,
-          memberId,
-          months,
-          purchaseId: purchase.id,
-          sessionId: session.id,
-        },
-        'Boost payment processed successfully'
-      );
-    } catch (error) {
-      logger.error(
-        {
-          error: (error as Error).message,
-          sessionId: session.id,
-          communityId,
-          memberId,
-        },
-        'Failed to process boost payment'
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Handle badge purchase payment completion
-   * Records badge purchase for the member
-   */
-  private async handleBadgePaymentCompleted(
-    session: Stripe.Checkout.Session
-  ): Promise<void> {
-    const { metadata } = session;
-    const communityId = metadata?.communityId;
-    const memberId = metadata?.memberId;
-
-    if (!communityId || !memberId) {
-      logger.warn(
-        { sessionId: session.id, metadata },
-        'Badge checkout session missing required metadata'
-      );
-      return;
-    }
-
-    const paymentIntentId =
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : session.payment_intent?.id;
-
-    try {
-      // Import badge service dynamically to avoid circular dependency
-      const { badgeService } = await import('../badge/BadgeService.js');
-
-      // Record the badge purchase
-      badgeService.recordBadgePurchase({
-        memberId,
-        stripePaymentId: paymentIntentId || session.id,
-      });
-
-      logger.info(
-        {
-          communityId,
-          memberId,
-          sessionId: session.id,
-        },
-        'Badge payment processed successfully'
-      );
-    } catch (error) {
-      logger.error(
-        {
-          error: (error as Error).message,
-          sessionId: session.id,
-          communityId,
-          memberId,
-        },
-        'Failed to process badge payment'
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Handle invoice.paid
-   * Updates subscription period and clears grace period
-   */
-  private async handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
-    const subscriptionId =
-      typeof invoice.subscription === 'string'
-        ? invoice.subscription
-        : invoice.subscription?.id;
-
-    if (!subscriptionId) {
-      logger.debug({ invoiceId: invoice.id }, 'Invoice not associated with subscription');
-      return;
-    }
-
-    const subscription = await stripeService.getStripeSubscription(subscriptionId);
-    if (!subscription) {
-      logger.warn({ subscriptionId }, 'Subscription not found in Stripe');
-      return;
-    }
-
-    const communityId = subscription.metadata?.community_id;
     if (!communityId) {
-      logger.warn({ subscriptionId }, 'Subscription missing community_id metadata');
+      logger.warn(
+        { eventId: event.id },
+        'Subscription activated event missing community_id metadata'
+      );
       return;
     }
 
-    // Update subscription: clear grace period, update period
+    const subscriptionId = data.id as string;
+    const currentBillingPeriod = data.currentBillingPeriod as { startsAt: string; endsAt: string } | undefined;
+
     updateSubscription(communityId, {
       status: 'active',
-      graceUntil: null,
-      currentPeriodStart: new Date(subscription.current_period_start * 1000),
-      currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+      graceUntil: null, // Clear any grace period
+      currentPeriodStart: currentBillingPeriod ? new Date(currentBillingPeriod.startsAt) : undefined,
+      currentPeriodEnd: currentBillingPeriod ? new Date(currentBillingPeriod.endsAt) : undefined,
     });
 
     // Invalidate entitlement cache
@@ -526,122 +393,54 @@ class WebhookService {
 
     // Log audit event
     logBillingAuditEvent(
-      'payment_succeeded',
+      'subscription_activated',
       {
         communityId,
-        invoiceId: invoice.id,
-        amount: invoice.amount_paid,
-        currency: invoice.currency,
+        paymentSubscriptionId: subscriptionId,
+        paymentProvider: 'paddle',
       },
       communityId
     );
 
     logger.info(
-      { communityId, invoiceId: invoice.id, amount: invoice.amount_paid },
-      'Invoice paid, grace period cleared'
+      { communityId, subscriptionId },
+      'Subscription activated'
     );
   }
 
   /**
-   * Handle invoice.payment_failed
-   * Sets 24-hour grace period and updates status to past_due
-   */
-  private async handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void> {
-    const subscriptionId =
-      typeof invoice.subscription === 'string'
-        ? invoice.subscription
-        : invoice.subscription?.id;
-
-    if (!subscriptionId) {
-      logger.debug(
-        { invoiceId: invoice.id },
-        'Failed invoice not associated with subscription'
-      );
-      return;
-    }
-
-    const subscription = await stripeService.getStripeSubscription(subscriptionId);
-    if (!subscription) {
-      logger.warn({ subscriptionId }, 'Subscription not found in Stripe');
-      return;
-    }
-
-    const communityId = subscription.metadata?.community_id;
-    if (!communityId) {
-      logger.warn({ subscriptionId }, 'Subscription missing community_id metadata');
-      return;
-    }
-
-    // Set grace period (24 hours from now)
-    const graceUntil = new Date(Date.now() + GRACE_PERIOD_MS);
-
-    updateSubscription(communityId, {
-      status: 'past_due',
-      graceUntil,
-    });
-
-    // Invalidate entitlement cache (grace period affects entitlements)
-    await redisService.invalidateEntitlements(communityId);
-
-    // Log audit events
-    logBillingAuditEvent(
-      'payment_failed',
-      {
-        communityId,
-        invoiceId: invoice.id,
-        graceUntil: graceUntil.toISOString(),
-        attemptCount: invoice.attempt_count,
-      },
-      communityId
-    );
-
-    logBillingAuditEvent(
-      'grace_period_started',
-      {
-        communityId,
-        graceUntil: graceUntil.toISOString(),
-      },
-      communityId
-    );
-
-    logger.warn(
-      {
-        communityId,
-        invoiceId: invoice.id,
-        graceUntil,
-        attemptCount: invoice.attempt_count,
-      },
-      'Invoice payment failed, grace period started'
-    );
-  }
-
-  /**
-   * Handle customer.subscription.updated
+   * Handle subscription.updated
    * Updates tier, status, and period information
    */
-  private async handleSubscriptionUpdated(
-    stripeSubscription: Stripe.Subscription
-  ): Promise<void> {
-    const communityId = stripeSubscription.metadata?.community_id;
+  private async handleSubscriptionUpdated(event: ProviderWebhookEvent): Promise<void> {
+    const data = event.data as Record<string, unknown>;
+    const customData = data.customData as Record<string, string> | undefined;
+    const communityId = customData?.community_id;
 
     if (!communityId) {
       logger.warn(
-        { subscriptionId: stripeSubscription.id },
-        'Subscription missing community_id metadata'
+        { eventId: event.id },
+        'Subscription updated event missing community_id metadata'
       );
       return;
     }
 
-    const tier = stripeService.extractTierFromSubscription(stripeSubscription);
-    const status = stripeService.mapSubscriptionStatus(stripeSubscription.status);
+    const subscriptionId = data.id as string;
+    const status = data.status as string;
+    const tier = customData?.tier as SubscriptionTier | undefined;
+    const currentBillingPeriod = data.currentBillingPeriod as { startsAt: string; endsAt: string } | undefined;
+    const scheduledChange = data.scheduledChange as { action: string } | null;
+
+    const provider = this.getProvider();
+    const mappedStatus = provider.mapSubscriptionStatus(status);
 
     updateSubscription(communityId, {
       tier: tier || undefined,
-      status,
-      currentPeriodStart: new Date(stripeSubscription.current_period_start * 1000),
-      currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
+      status: mappedStatus,
+      currentPeriodStart: currentBillingPeriod ? new Date(currentBillingPeriod.startsAt) : undefined,
+      currentPeriodEnd: currentBillingPeriod ? new Date(currentBillingPeriod.endsAt) : undefined,
       // Clear grace period if subscription is now active
-      graceUntil: status === 'active' ? null : undefined,
+      graceUntil: mappedStatus === 'active' ? null : undefined,
     });
 
     // Invalidate entitlement cache
@@ -653,8 +452,9 @@ class WebhookService {
       {
         communityId,
         tier,
-        status,
-        cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
+        status: mappedStatus,
+        cancelAtPeriodEnd: scheduledChange?.action === 'cancel',
+        paymentProvider: 'paddle',
       },
       communityId
     );
@@ -663,26 +463,26 @@ class WebhookService {
       {
         communityId,
         tier,
-        status,
-        cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
+        status: mappedStatus,
+        cancelAtPeriodEnd: scheduledChange?.action === 'cancel',
       },
       'Subscription updated'
     );
   }
 
   /**
-   * Handle customer.subscription.deleted
+   * Handle subscription.canceled
    * Downgrades to starter (free) tier and sets status to canceled
    */
-  private async handleSubscriptionDeleted(
-    stripeSubscription: Stripe.Subscription
-  ): Promise<void> {
-    const communityId = stripeSubscription.metadata?.community_id;
+  private async handleSubscriptionCanceled(event: ProviderWebhookEvent): Promise<void> {
+    const data = event.data as Record<string, unknown>;
+    const customData = data.customData as Record<string, string> | undefined;
+    const communityId = customData?.community_id;
 
     if (!communityId) {
       logger.warn(
-        { subscriptionId: stripeSubscription.id },
-        'Subscription missing community_id metadata'
+        { eventId: event.id },
+        'Subscription canceled event missing community_id metadata'
       );
       return;
     }
@@ -703,11 +503,258 @@ class WebhookService {
       {
         communityId,
         canceledAt: new Date().toISOString(),
+        paymentProvider: 'paddle',
       },
       communityId
     );
 
     logger.info({ communityId }, 'Subscription canceled, downgraded to starter tier');
+  }
+
+  /**
+   * Handle payment.completed (transaction.completed in Paddle)
+   * Routes to appropriate handler based on payment type
+   */
+  private async handlePaymentCompleted(event: ProviderWebhookEvent): Promise<void> {
+    const data = event.data as Record<string, unknown>;
+    const customData = data.customData as Record<string, string> | undefined;
+    const paymentType = customData?.type;
+
+    // Route to boost payment handler for boost purchases
+    if (paymentType === 'boost_purchase') {
+      await this.handleBoostPaymentCompleted(event);
+      return;
+    }
+
+    // Route to badge payment handler for badge purchases
+    if (paymentType === 'badge_purchase') {
+      await this.handleBadgePaymentCompleted(event);
+      return;
+    }
+
+    // Handle as subscription payment
+    const communityId = customData?.community_id;
+    const subscriptionId = data.subscriptionId as string | undefined;
+
+    if (!communityId && !subscriptionId) {
+      logger.debug({ eventId: event.id }, 'Payment completed without community context');
+      return;
+    }
+
+    // For subscription payments, update period and clear grace
+    if (subscriptionId) {
+      // Find subscription by payment subscription ID
+      const subscription = getSubscriptionByPaymentId(subscriptionId);
+
+      if (subscription) {
+        updateSubscription(subscription.communityId, {
+          status: 'active',
+          graceUntil: null,
+        });
+
+        // Invalidate entitlement cache
+        await redisService.invalidateEntitlements(subscription.communityId);
+
+        // Log audit event
+        logBillingAuditEvent(
+          'payment_succeeded',
+          {
+            communityId: subscription.communityId,
+            transactionId: data.id as string,
+            paymentProvider: 'paddle',
+          },
+          subscription.communityId
+        );
+
+        logger.info(
+          { communityId: subscription.communityId, transactionId: data.id },
+          'Payment completed, grace period cleared'
+        );
+      }
+    }
+  }
+
+  /**
+   * Handle payment.failed
+   * Sets 24-hour grace period and updates status to past_due
+   */
+  private async handlePaymentFailed(event: ProviderWebhookEvent): Promise<void> {
+    const data = event.data as Record<string, unknown>;
+    const subscriptionId = data.subscriptionId as string | undefined;
+
+    if (!subscriptionId) {
+      logger.debug(
+        { eventId: event.id },
+        'Payment failed not associated with subscription'
+      );
+      return;
+    }
+
+    // Find subscription by payment subscription ID
+    const subscription = getSubscriptionByPaymentId(subscriptionId);
+
+    if (!subscription) {
+      logger.warn({ subscriptionId }, 'Subscription not found for failed payment');
+      return;
+    }
+
+    // Set grace period (24 hours from now)
+    const graceUntil = new Date(Date.now() + GRACE_PERIOD_MS);
+
+    updateSubscription(subscription.communityId, {
+      status: 'past_due',
+      graceUntil,
+    });
+
+    // Invalidate entitlement cache (grace period affects entitlements)
+    await redisService.invalidateEntitlements(subscription.communityId);
+
+    // Log audit events
+    logBillingAuditEvent(
+      'payment_failed',
+      {
+        communityId: subscription.communityId,
+        transactionId: data.id as string,
+        graceUntil: graceUntil.toISOString(),
+        paymentProvider: 'paddle',
+      },
+      subscription.communityId
+    );
+
+    logBillingAuditEvent(
+      'grace_period_started',
+      {
+        communityId: subscription.communityId,
+        graceUntil: graceUntil.toISOString(),
+      },
+      subscription.communityId
+    );
+
+    logger.warn(
+      {
+        communityId: subscription.communityId,
+        transactionId: data.id,
+        graceUntil,
+      },
+      'Payment failed, grace period started'
+    );
+  }
+
+  /**
+   * Handle boost purchase payment completion
+   * Records boost purchase and updates community stats
+   */
+  private async handleBoostPaymentCompleted(
+    event: ProviderWebhookEvent
+  ): Promise<void> {
+    const data = event.data as Record<string, unknown>;
+    const customData = data.customData as Record<string, string> | undefined;
+    const communityId = customData?.community_id;
+    const memberId = customData?.member_id;
+    const months = parseInt(customData?.months || '0', 10);
+
+    if (!communityId || !memberId || !months) {
+      logger.warn(
+        { eventId: event.id, customData },
+        'Boost payment missing required metadata'
+      );
+      return;
+    }
+
+    // Get payment details from transaction
+    const transactionId = data.id as string;
+    const details = data.details as { totals?: { total?: string } } | undefined;
+    const amountPaid = details?.totals?.total
+      ? parseInt(details.totals.total, 10)
+      : 0;
+
+    try {
+      // Process the boost payment through BoostService
+      const purchase = await boostService.processBoostPayment({
+        sessionId: transactionId,
+        paymentId: transactionId,
+        memberId,
+        communityId,
+        months,
+        amountPaidCents: amountPaid,
+      });
+
+      logger.info(
+        {
+          communityId,
+          memberId,
+          months,
+          purchaseId: purchase.id,
+          transactionId,
+        },
+        'Boost payment processed successfully'
+      );
+    } catch (error) {
+      logger.error(
+        {
+          error: (error as Error).message,
+          transactionId,
+          communityId,
+          memberId,
+        },
+        'Failed to process boost payment'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Handle badge purchase payment completion
+   * Records badge purchase for the member
+   */
+  private async handleBadgePaymentCompleted(
+    event: ProviderWebhookEvent
+  ): Promise<void> {
+    const data = event.data as Record<string, unknown>;
+    const customData = data.customData as Record<string, string> | undefined;
+    const communityId = customData?.communityId || customData?.community_id;
+    const memberId = customData?.memberId || customData?.member_id;
+
+    if (!communityId || !memberId) {
+      logger.warn(
+        { eventId: event.id, customData },
+        'Badge payment missing required metadata'
+      );
+      return;
+    }
+
+    const transactionId = data.id as string;
+
+    try {
+      // Import badge service dynamically to avoid circular dependency
+      const { badgeService } = await import('../badge/BadgeService.js');
+
+      // Record the badge purchase
+      badgeService.recordBadgePurchase({
+        memberId,
+        paymentId: transactionId,
+      });
+
+      logger.info(
+        {
+          communityId,
+          memberId,
+          transactionId,
+        },
+        'Badge payment processed successfully'
+      );
+    } catch (error) {
+      logger.error(
+        {
+          error: (error as Error).message,
+          transactionId,
+          communityId,
+          memberId,
+        },
+        'Failed to process badge payment'
+      );
+      throw error;
+    }
   }
 }
 

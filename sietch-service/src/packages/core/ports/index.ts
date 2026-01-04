@@ -13,3 +13,4 @@ export * from './IStorageProvider.js';
 export * from './IManifestProvider.js';
 export * from './ISigningAdapter.js';
 export * from './ICoexistenceStorage.js';
+export * from './IBillingProvider.js';

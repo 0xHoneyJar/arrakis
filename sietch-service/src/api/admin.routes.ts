@@ -418,8 +418,9 @@ adminRouter.get(
         subscription: {
           id: subscription.id,
           community_id: subscription.communityId,
-          stripe_customer_id: subscription.stripeCustomerId || null,
-          stripe_subscription_id: subscription.stripeSubscriptionId || null,
+          payment_customer_id: subscription.paymentCustomerId || null,
+          payment_subscription_id: subscription.paymentSubscriptionId || null,
+          payment_provider: subscription.paymentProvider,
           tier: subscription.tier,
           status: subscription.status,
           grace_until: subscription.graceUntil?.toISOString() || null,

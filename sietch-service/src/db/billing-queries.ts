@@ -32,8 +32,9 @@ import type {
 interface SubscriptionRow {
   id: string;
   community_id: string;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
+  payment_customer_id: string | null;
+  payment_subscription_id: string | null;
+  payment_provider: string;
   tier: string;
   status: string;
   grace_until: number | null;
@@ -60,7 +61,7 @@ interface FeeWaiverRow {
 
 interface WebhookEventRow {
   id: string;
-  stripe_event_id: string;
+  provider_event_id: string;
   event_type: string;
   status: string;
   payload: string;
@@ -87,8 +88,9 @@ function rowToSubscription(row: SubscriptionRow): Subscription {
   return {
     id: row.id,
     communityId: row.community_id,
-    stripeCustomerId: row.stripe_customer_id ?? undefined,
-    stripeSubscriptionId: row.stripe_subscription_id ?? undefined,
+    paymentCustomerId: row.payment_customer_id ?? undefined,
+    paymentSubscriptionId: row.payment_subscription_id ?? undefined,
+    paymentProvider: row.payment_provider as 'paddle' | 'stripe',
     tier: row.tier as SubscriptionTier,
     status: row.status as SubscriptionStatus,
     graceUntil: row.grace_until ? new Date(row.grace_until * 1000) : undefined,
@@ -123,7 +125,7 @@ function rowToFeeWaiver(row: FeeWaiverRow): FeeWaiver {
 function rowToWebhookEvent(row: WebhookEventRow): WebhookEvent {
   return {
     id: row.id,
-    stripeEventId: row.stripe_event_id,
+    providerEventId: row.provider_event_id,
     eventType: row.event_type,
     status: row.status as WebhookEvent['status'],
     payload: row.payload,
@@ -165,16 +167,16 @@ export function getSubscriptionByCommunityId(
 }
 
 /**
- * Get subscription by Stripe subscription ID
+ * Get subscription by payment subscription ID
  */
-export function getSubscriptionByStripeId(
-  stripeSubscriptionId: string
+export function getSubscriptionByPaymentId(
+  paymentSubscriptionId: string
 ): Subscription | null {
   const db = getDatabase();
 
   const row = db
-    .prepare('SELECT * FROM subscriptions WHERE stripe_subscription_id = ?')
-    .get(stripeSubscriptionId) as SubscriptionRow | undefined;
+    .prepare('SELECT * FROM subscriptions WHERE payment_subscription_id = ?')
+    .get(paymentSubscriptionId) as SubscriptionRow | undefined;
 
   return row ? rowToSubscription(row) : null;
 }
@@ -201,13 +203,14 @@ export function createSubscription(params: CreateSubscriptionParams): string {
 
   db.prepare(`
     INSERT INTO subscriptions (
-      id, community_id, stripe_customer_id, stripe_subscription_id, tier, status
-    ) VALUES (?, ?, ?, ?, ?, ?)
+      id, community_id, payment_customer_id, payment_subscription_id, payment_provider, tier, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     params.communityId,
-    params.stripeCustomerId ?? null,
-    params.stripeSubscriptionId ?? null,
+    params.paymentCustomerId ?? null,
+    params.paymentSubscriptionId ?? null,
+    params.paymentProvider ?? 'paddle',
     params.tier ?? 'starter',
     params.status ?? 'active'
   );
@@ -229,14 +232,19 @@ export function updateSubscription(
   const sets: string[] = ['updated_at = datetime(\'now\')'];
   const values: (string | number | null)[] = [];
 
-  if (params.stripeCustomerId !== undefined) {
-    sets.push('stripe_customer_id = ?');
-    values.push(params.stripeCustomerId ?? null);
+  if (params.paymentCustomerId !== undefined) {
+    sets.push('payment_customer_id = ?');
+    values.push(params.paymentCustomerId ?? null);
   }
 
-  if (params.stripeSubscriptionId !== undefined) {
-    sets.push('stripe_subscription_id = ?');
-    values.push(params.stripeSubscriptionId ?? null);
+  if (params.paymentSubscriptionId !== undefined) {
+    sets.push('payment_subscription_id = ?');
+    values.push(params.paymentSubscriptionId ?? null);
+  }
+
+  if (params.paymentProvider !== undefined) {
+    sets.push('payment_provider = ?');
+    values.push(params.paymentProvider);
   }
 
   if (params.tier !== undefined) {
@@ -467,12 +475,12 @@ export function getAllActiveFeeWaivers(): FeeWaiver[] {
 /**
  * Check if a webhook event has been processed (idempotency check)
  */
-export function isWebhookEventProcessed(stripeEventId: string): boolean {
+export function isWebhookEventProcessed(providerEventId: string): boolean {
   const db = getDatabase();
 
   const row = db
-    .prepare('SELECT 1 FROM webhook_events WHERE stripe_event_id = ?')
-    .get(stripeEventId);
+    .prepare('SELECT 1 FROM webhook_events WHERE provider_event_id = ?')
+    .get(providerEventId);
 
   return !!row;
 }
@@ -481,7 +489,7 @@ export function isWebhookEventProcessed(stripeEventId: string): boolean {
  * Record a webhook event
  */
 export function recordWebhookEvent(
-  stripeEventId: string,
+  providerEventId: string,
   eventType: string,
   payload: string,
   status: 'processing' | 'processed' | 'failed' = 'processed',
@@ -492,11 +500,11 @@ export function recordWebhookEvent(
 
   db.prepare(`
     INSERT INTO webhook_events (
-      id, stripe_event_id, event_type, status, payload, error_message, processed_at
+      id, provider_event_id, event_type, status, payload, error_message, processed_at
     ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(id, stripeEventId, eventType, status, payload, errorMessage ?? null);
+  `).run(id, providerEventId, eventType, status, payload, errorMessage ?? null);
 
-  logger.debug({ id, stripeEventId, eventType, status }, 'Recorded webhook event');
+  logger.debug({ id, providerEventId, eventType, status }, 'Recorded webhook event');
 
   return id;
 }
@@ -505,7 +513,7 @@ export function recordWebhookEvent(
  * Update webhook event status
  */
 export function updateWebhookEventStatus(
-  stripeEventId: string,
+  providerEventId: string,
   status: 'processing' | 'processed' | 'failed',
   errorMessage?: string
 ): boolean {
@@ -517,9 +525,9 @@ export function updateWebhookEventStatus(
       SET status = ?,
           error_message = ?,
           processed_at = datetime('now')
-      WHERE stripe_event_id = ?
+      WHERE provider_event_id = ?
     `)
-    .run(status, errorMessage ?? null, stripeEventId);
+    .run(status, errorMessage ?? null, providerEventId);
 
   return result.changes > 0;
 }
@@ -543,14 +551,14 @@ export function getFailedWebhookEvents(limit: number = 100): WebhookEvent[] {
 }
 
 /**
- * Get webhook event by Stripe event ID
+ * Get webhook event by provider event ID
  */
-export function getWebhookEvent(stripeEventId: string): WebhookEvent | null {
+export function getWebhookEvent(providerEventId: string): WebhookEvent | null {
   const db = getDatabase();
 
   const row = db
-    .prepare('SELECT * FROM webhook_events WHERE stripe_event_id = ?')
-    .get(stripeEventId) as WebhookEventRow | undefined;
+    .prepare('SELECT * FROM webhook_events WHERE provider_event_id = ?')
+    .get(providerEventId) as WebhookEventRow | undefined;
 
   return row ? rowToWebhookEvent(row) : null;
 }
