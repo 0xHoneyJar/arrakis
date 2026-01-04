@@ -1,5 +1,5 @@
 /**
- * Webhook Service (v5.0 - Sprint 2 Paddle Migration)
+ * Webhook Service (v5.1 - Sprint 67 LVVER Pattern Fix)
  *
  * Processes Paddle webhooks with idempotency guarantees:
  * - Signature verification via IBillingProvider
@@ -7,6 +7,14 @@
  * - Event-specific handlers for subscription lifecycle
  * - Grace period management on payment failures
  * - Entitlement cache invalidation on subscription changes
+ *
+ * LVVER Pattern (Lock-Verify-Validate-Execute-Record):
+ * 1. LOCK: Acquire distributed lock FIRST (prevents TOCTOU)
+ * 2. VERIFY: Check Redis and database for duplicates UNDER LOCK
+ * 3. VALIDATE: Validate event type is supported
+ * 4. EXECUTE: Process the event
+ * 5. RECORD: Persist to database and mark in Redis
+ * 6. UNLOCK: Release lock in finally block (guaranteed)
  *
  * Supported webhook events (normalized):
  * - subscription.created
@@ -43,6 +51,12 @@ import type { SubscriptionTier, SubscriptionStatus } from '../../types/billing.j
 
 /** Grace period duration in milliseconds (24 hours) */
 const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
+
+/** Default lock TTL in seconds (30 seconds for standard webhooks) */
+const DEFAULT_LOCK_TTL = 30;
+
+/** Extended lock TTL for boost/badge operations (60 seconds) */
+const EXTENDED_LOCK_TTL = 60;
 
 /** Supported webhook event types (normalized) */
 const SUPPORTED_EVENTS: NormalizedEventType[] = [
@@ -130,16 +144,19 @@ class WebhookService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Process a webhook event with idempotency
+   * Process a webhook event with idempotency using LVVER pattern
    *
-   * Flow:
-   * 1. Check Redis for event ID (fast)
-   * 2. Check database for event ID (fallback)
-   * 3. Acquire Redis lock for event
-   * 4. Process event based on type
-   * 5. Record event in database
-   * 6. Mark event in Redis
-   * 7. Release lock
+   * LVVER Flow (Lock-Verify-Validate-Execute-Record):
+   * 1. LOCK: Acquire Redis lock for event (FIRST - prevents TOCTOU)
+   * 2. VERIFY: Check Redis for event ID (fast)
+   * 3. VERIFY: Check database for event ID (fallback)
+   * 4. VALIDATE: Verify event type is supported
+   * 5. EXECUTE: Process event based on type
+   * 6. RECORD: Record event in database + mark in Redis
+   * 7. UNLOCK: Release lock (in finally block - guaranteed)
+   *
+   * Security: Lock acquisition MUST happen BEFORE any verification checks
+   * to prevent Time-of-Check-Time-of-Use (TOCTOU) race conditions.
    *
    * @param event - Verified provider event
    * @returns Processing result
@@ -150,34 +167,17 @@ class WebhookService {
 
     logger.info({ eventId, eventType, rawType: event.rawType }, 'Processing webhook event');
 
-    // Step 1: Check Redis for duplicate (fast path)
-    if (await redisService.isEventProcessed(eventId)) {
-      logger.debug({ eventId }, 'Event already processed (Redis cache hit)');
-      return {
-        status: 'duplicate',
-        eventId,
-        eventType,
-        message: 'Event already processed (Redis)',
-      };
-    }
-
-    // Step 2: Check database for duplicate (fallback)
-    if (isWebhookEventProcessed(eventId)) {
-      logger.debug({ eventId }, 'Event already processed (database check)');
-      // Update Redis cache for future requests
-      await redisService.markEventProcessed(eventId);
-      return {
-        status: 'duplicate',
-        eventId,
-        eventType,
-        message: 'Event already processed (database)',
-      };
-    }
-
-    // Step 3: Acquire lock for event processing
-    const lockAcquired = await redisService.acquireEventLock(eventId);
+    // ==========================================================================
+    // STEP 1 - LOCK: Acquire distributed lock FIRST (LVVER pattern)
+    // This MUST happen before any verification to prevent TOCTOU attacks
+    // Use extended TTL for boost/badge operations that involve external API calls
+    // ==========================================================================
+    const lockTtl = this.getLockTtlForEvent(event);
+    const lockAcquired = await redisService.acquireEventLock(eventId, lockTtl);
     if (!lockAcquired) {
       logger.debug({ eventId }, 'Event lock held by another process');
+      // Emit metric for lock contention monitoring
+      this.emitLockContentionMetric(eventId, eventType);
       return {
         status: 'duplicate',
         eventId,
@@ -187,7 +187,37 @@ class WebhookService {
     }
 
     try {
-      // Step 4: Process event based on type
+      // ========================================================================
+      // STEP 2 - VERIFY: Check Redis for duplicate (fast path, UNDER LOCK)
+      // ========================================================================
+      if (await redisService.isEventProcessed(eventId)) {
+        logger.debug({ eventId }, 'Event already processed (Redis cache hit)');
+        return {
+          status: 'duplicate',
+          eventId,
+          eventType,
+          message: 'Event already processed (Redis)',
+        };
+      }
+
+      // ========================================================================
+      // STEP 3 - VERIFY: Check database for duplicate (fallback, UNDER LOCK)
+      // ========================================================================
+      if (isWebhookEventProcessed(eventId)) {
+        logger.debug({ eventId }, 'Event already processed (database check)');
+        // Update Redis cache for future requests
+        await redisService.markEventProcessed(eventId);
+        return {
+          status: 'duplicate',
+          eventId,
+          eventType,
+          message: 'Event already processed (database)',
+        };
+      }
+
+      // ========================================================================
+      // STEP 4 - VALIDATE: Verify event type is supported
+      // ========================================================================
       if (!this.isSupportedEvent(eventType)) {
         logger.debug({ eventId, eventType }, 'Unsupported event type, skipping');
         return {
@@ -198,12 +228,15 @@ class WebhookService {
         };
       }
 
+      // ========================================================================
+      // STEP 5 - EXECUTE: Process the event
+      // ========================================================================
       await this.handleEvent(event);
 
-      // Step 5: Record successful processing in database
+      // ========================================================================
+      // STEP 6 - RECORD: Persist to database and mark in Redis
+      // ========================================================================
       recordWebhookEvent(eventId, eventType, JSON.stringify(event.data), 'processed');
-
-      // Step 6: Mark event in Redis for deduplication
       await redisService.markEventProcessed(eventId);
 
       logger.info({ eventId, eventType }, 'Webhook event processed successfully');
@@ -243,9 +276,52 @@ class WebhookService {
         error: errorMessage,
       };
     } finally {
-      // Step 7: Always release lock
+      // ========================================================================
+      // STEP 7 - UNLOCK: Release lock (guaranteed cleanup)
+      // ========================================================================
       await redisService.releaseEventLock(eventId);
     }
+  }
+
+  /**
+   * Emit metric for lock contention monitoring
+   * In production, this would increment a Prometheus counter
+   */
+  private emitLockContentionMetric(eventId: string, eventType: string): void {
+    logger.info(
+      { eventId, eventType, metric: 'sietch_webhook_lock_contention_total' },
+      'Lock contention detected'
+    );
+    // TODO: Increment Prometheus counter when metrics are implemented
+    // metricsService.incrementCounter('sietch_webhook_lock_contention_total', { eventType });
+  }
+
+  /**
+   * Get appropriate lock TTL based on event type
+   *
+   * Extended TTL (60s) for:
+   * - Boost purchases: External Paddle API calls, database writes
+   * - Badge purchases: Similar external API interaction
+   *
+   * Default TTL (30s) for:
+   * - Standard subscription events
+   * - Payment notifications (subscription-related)
+   */
+  private getLockTtlForEvent(event: ProviderWebhookEvent): number {
+    const data = event.data as Record<string, unknown>;
+    const customData = data.customData as Record<string, string> | undefined;
+    const paymentType = customData?.type;
+
+    // Boost and badge operations need extended TTL due to external API calls
+    if (paymentType === 'boost_purchase' || paymentType === 'badge_purchase') {
+      logger.debug(
+        { eventId: event.id, paymentType, ttl: EXTENDED_LOCK_TTL },
+        'Using extended lock TTL for payment operation'
+      );
+      return EXTENDED_LOCK_TTL;
+    }
+
+    return DEFAULT_LOCK_TTL;
   }
 
   // ---------------------------------------------------------------------------

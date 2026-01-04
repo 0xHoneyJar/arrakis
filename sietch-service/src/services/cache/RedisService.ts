@@ -1,12 +1,14 @@
 /**
- * Redis Service (v4.0 - Sprint 24)
+ * Redis Service (v5.1 - Sprint 67 Security Hardening)
  *
  * Manages Redis connection and provides caching utilities for:
  * - Entitlement caching (5-minute TTL)
  * - Webhook event deduplication (24-hour TTL)
  * - Event processing locks (30-second TTL)
+ * - Local rate limiter fallback when Redis unavailable
  *
- * Implements graceful degradation when Redis is unavailable.
+ * Security: Implements fail-safe pattern with local rate limiting
+ * when Redis is unavailable, preventing unbounded concurrency.
  */
 
 import { createRequire } from 'module';
@@ -53,6 +55,104 @@ const KEY_PREFIX = {
 } as const;
 
 // =============================================================================
+// Local Rate Limiter (Fallback for Redis Unavailable)
+// =============================================================================
+
+/**
+ * Token bucket rate limiter configuration
+ */
+interface RateLimiterConfig {
+  /** Maximum tokens (burst capacity) */
+  maxTokens: number;
+  /** Token refill rate per second */
+  refillRate: number;
+}
+
+/**
+ * Token bucket state for a single event type
+ */
+interface TokenBucket {
+  tokens: number;
+  lastRefill: number;
+}
+
+/**
+ * Local in-memory rate limiter using token bucket algorithm
+ *
+ * Used when Redis is unavailable to provide safe fallback behavior
+ * that prevents unbounded concurrency while still allowing some requests.
+ */
+class LocalRateLimiter {
+  private buckets: Map<string, TokenBucket> = new Map();
+  private config: RateLimiterConfig;
+  private fallbackCount = 0;
+
+  constructor(config: RateLimiterConfig = { maxTokens: 10, refillRate: 10 }) {
+    this.config = config;
+  }
+
+  /**
+   * Try to acquire a token for the given event type
+   * Returns true if allowed, false if rate limited
+   */
+  tryAcquire(eventType: string): boolean {
+    const now = Date.now();
+    let bucket = this.buckets.get(eventType);
+
+    if (!bucket) {
+      // Initialize new bucket with full tokens
+      bucket = {
+        tokens: this.config.maxTokens,
+        lastRefill: now,
+      };
+      this.buckets.set(eventType, bucket);
+    }
+
+    // Refill tokens based on elapsed time
+    const elapsed = (now - bucket.lastRefill) / 1000; // seconds
+    const refill = elapsed * this.config.refillRate;
+    bucket.tokens = Math.min(this.config.maxTokens, bucket.tokens + refill);
+    bucket.lastRefill = now;
+
+    // Try to consume a token
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      this.fallbackCount++;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Get the number of fallback requests processed
+   */
+  getFallbackCount(): number {
+    return this.fallbackCount;
+  }
+
+  /**
+   * Reset all buckets (for testing)
+   */
+  reset(): void {
+    this.buckets.clear();
+    this.fallbackCount = 0;
+  }
+
+  /**
+   * Clean up expired buckets (call periodically)
+   */
+  cleanup(maxAge: number = 60000): void {
+    const now = Date.now();
+    for (const [key, bucket] of this.buckets.entries()) {
+      if (now - bucket.lastRefill > maxAge) {
+        this.buckets.delete(key);
+      }
+    }
+  }
+}
+
+// =============================================================================
 // Redis Service Class
 // =============================================================================
 
@@ -60,6 +160,9 @@ class RedisService {
   private client: RedisClient | null = null;
   private isConnecting = false;
   private connectionError: Error | null = null;
+  private localRateLimiter: LocalRateLimiter = new LocalRateLimiter();
+  private redisFallbackTotal = 0;
+  private lockTtlExhaustedTotal = 0;
 
   // ---------------------------------------------------------------------------
   // Connection Management
@@ -380,36 +483,83 @@ class RedisService {
   /**
    * Acquire a lock for processing a webhook event
    * Returns true if lock acquired, false if already locked
+   *
+   * SECURITY (Sprint 67): Uses local rate limiter when Redis unavailable
+   * to prevent unbounded concurrency instead of fail-open behavior.
+   *
+   * @param eventId - Unique event identifier
+   * @param ttlSeconds - Lock TTL in seconds (default: 30)
    */
-  async acquireEventLock(eventId: string): Promise<boolean> {
+  async acquireEventLock(eventId: string, ttlSeconds: number = EVENT_LOCK_TTL): Promise<boolean> {
     if (!this.isConnected()) {
-      // If Redis unavailable, allow processing (no distributed locking)
-      logger.debug({ eventId }, 'Redis unavailable, skipping event lock');
-      return true;
+      // SECURITY: Use local rate limiter instead of fail-open
+      // This prevents unbounded concurrency when Redis is down
+      const eventType = this.extractEventType(eventId);
+      const allowed = this.localRateLimiter.tryAcquire(eventType);
+
+      this.redisFallbackTotal++;
+      logger.warn(
+        {
+          eventId,
+          eventType,
+          allowed,
+          fallbackCount: this.localRateLimiter.getFallbackCount(),
+          metric: 'sietch_redis_fallback_total',
+        },
+        'Redis unavailable, using local rate limiter for event lock'
+      );
+
+      return allowed;
     }
 
     const key = `${KEY_PREFIX.eventLock}:${eventId}`;
 
     try {
       // SET NX EX: Set if Not eXists with EXpiration
-      const result = await this.client!.set(key, '1', 'EX', EVENT_LOCK_TTL, 'NX');
+      const result = await this.client!.set(key, '1', 'EX', ttlSeconds, 'NX');
       const acquired = result === 'OK';
 
       if (acquired) {
-        logger.debug({ eventId, ttl: EVENT_LOCK_TTL }, 'Acquired event lock');
+        logger.debug({ eventId, ttl: ttlSeconds }, 'Acquired event lock');
       } else {
         logger.debug({ eventId }, 'Event lock already held');
       }
 
       return acquired;
     } catch (error) {
+      // SECURITY: Use local rate limiter on Redis errors too
+      const eventType = this.extractEventType(eventId);
+      const allowed = this.localRateLimiter.tryAcquire(eventType);
+
+      this.redisFallbackTotal++;
       logger.warn(
-        { eventId, error: (error as Error).message },
-        'Failed to acquire event lock, allowing processing'
+        {
+          eventId,
+          eventType,
+          allowed,
+          error: (error as Error).message,
+          metric: 'sietch_redis_fallback_total',
+        },
+        'Redis lock failed, using local rate limiter fallback'
       );
-      // On error, allow processing to avoid blocking
-      return true;
+
+      return allowed;
     }
+  }
+
+  /**
+   * Extract event type from event ID for rate limiting purposes
+   * Event IDs typically follow patterns like: evt_<type>_<uuid>
+   */
+  private extractEventType(eventId: string): string {
+    // Try to extract type from common patterns
+    // e.g., "evt_subscription_created_abc123" -> "subscription_created"
+    const parts = eventId.split('_');
+    if (parts.length >= 3) {
+      return `${parts[1]}_${parts[2]}`;
+    }
+    // Default to "unknown" for unparseable IDs
+    return 'unknown';
   }
 
   /**
@@ -530,6 +680,45 @@ class RedisService {
       logger.warn({ error: (error as Error).message }, 'Redis INFO failed');
       return null;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Metrics (Sprint 67)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get fallback metrics for monitoring
+   */
+  getMetrics(): {
+    redisFallbackTotal: number;
+    localRateLimiterRequests: number;
+    lockTtlExhaustedTotal: number;
+  } {
+    return {
+      redisFallbackTotal: this.redisFallbackTotal,
+      localRateLimiterRequests: this.localRateLimiter.getFallbackCount(),
+      lockTtlExhaustedTotal: this.lockTtlExhaustedTotal,
+    };
+  }
+
+  /**
+   * Increment lock TTL exhausted counter
+   */
+  incrementLockTtlExhausted(): void {
+    this.lockTtlExhaustedTotal++;
+    logger.warn(
+      { metric: 'sietch_lock_ttl_exhausted_total', count: this.lockTtlExhaustedTotal },
+      'Lock TTL exhausted before operation completed'
+    );
+  }
+
+  /**
+   * Reset local rate limiter (for testing)
+   */
+  resetLocalRateLimiter(): void {
+    this.localRateLimiter.reset();
+    this.redisFallbackTotal = 0;
+    this.lockTtlExhaustedTotal = 0;
   }
 }
 

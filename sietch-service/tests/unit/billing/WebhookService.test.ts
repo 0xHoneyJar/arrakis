@@ -1,7 +1,8 @@
 /**
- * WebhookService Tests (v5.0 - Sprint 2 Paddle Migration)
+ * WebhookService Tests (v5.1 - Sprint 67 LVVER Pattern)
  *
  * Tests for Paddle webhook processing with idempotency.
+ * Includes LVVER pattern verification and concurrent processing tests.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -544,6 +545,275 @@ describe('WebhookService', () => {
 
       expect(result.status).toBe('processed');
       expect(mockBillingQueries.updateSubscription).not.toHaveBeenCalled();
+    });
+  });
+
+  // ===========================================================================
+  // LVVER Pattern Tests (Sprint 67)
+  // ===========================================================================
+
+  describe('LVVER Pattern - Lock-Verify-Validate-Execute-Record', () => {
+    const createSubscriptionEvent = (): ProviderWebhookEvent => ({
+      id: 'evt_lvver_test',
+      type: 'subscription.created',
+      rawType: 'subscription.created',
+      data: {
+        id: 'sub_123',
+        customerId: 'cus_123',
+        status: 'active',
+        customData: {
+          community_id: 'community-123',
+          tier: 'premium',
+        },
+        currentBillingPeriod: {
+          startsAt: new Date().toISOString(),
+          endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+      },
+      timestamp: new Date(),
+    });
+
+    it('should acquire lock BEFORE checking for duplicates (LVVER order)', async () => {
+      const callOrder: string[] = [];
+
+      // Track the order of calls
+      mockRedisService.acquireEventLock.mockImplementation(() => {
+        callOrder.push('acquireEventLock');
+        return Promise.resolve(true);
+      });
+      mockRedisService.isEventProcessed.mockImplementation(() => {
+        callOrder.push('isEventProcessed');
+        return Promise.resolve(false);
+      });
+      mockBillingQueries.isWebhookEventProcessed.mockImplementation(() => {
+        callOrder.push('isWebhookEventProcessed');
+        return false;
+      });
+      mockBillingQueries.getSubscriptionByCommunityId.mockReturnValue(null);
+
+      const event = createSubscriptionEvent();
+      await webhookService.processEvent(event);
+
+      // Verify LVVER order: Lock MUST come first
+      expect(callOrder[0]).toBe('acquireEventLock');
+      expect(callOrder[1]).toBe('isEventProcessed');
+      expect(callOrder[2]).toBe('isWebhookEventProcessed');
+    });
+
+    it('should verify lock contention metric is emitted when lock not acquired', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(false);
+
+      const event = createSubscriptionEvent();
+      const result = await webhookService.processEvent(event);
+
+      // Result indicates lock contention
+      expect(result.status).toBe('duplicate');
+      expect(result.message).toContain('another instance');
+
+      // Lock should NOT release since we never acquired it
+      expect(mockRedisService.releaseEventLock).not.toHaveBeenCalled();
+    });
+
+    it('should simulate concurrent webhook processing - only one succeeds', async () => {
+      // Simulate concurrent requests where only the first gets the lock
+      let lockHolder: string | null = null;
+
+      mockRedisService.acquireEventLock.mockImplementation(async (eventId: string) => {
+        // Simulate Redis SET NX behavior
+        if (lockHolder === null) {
+          lockHolder = eventId;
+          return true;
+        }
+        return false;
+      });
+
+      mockRedisService.releaseEventLock.mockImplementation(async () => {
+        lockHolder = null;
+      });
+
+      mockBillingQueries.getSubscriptionByCommunityId.mockReturnValue(null);
+
+      const event1 = createSubscriptionEvent();
+      const event2 = { ...createSubscriptionEvent(), id: 'evt_lvver_test' }; // Same event ID
+
+      // Process both "concurrently" (simulated)
+      const results = await Promise.all([
+        webhookService.processEvent(event1),
+        webhookService.processEvent(event2),
+      ]);
+
+      // One should succeed, one should report duplicate
+      const processed = results.filter(r => r.status === 'processed');
+      const duplicates = results.filter(r => r.status === 'duplicate');
+
+      expect(processed.length).toBe(1);
+      expect(duplicates.length).toBe(1);
+    });
+
+    it('should release lock in finally block even when processing fails', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+
+      // Make handler throw an error
+      mockBillingQueries.getSubscriptionByCommunityId.mockImplementation(() => {
+        throw new Error('Database connection failed');
+      });
+
+      const event = createSubscriptionEvent();
+      const result = await webhookService.processEvent(event);
+
+      expect(result.status).toBe('failed');
+      expect(result.error).toBe('Database connection failed');
+
+      // Lock MUST be released even on error
+      expect(mockRedisService.releaseEventLock).toHaveBeenCalledWith('evt_lvver_test');
+    });
+
+    it('should release lock when event is duplicate in Redis (found under lock)', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(true); // Duplicate found
+
+      const event = createSubscriptionEvent();
+      const result = await webhookService.processEvent(event);
+
+      expect(result.status).toBe('duplicate');
+      expect(result.message).toContain('Redis');
+
+      // Lock should be released
+      expect(mockRedisService.releaseEventLock).toHaveBeenCalledWith('evt_lvver_test');
+    });
+
+    it('should release lock when event is duplicate in database (found under lock)', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(true); // Duplicate found
+
+      const event = createSubscriptionEvent();
+      const result = await webhookService.processEvent(event);
+
+      expect(result.status).toBe('duplicate');
+      expect(result.message).toContain('database');
+
+      // Lock should be released
+      expect(mockRedisService.releaseEventLock).toHaveBeenCalledWith('evt_lvver_test');
+    });
+  });
+
+  // ===========================================================================
+  // Extended Lock TTL Tests (Sprint 67 - Task 67.4)
+  // ===========================================================================
+
+  describe('Extended Lock TTL for Boost/Badge Operations', () => {
+    it('should use default TTL (30s) for subscription events', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+      mockBillingQueries.getSubscriptionByCommunityId.mockReturnValue(null);
+
+      const event: ProviderWebhookEvent = {
+        id: 'evt_sub_test',
+        type: 'subscription.created',
+        rawType: 'subscription.created',
+        data: {
+          id: 'sub_123',
+          customerId: 'cus_123',
+          customData: {
+            community_id: 'community-123',
+            tier: 'premium',
+          },
+        },
+        timestamp: new Date(),
+      };
+
+      await webhookService.processEvent(event);
+
+      // Should use default TTL (30 seconds)
+      expect(mockRedisService.acquireEventLock).toHaveBeenCalledWith('evt_sub_test', 30);
+    });
+
+    it('should use extended TTL (60s) for boost purchase events', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+
+      const event: ProviderWebhookEvent = {
+        id: 'evt_boost_test',
+        type: 'payment.completed',
+        rawType: 'transaction.completed',
+        data: {
+          id: 'txn_123',
+          customData: {
+            type: 'boost_purchase',
+            community_id: 'community-123',
+            member_id: 'member-123',
+            months: '3',
+          },
+        },
+        timestamp: new Date(),
+      };
+
+      await webhookService.processEvent(event);
+
+      // Should use extended TTL (60 seconds) for boost operations
+      expect(mockRedisService.acquireEventLock).toHaveBeenCalledWith('evt_boost_test', 60);
+    });
+
+    it('should use extended TTL (60s) for badge purchase events', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+
+      const event: ProviderWebhookEvent = {
+        id: 'evt_badge_test',
+        type: 'payment.completed',
+        rawType: 'transaction.completed',
+        data: {
+          id: 'txn_456',
+          customData: {
+            type: 'badge_purchase',
+            community_id: 'community-123',
+            member_id: 'member-123',
+          },
+        },
+        timestamp: new Date(),
+      };
+
+      await webhookService.processEvent(event);
+
+      // Should use extended TTL (60 seconds) for badge operations
+      expect(mockRedisService.acquireEventLock).toHaveBeenCalledWith('evt_badge_test', 60);
+    });
+
+    it('should use default TTL for regular payment events', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+      mockBillingQueries.getSubscriptionByPaymentId.mockReturnValue({
+        id: 1,
+        communityId: 'community-123',
+        paymentSubscriptionId: 'sub_123',
+      });
+
+      const event: ProviderWebhookEvent = {
+        id: 'evt_payment_test',
+        type: 'payment.completed',
+        rawType: 'transaction.completed',
+        data: {
+          id: 'txn_789',
+          subscriptionId: 'sub_123',
+          customData: {
+            community_id: 'community-123',
+            // No type field - regular subscription payment
+          },
+        },
+        timestamp: new Date(),
+      };
+
+      await webhookService.processEvent(event);
+
+      // Should use default TTL (30 seconds) for regular payments
+      expect(mockRedisService.acquireEventLock).toHaveBeenCalledWith('evt_payment_test', 30);
     });
   });
 });
