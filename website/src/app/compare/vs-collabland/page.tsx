@@ -1,600 +1,397 @@
-'use client';
-
+import type { Metadata } from 'next';
 import Link from 'next/link';
-import {
-  ArrowRight,
-  Check,
-  X,
-  Minus,
-  Shield,
-  TrendingUp,
-  Users,
-  BarChart3,
-  Clock,
-  Layers,
-  Award,
-  Eye,
-  Zap,
-  RefreshCw,
-  CheckCircle
-} from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: 'vs collab.land // ARRAKIS',
+  description:
+    'Collab.Land gates the door. Arrakis creates the journey. Compare engagement intelligence vs access control.',
+};
 
 export default function VsCollabLandPage() {
   return (
-    <main className="min-h-screen">
-      {/* Hero Section */}
-      <section className="section bg-gradient-to-b from-desert-900 to-desert-800 text-white">
-        <div className="container-custom">
-          <div className="max-w-4xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-spice-500/20 text-spice-300 px-4 py-2 rounded-full text-sm font-medium mb-6">
-              Comparison
-            </div>
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              Collab.Land gates the door. Arrakis creates the journey.
-            </h1>
-            <p className="text-xl md:text-2xl text-sand-300 mb-8 max-w-3xl mx-auto">
-              Collab.Land is the industry standard for token-gating. But access control is just the beginning. Arrakis adds engagement intelligence — so you know who matters, not just who can enter.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/pricing" className="btn bg-spice-500 hover:bg-spice-600 text-white px-8 py-4 text-lg">
-                Try Arrakis Free
-              </Link>
-              <a href="#comparison" className="btn bg-white/10 hover:bg-white/20 text-white border border-white/30 px-8 py-4 text-lg">
-                See Full Comparison
-              </a>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-16">
+      {/* Header */}
+      <section>
+        <div className="text-sand-dim text-xs mb-2">// compare / vs-collabland</div>
+        <h1 className="text-2xl text-sand-bright">
+          collab.land gates the door. arrakis creates the journey.
+        </h1>
+        <p className="text-sand mt-2">
+          collab.land is the industry standard for token-gating. but access control
+          is just the beginning. arrakis adds engagement intelligence — so you know
+          who matters, not just who can enter.
+        </p>
       </section>
 
       {/* Quick Comparison */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            {/* Arrakis */}
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border-2 border-spice-500">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center">
-                  <span className="text-white font-bold text-xl">A</span>
-                </div>
-                <h3 className="text-2xl font-bold text-desert-900">Arrakis</h3>
-              </div>
-              <ul className="space-y-3">
-                {[
-                  'Token-gating',
-                  'Multi-chain',
-                  'Conviction scoring',
-                  '9-tier progression',
-                  '10+ badges',
-                  'Shadow mode',
-                  'Analytics dashboard'
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3">
-                    <Check className="w-5 h-5 text-spice-500" />
-                    <span className="text-desert-800">{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-6 pt-6 border-t border-spice-200">
-                <p className="text-desert-600">Premium: <span className="font-bold text-desert-900">$99/mo</span></p>
-              </div>
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// quick_comparison</div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border border-spice/50 p-4">
+            <div className="text-spice mb-3">ARRAKIS</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-spice">+</span> token-gating</p>
+              <p><span className="text-spice">+</span> multi-chain</p>
+              <p><span className="text-spice">+</span> conviction scoring</p>
+              <p><span className="text-spice">+</span> 9-tier progression</p>
+              <p><span className="text-spice">+</span> 10+ badges</p>
+              <p><span className="text-spice">+</span> shadow mode</p>
+              <p><span className="text-spice">+</span> analytics dashboard</p>
             </div>
-
-            {/* Collab.Land */}
-            <div className="bg-white p-8 rounded-2xl border border-sand-200">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-sand-200 rounded-xl flex items-center justify-center">
-                  <span className="text-desert-600 font-bold text-xl">C</span>
-                </div>
-                <h3 className="text-2xl font-bold text-desert-900">Collab.Land</h3>
-              </div>
-              <ul className="space-y-3">
-                {[
-                  { text: 'Token-gating', has: true },
-                  { text: 'Multi-chain (40+)', has: true },
-                  { text: 'No conviction scoring', has: false },
-                  { text: 'No tiered progression', has: false },
-                  { text: 'No badge system', has: false },
-                  { text: 'No coexistence mode', has: false },
-                  { text: 'Basic analytics', has: false }
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3">
-                    {item.has ? (
-                      <Check className="w-5 h-5 text-green-500" />
-                    ) : (
-                      <Minus className="w-5 h-5 text-sand-400" />
-                    )}
-                    <span className={item.has ? 'text-desert-800' : 'text-desert-400'}>{item.text}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-6 pt-6 border-t border-sand-200">
-                <p className="text-desert-600">Standard: <span className="font-bold text-desert-900">~$49-99/mo</span></p>
-                <p className="text-desert-600">Elite: <span className="font-bold text-desert-900">$449/mo</span></p>
-              </div>
+            <div className="text-sand-dim text-xs mt-4 pt-3 border-t border-sand-dim/30">
+              premium: $99/mo
             </div>
           </div>
-
-          {/* Core Difference */}
-          <div className="max-w-3xl mx-auto mt-16 text-center">
-            <h3 className="text-2xl font-bold text-desert-900 mb-6">The Core Difference</h3>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="bg-white p-6 rounded-xl border border-sand-200">
-                <p className="text-desert-600 mb-2">Collab.Land answers:</p>
-                <p className="text-xl font-bold text-desert-900">"Does this wallet hold our token?"</p>
-              </div>
-              <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-6 rounded-xl border border-spice-200">
-                <p className="text-desert-600 mb-2">Arrakis answers:</p>
-                <p className="text-xl font-bold text-spice-600">"Does this person believe in our project?"</p>
-              </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-sand-bright mb-3">COLLAB.LAND</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-sand-dim">+</span> token-gating</p>
+              <p><span className="text-sand-dim">+</span> multi-chain (40+)</p>
+              <p><span className="text-sand-dim">-</span> no conviction scoring</p>
+              <p><span className="text-sand-dim">-</span> no tiered progression</p>
+              <p><span className="text-sand-dim">-</span> no badge system</p>
+              <p><span className="text-sand-dim">-</span> no coexistence mode</p>
+              <p><span className="text-sand-dim">-</span> basic analytics</p>
+            </div>
+            <div className="text-sand-dim text-xs mt-4 pt-3 border-t border-sand-dim/30">
+              standard: ~$49-99/mo | elite: $449/mo
             </div>
           </div>
         </div>
       </section>
 
-      {/* Detailed Comparison Table */}
-      <section id="comparison" className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Detailed Feature Comparison
-            </h2>
+      {/* Core Difference */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// core_difference</div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border border-sand-dim/30 p-4 text-center">
+            <div className="text-sand-dim text-xs mb-2">collab.land answers:</div>
+            <div className="text-sand-bright">
+              &quot;does this wallet hold our token?&quot;
+            </div>
           </div>
-
-          <div className="max-w-4xl mx-auto overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b-2 border-sand-200">
-                  <th className="text-left py-4 px-4 text-desert-600 font-medium">Feature</th>
-                  <th className="text-center py-4 px-4 text-spice-600 font-bold">Arrakis</th>
-                  <th className="text-center py-4 px-4 text-desert-600 font-bold">Collab.Land</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Token-Gating Section */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Token-Gating</td>
-                </tr>
-                {[
-                  { feature: 'ERC20 balance check', arrakis: true, collab: true },
-                  { feature: 'NFT ownership', arrakis: true, collab: true },
-                  { feature: 'Multi-chain support', arrakis: 'Score Service', collab: '40+ chains' },
-                  { feature: 'Multi-wallet per user', arrakis: true, collab: true }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      {row.arrakis === true ? (
-                        <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                      ) : (
-                        <span className="text-spice-600 font-medium">{row.arrakis}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {row.collab === true ? (
-                        <Check className="w-5 h-5 text-green-500 mx-auto" />
-                      ) : row.collab === false ? (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      ) : (
-                        <span className="text-desert-600">{row.collab}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Engagement Intelligence */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Engagement Intelligence</td>
-                </tr>
-                {[
-                  { feature: 'Conviction scoring', arrakis: true, collab: false },
-                  { feature: 'Holding duration analysis', arrakis: true, collab: false },
-                  { feature: 'Trading pattern detection', arrakis: true, collab: false },
-                  { feature: 'Diamond hands identification', arrakis: true, collab: false }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Progression System */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Progression System</td>
-                </tr>
-                {[
-                  { feature: 'Tiered roles', arrakis: '9 tiers', collab: false },
-                  { feature: 'Dynamic rank progression', arrakis: true, collab: false },
-                  { feature: 'Badge gamification', arrakis: '10+ types', collab: false },
-                  { feature: 'Badge lineage tracking', arrakis: true, collab: false }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      {row.arrakis === true ? (
-                        <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                      ) : (
-                        <span className="text-spice-600 font-medium">{row.arrakis}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Operations */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Operations</td>
-                </tr>
-                {[
-                  { feature: 'Self-service setup', arrakis: '15 min', collab: true },
-                  { feature: 'Balance refresh', arrakis: '6 hours', collab: '24 hours' },
-                  { feature: 'Shadow/coexistence mode', arrakis: true, collab: false }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      {row.arrakis === true ? (
-                        <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                      ) : (
-                        <span className="text-spice-600 font-medium">{row.arrakis}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {row.collab === true ? (
-                        <Check className="w-5 h-5 text-green-500 mx-auto" />
-                      ) : row.collab === false ? (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      ) : (
-                        <span className="text-desert-600">{row.collab}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Enterprise */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Enterprise</td>
-                </tr>
-                {[
-                  { feature: 'Row-level security', arrakis: true, collab: 'Unknown' },
-                  { feature: 'Audit trail', arrakis: true, collab: 'Partial' },
-                  { feature: 'Custom themes', arrakis: true, collab: false },
-                  { feature: 'White-label', arrakis: true, collab: false }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {row.collab === true ? (
-                        <Check className="w-5 h-5 text-green-500 mx-auto" />
-                      ) : row.collab === false ? (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      ) : (
-                        <span className="text-desert-500 text-sm">{row.collab}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="border border-spice/50 p-4 text-center">
+            <div className="text-sand-dim text-xs mb-2">arrakis answers:</div>
+            <div className="text-spice">
+              &quot;does this person believe in our project?&quot;
+            </div>
           </div>
+        </div>
+      </section>
+
+      {/* Detailed Comparison */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// detailed_comparison</div>
+        <div className="border border-sand-dim/30 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-sand-dim/30">
+                <th className="text-left p-3 text-sand-dim">feature</th>
+                <th className="text-center p-3 text-spice">arrakis</th>
+                <th className="text-center p-3 text-sand-dim">collab.land</th>
+              </tr>
+            </thead>
+            <tbody className="text-sand">
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>token-gating</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">erc20 balance check</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">nft ownership</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">multi-chain support</td>
+                <td className="p-3 text-center text-spice">score service</td>
+                <td className="p-3 text-center text-sand-dim">40+ chains</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>engagement intelligence</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">conviction scoring</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">holding duration analysis</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">trading pattern detection</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">diamond hands identification</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>progression system</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">tiered roles</td>
+                <td className="p-3 text-center text-spice">9 tiers</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">dynamic rank progression</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">badge gamification</td>
+                <td className="p-3 text-center text-spice">10+ types</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>operations</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">self-service setup</td>
+                <td className="p-3 text-center text-spice">15 min</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">balance refresh</td>
+                <td className="p-3 text-center text-spice">6 hours</td>
+                <td className="p-3 text-center text-sand-dim">24 hours</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">shadow/coexistence mode</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>enterprise</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">row-level security</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">unknown</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">audit trail</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">partial</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">custom themes</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr>
+                <td className="p-3">white-label</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
       {/* What Collab.Land Does Well */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-8 text-center">
-              What Collab.Land Does Well
-            </h2>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 mb-8">
-              <h3 className="text-xl font-bold text-desert-900 mb-4">Market Leader in Access Control</h3>
-              <p className="text-desert-600 mb-6">
-                Collab.Land pioneered token-gating. With 6.5+ million verified wallets and tens of thousands of communities, they've proven the category.
-              </p>
-              <div className="grid md:grid-cols-2 gap-4">
-                {[
-                  'Massive scale and track record',
-                  '40+ chains supported',
-                  'First-mover trust',
-                  'Well-documented APIs'
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Check className="w-5 h-5 text-green-500" />
-                    <span className="text-desert-700">{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-sand-100 to-sand-50 p-6 rounded-xl border border-sand-200 text-center">
-              <p className="text-desert-700">
-                <strong>If you only need binary access control</strong> (hold token &rarr; get role), Collab.Land works.
-              </p>
-            </div>
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// what_collabland_does_well</div>
+        <div className="border border-sand-dim/30 p-4">
+          <div className="text-sand-bright mb-3">market leader in access control</div>
+          <p className="text-sand text-sm mb-4">
+            collab.land pioneered token-gating. with 6.5+ million verified wallets and
+            tens of thousands of communities, they&apos;ve proven the category.
+          </p>
+          <div className="grid md:grid-cols-2 gap-2 text-sm">
+            <div className="text-sand"><span className="text-sand-dim">+</span> massive scale and track record</div>
+            <div className="text-sand"><span className="text-sand-dim">+</span> 40+ chains supported</div>
+            <div className="text-sand"><span className="text-sand-dim">+</span> first-mover trust</div>
+            <div className="text-sand"><span className="text-sand-dim">+</span> well-documented apis</div>
           </div>
+          <p className="text-sand-dim text-sm mt-4 pt-3 border-t border-sand-dim/30">
+            if you only need binary access control (hold token → get role), collab.land works.
+          </p>
         </div>
       </section>
 
       {/* What Arrakis Adds */}
-      <section className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              What Arrakis Adds
-            </h2>
-            <p className="text-xl text-desert-600">
-              Collab.Land tells you who holds your token. Arrakis tells you who <em>believes</em> in your project.
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// what_arrakis_adds</div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">conviction_scoring</div>
+            <p className="text-sand text-sm">
+              we analyze on-chain behavior — holding duration, trading patterns,
+              accumulation history — to identify your most committed members.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              use case: weight your next airdrop by conviction, not just balance.
             </p>
           </div>
-
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <TrendingUp className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Conviction Scoring</h3>
-              <p className="text-desert-600 mb-4">
-                We analyze on-chain behavior — holding duration, trading patterns, accumulation history — to identify your most committed members. Your 2-year diamond hands are different from yesterday's buyers.
-              </p>
-              <div className="bg-white/50 rounded-lg p-3 border border-spice-100">
-                <p className="text-sm text-desert-700">
-                  <strong>Use case:</strong> Weight your next airdrop by conviction, not just balance.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Layers className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">9-Tier Progression</h3>
-              <p className="text-desert-600 mb-4">
-                Binary access (yes/no) is flat. Arrakis creates a journey from Outsider to Naib council. Your top 7 holders become your visible leadership. Status drives engagement.
-              </p>
-              <div className="bg-white/50 rounded-lg p-3 border border-spice-100">
-                <p className="text-sm text-desert-700">
-                  <strong>Use case:</strong> Create council-only channels for your most committed members.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Award className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Badge Gamification</h3>
-              <p className="text-desert-600 mb-4">
-                10+ badge types for tenure, achievements, and community contribution. Create collector culture where long-term holding is recognized.
-              </p>
-              <div className="bg-white/50 rounded-lg p-3 border border-spice-100">
-                <p className="text-sm text-desert-700">
-                  <strong>Use case:</strong> Award "First Wave" badges to founding members automatically.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Eye className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Shadow Mode</h3>
-              <p className="text-desert-600 mb-4">
-                Already on Collab.Land? Run Arrakis in parallel. See your conviction data without changing anything. Switch when you're confident.
-              </p>
-              <div className="bg-white/50 rounded-lg p-3 border border-spice-100">
-                <p className="text-sm text-desert-700">
-                  <strong>Use case:</strong> Validate Arrakis accuracy before migrating.
-                </p>
-              </div>
-            </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">9_tier_progression</div>
+            <p className="text-sand text-sm">
+              binary access (yes/no) is flat. arrakis creates a journey from outsider
+              to naib council. your top 7 holders become visible leadership.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              use case: create council-only channels for your most committed members.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">badge_gamification</div>
+            <p className="text-sand text-sm">
+              10+ badge types for tenure, achievements, and community contribution.
+              create collector culture where long-term holding is recognized.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              use case: award &quot;first wave&quot; badges to founding members automatically.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">shadow_mode</div>
+            <p className="text-sand text-sm">
+              already on collab.land? run arrakis in parallel. see your conviction
+              data without changing anything. switch when you&apos;re confident.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              use case: validate arrakis accuracy before migrating.
+            </p>
           </div>
         </div>
       </section>
 
       {/* Migration Path */}
-      <section className="section bg-desert-900 text-white">
-        <div className="container-custom">
-          <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                How to Switch (or Add) Arrakis
-              </h2>
-              <p className="text-xl text-sand-300">
-                You don't have to choose one or the other. Arrakis is designed to work alongside Collab.Land.
-              </p>
-            </div>
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// migration_path</div>
+        <pre className="text-sand text-xs overflow-x-auto whitespace-pre border border-sand-dim/30 p-4">
+{`┌──────────────────────────────────────────────────────────────┐
+│                      MIGRATION PATH                          │
+├────────────────┬─────────────────────────────────────────────┤
+│  STEP 1        │ shadow mode - observe without managing      │
+│  STEP 2        │ validate - compare to your intuition        │
+│  STEP 3        │ parallel - namespaced roles coexist         │
+│  STEP 4        │ primary - promote arrakis, keep fallback    │
+└────────────────┴─────────────────────────────────────────────┘
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                {
-                  step: 1,
-                  title: 'Shadow Mode',
-                  desc: 'Install Arrakis in shadow mode. It observes your community without managing roles. See conviction data for all your holders.'
-                },
-                {
-                  step: 2,
-                  title: 'Validate',
-                  desc: 'Compare our conviction scoring to your intuition. Do we correctly identify your diamond hands? Your flippers?'
-                },
-                {
-                  step: 3,
-                  title: 'Parallel Mode',
-                  desc: 'Run Arrakis roles alongside Collab.Land. Namespaced roles coexist with existing setup.'
-                },
-                {
-                  step: 4,
-                  title: 'Primary Mode',
-                  desc: 'When confident, promote Arrakis to primary. Keep Collab.Land as fallback or remove entirely.'
-                }
-              ].map((item, i) => (
-                <div key={i} className="bg-white/5 p-6 rounded-xl border border-white/10">
-                  <div className="w-10 h-10 bg-spice-500 rounded-lg flex items-center justify-center text-white font-bold mb-4">
-                    {item.step}
-                  </div>
-                  <h3 className="font-bold text-lg mb-2">{item.title}</h3>
-                  <p className="text-sand-300 text-sm">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="text-center mt-12">
-              <p className="text-spice-400 font-bold text-lg">
-                Zero-risk migration: Try before you switch.
-              </p>
-            </div>
-          </div>
-        </div>
+zero-risk migration: try before you switch.`}
+        </pre>
       </section>
 
       {/* When to Choose */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              When to Choose Each
-            </h2>
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// when_to_choose</div>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-sand-bright text-sm mb-3">choose collab.land if:</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-sand-dim">-</span> you only need binary access control</p>
+              <p><span className="text-sand-dim">-</span> scale and track record are primary</p>
+              <p><span className="text-sand-dim">-</span> you don&apos;t need analytics/progression</p>
+              <p><span className="text-sand-dim">-</span> you want the market standard</p>
+            </div>
           </div>
-
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <div className="bg-white p-8 rounded-2xl border border-sand-200">
-              <h3 className="text-xl font-bold text-desert-900 mb-6">Choose Collab.Land If:</h3>
-              <ul className="space-y-3">
-                {[
-                  'You only need binary access control',
-                  'Scale and track record are primary concerns',
-                  "You don't need analytics or progression",
-                  'You want the market standard'
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-desert-600">{item}</span>
-                  </li>
-                ))}
-              </ul>
+          <div className="border border-spice/50 p-4">
+            <div className="text-spice text-sm mb-3">choose arrakis if:</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-spice">+</span> you want to identify valuable members</p>
+              <p><span className="text-spice">+</span> you&apos;re planning airdrops</p>
+              <p><span className="text-spice">+</span> you want tiered progression</p>
+              <p><span className="text-spice">+</span> you value analytics and insights</p>
+              <p><span className="text-spice">+</span> you want to try alongside current setup</p>
             </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border-2 border-spice-500">
-              <h3 className="text-xl font-bold text-desert-900 mb-6">Choose Arrakis If:</h3>
-              <ul className="space-y-3">
-                {[
-                  'You want to identify your most valuable members',
-                  "You're planning airdrops and need conviction data",
-                  'You want tiered progression to drive engagement',
-                  'You value analytics and holder insights',
-                  'You want to try alongside your current setup'
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <Check className="w-5 h-5 text-spice-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-desert-700">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200">
-              <h3 className="text-xl font-bold text-desert-900 mb-6">Use Both If:</h3>
-              <ul className="space-y-3">
-                {[
-                  'You want shadow mode evaluation before committing',
-                  "You need Collab.Land's specific integrations",
-                  'You want engagement intelligence on top of access control'
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <Check className="w-5 h-5 text-desert-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-desert-600">{item}</span>
-                  </li>
-                ))}
-              </ul>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-sand-bright text-sm mb-3">use both if:</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-sand-dim">-</span> you want shadow mode evaluation</p>
+              <p><span className="text-sand-dim">-</span> you need collab.land integrations</p>
+              <p><span className="text-sand-dim">-</span> you want intelligence on top of access</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* FAQ / Objections */}
-      <section className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Common Questions
-            </h2>
-          </div>
-
-          <div className="max-w-3xl mx-auto space-y-6">
-            {[
-              {
-                q: '"We already use Collab.Land and it works fine"',
-                a: "Collab.Land is great for access control. If that's all you need, stay with it. But when you need to know who your diamond hands are — for airdrops, for governance, for recognizing your true believers — that's where Arrakis starts. Shadow mode lets you see the data without changing anything."
-              },
-              {
-                q: '"Collab.Land has more chain support"',
-                a: "True — 40+ chains vs our Score Service coverage. But chain count is commoditizing. What matters is intelligence: do you know who believes in your project? More chains don't tell you that."
-              },
-              {
-                q: '"Collab.Land is the industry standard"',
-                a: "They are, for access control. We're not trying to replace access control — we're adding an engagement layer on top. Industry standards evolve as needs evolve."
-              },
-              {
-                q: '"I don\'t want to switch"',
-                a: "Then don't. Shadow mode runs alongside Collab.Land. Zero changes to your current setup. See what conviction data reveals, decide later."
-              }
-            ].map((item, i) => (
-              <div key={i} className="bg-sand-50 p-6 rounded-xl border border-sand-200">
-                <h3 className="font-bold text-desert-900 mb-3">{item.q}</h3>
-                <p className="text-desert-600">{item.a}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className="section bg-gradient-to-b from-desert-900 to-desert-950 text-white">
-        <div className="container-custom">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-5xl font-bold mb-6">
-              See what conviction data reveals about your community
-            </h2>
-            <p className="text-xl text-sand-300 mb-8">
-              Run Arrakis in shadow mode alongside Collab.Land. No changes to your current setup. See your diamond hands.
+      {/* FAQ */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// faq</div>
+        <div className="space-y-4 text-sm">
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> we already use collab.land and it works fine
             </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Link href="/pricing" className="btn bg-spice-500 hover:bg-spice-600 text-white px-8 py-4 text-lg">
-                Start Shadow Mode Free
-                <ArrowRight className="ml-2 w-5 h-5 inline" />
-              </Link>
-              <Link href="/pricing" className="btn bg-white/10 hover:bg-white/20 text-white border border-white/30 px-8 py-4 text-lg">
-                Schedule Demo
-              </Link>
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-6">
-              {[
-                'No credit card required',
-                'Works alongside Collab.Land',
-                'Zero risk evaluation'
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-spice-400" />
-                  <span className="text-sand-300">{item}</span>
-                </div>
-              ))}
-            </div>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> collab.land is great for access control.
+              if that&apos;s all you need, stay with it. but when you need to know who your
+              diamond hands are — for airdrops, governance, recognizing believers — that&apos;s
+              where arrakis starts. shadow mode lets you see data without changing anything.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> collab.land has more chain support
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> true — 40+ chains vs our score service
+              coverage. but chain count is commoditizing. what matters is intelligence: do
+              you know who believes in your project? more chains don&apos;t tell you that.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> collab.land is the industry standard
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> they are, for access control. we&apos;re not
+              trying to replace access control — we&apos;re adding an engagement layer on top.
+              industry standards evolve as needs evolve.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> i don&apos;t want to switch
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> then don&apos;t. shadow mode runs alongside
+              collab.land. zero changes to your current setup. see what conviction data
+              reveals, decide later.
+            </p>
           </div>
         </div>
       </section>
-    </main>
+
+      {/* CTA */}
+      <section className="border border-spice/50 p-6 text-center">
+        <p className="text-sand-bright text-lg mb-2">
+          see what conviction data reveals about your community
+        </p>
+        <p className="text-sand-dim text-sm mb-6">
+          run arrakis in shadow mode alongside collab.land. no changes to your current
+          setup. see your diamond hands.
+        </p>
+        <div className="flex flex-wrap justify-center gap-4 text-sm">
+          <Link
+            href="https://discord.gg/thehoneyjar"
+            className="text-spice hover:text-spice-bright"
+          >
+            [start shadow mode free]
+          </Link>
+          <Link href="/pricing" className="text-sand hover:text-sand-bright">
+            [view pricing]
+          </Link>
+        </div>
+        <p className="text-sand-dim text-xs mt-4">
+          no credit card • works alongside collab.land • zero risk evaluation
+        </p>
+      </section>
+    </div>
   );
 }

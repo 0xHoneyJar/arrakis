@@ -4,45 +4,113 @@
 
 @layer base {
   :root {
-    --background: 250 250 249;
-    --foreground: 28 25 23;
-    --muted: 245 245 244;
-    --muted-foreground: 120 113 108;
-    --accent: 249 115 22;
-    --accent-foreground: 255 255 255;
+    --bg: #0a0a0a;
+    --fg: #c2b280;
+    --fg-dim: #6b6245;
+    --fg-bright: #e8ddb5;
+    --accent: #f4a460;
+    --border: #3d3a2e;
+  }
+
+  ::selection {
+    background: var(--fg);
+    color: var(--bg);
   }
 
   body {
-    @apply bg-stone-50 text-stone-900 antialiased;
+    @apply bg-black text-sand font-mono antialiased;
+    font-size: 14px;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-sans tracking-tight;
+  a {
+    @apply text-sand-bright hover:text-spice transition-colors duration-150;
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
   }
 }
 
 @layer components {
-  .btn {
-    @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+  .ascii-box {
+    border: 1px solid var(--border);
+    padding: 1rem;
   }
 
-  .btn-primary {
-    @apply btn bg-spice-500 text-white hover:bg-spice-600 focus:ring-spice-500;
+  .ascii-box-double {
+    border: 2px solid var(--border);
+    padding: 1rem;
   }
 
-  .btn-secondary {
-    @apply btn bg-stone-100 text-stone-900 hover:bg-stone-200 focus:ring-stone-400;
+  .ascii-divider {
+    @apply text-sand-dim select-none;
   }
 
-  .btn-outline {
-    @apply btn border-2 border-stone-300 bg-transparent text-stone-900 hover:bg-stone-100 focus:ring-stone-400;
+  .ascii-heading {
+    @apply text-sand-bright font-mono uppercase tracking-widest;
   }
 
-  .section {
-    @apply py-16 md:py-24 lg:py-32;
+  .terminal-cursor {
+    @apply inline-block w-2 h-4 bg-sand animate-pulse;
   }
 
-  .container-custom {
-    @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+  .link-arrow::before {
+    content: '> ';
+    @apply text-sand-dim;
   }
+
+  .link-arrow:hover::before {
+    @apply text-spice;
+  }
+}
+
+@layer utilities {
+  .text-sand {
+    color: #c2b280;
+  }
+  .text-sand-dim {
+    color: #6b6245;
+  }
+  .text-sand-bright {
+    color: #e8ddb5;
+  }
+  .text-spice {
+    color: #f4a460;
+  }
+  .bg-black {
+    background-color: #0a0a0a;
+  }
+  .border-sand {
+    border-color: #3d3a2e;
+  }
+  .border-sand-dim {
+    border-color: #2a2820;
+  }
+}
+
+/* ASCII art pre blocks */
+pre {
+  @apply font-mono text-sand leading-none;
+  font-size: 10px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3d3a2e;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b6245;
 }

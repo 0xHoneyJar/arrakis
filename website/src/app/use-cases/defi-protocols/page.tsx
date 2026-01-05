@@ -1,608 +1,481 @@
-'use client';
-
+import type { Metadata } from 'next';
 import Link from 'next/link';
-import {
-  Shield,
-  Users,
-  Bot,
-  Lock,
-  ArrowRight,
-  CheckCircle,
-  Vote,
-  Target,
-  FileCheck,
-  Scale,
-  Database,
-  Activity,
-  Server,
-  Zap,
-  Clock,
-  Building2,
-  BadgeCheck,
-  Workflow,
-  MessageSquare,
-  Eye
-} from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: 'defi-protocols // ARRAKIS',
+  description:
+    'Enterprise-grade community infrastructure for protocols. Conviction intelligence at scale.',
+};
 
 export default function DeFiProtocolsPage() {
   return (
-    <main className="min-h-screen">
-      {/* Hero Section */}
-      <section className="section bg-gradient-to-b from-desert-900 to-desert-800 text-white">
-        <div className="container-custom">
-          <div className="max-w-4xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-spice-500/20 text-spice-300 px-4 py-2 rounded-full text-sm font-medium mb-6">
-              <Building2 className="w-4 h-4" />
-              For DeFi Protocols
-            </div>
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              Enterprise-grade community infrastructure for protocols
-            </h1>
-            <p className="text-xl md:text-2xl text-sand-300 mb-8 max-w-3xl mx-auto">
-              Your protocol has 50,000 Discord members. But only 500 vote. Arrakis identifies your real users, drives governance participation, and prevents sybil attacks on distributions — with the security your foundation requires.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/pricing" className="btn bg-spice-500 hover:bg-spice-600 text-white px-8 py-4 text-lg">
-                Contact Sales
-              </Link>
-              <Link href="/pricing" className="btn bg-white/10 hover:bg-white/20 text-white border border-white/30 px-8 py-4 text-lg">
-                Start Enterprise Trial
-              </Link>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-16">
+      {/* Header */}
+      <section>
+        <div className="text-sand-dim text-xs mb-2">// use-cases / defi-protocols</div>
+        <h1 className="text-2xl text-sand-bright">
+          enterprise-grade community infrastructure
+        </h1>
+        <p className="text-sand mt-2">
+          your protocol has 50,000 discord members. but only 500 vote. arrakis
+          identifies your real users, drives governance participation, and prevents
+          sybil attacks — with the security your foundation requires.
+        </p>
       </section>
 
-      {/* Problem Section */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Protocol-scale community challenges
-            </h2>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mb-4">
-                <Vote className="w-6 h-6 text-red-600" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Low Governance Participation</h3>
-              <p className="text-desert-600">
-                50,000 token holders. 500 voters. Your governance proposals pass with a handful of wallets while the community watches from the sidelines.
-              </p>
-            </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mb-4">
-                <Bot className="w-6 h-6 text-red-600" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Sybil Attacks on Distributions</h3>
-              <p className="text-desert-600">
-                Your last airdrop went to 10,000 addresses. 8,000 were farmers. Millions in tokens distributed to bots and mercenaries. Your real users got diluted.
-              </p>
-            </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mb-4">
-                <Users className="w-6 h-6 text-red-600" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Can't Distinguish Users from Speculators</h3>
-              <p className="text-desert-600">
-                Someone who's used your protocol for two years looks the same as someone who bought the dip yesterday. No way to tier access by actual commitment.
-              </p>
-            </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mb-4">
-                <Shield className="w-6 h-6 text-red-600" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Security Requirements for Tooling</h3>
-              <p className="text-desert-600">
-                Your foundation requires audit trails, data isolation, and enterprise SLAs. Current Discord bots are held together with duct tape.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Solution Section */}
-      <section className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Arrakis delivers protocol-grade community intelligence
-            </h2>
-            <p className="text-xl text-desert-600 max-w-3xl mx-auto">
-              Built for scale. Secured by design. Arrakis brings on-chain intelligence to your community operations with the infrastructure your foundation requires.
+      {/* Problem */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// protocol-scale challenges</div>
+        <div className="space-y-3 text-sm">
+          <div className="border border-sand-dim/30 p-4">
+            <span className="text-spice">low_governance_participation</span>
+            <p className="text-sand mt-1">
+              50,000 token holders. 500 voters. your governance proposals pass with
+              a handful of wallets while the community watches from the sidelines.
             </p>
           </div>
-
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Vote className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Drive Governance Participation</h3>
-              <p className="text-desert-600 mb-4">
-                Tiered recognition makes governance matter. Your most active users earn visible status. Council-level access creates incentive to engage.
-              </p>
-              <div className="flex items-center gap-2 text-spice-600 font-medium">
-                <CheckCircle className="w-5 h-5" />
-                <span>Result: Voters feel recognized. Participation increases.</span>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Target className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Prevent Sybil Attacks</h3>
-              <p className="text-desert-600 mb-4">
-                Conviction scoring identifies real users before distributions. Analyze holding duration, trading patterns, and protocol usage to separate believers from farmers.
-              </p>
-              <div className="flex items-center gap-2 text-spice-600 font-medium">
-                <CheckCircle className="w-5 h-5" />
-                <span>Result: Airdrops go to contributors, not bots.</span>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Lock className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Enterprise Security</h3>
-              <p className="text-desert-600 mb-4">
-                PostgreSQL with row-level security (RLS) for complete tenant isolation. Full audit trail for compliance. Two-tier architecture ensures core gating works even during maintenance.
-              </p>
-              <div className="flex items-center gap-2 text-spice-600 font-medium">
-                <CheckCircle className="w-5 h-5" />
-                <span>Result: Security you can document to your foundation.</span>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Scale className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Scale for Protocol Communities</h3>
-              <p className="text-desert-600 mb-4">
-                Built to handle 100,000+ Discord members per community and 1,000+ concurrent tenants. Sub-100ms eligibility checks. 99.9% uptime architecture.
-              </p>
-              <div className="flex items-center gap-2 text-spice-600 font-medium">
-                <CheckCircle className="w-5 h-5" />
-                <span>Result: Infrastructure that grows with your protocol.</span>
-              </div>
-            </div>
+          <div className="border border-sand-dim/30 p-4">
+            <span className="text-spice">sybil_attacks_on_distributions</span>
+            <p className="text-sand mt-1">
+              your last airdrop went to 10,000 addresses. 8,000 were farmers. millions
+              in tokens distributed to bots. your real users got diluted.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <span className="text-spice">cant_distinguish_users</span>
+            <p className="text-sand mt-1">
+              someone who&apos;s used your protocol for two years looks the same as
+              someone who bought the dip yesterday. no way to tier access.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <span className="text-spice">security_requirements</span>
+            <p className="text-sand mt-1">
+              your foundation requires audit trails, data isolation, and enterprise
+              slas. current discord bots are held together with duct tape.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* Use Cases Section */}
-      <section className="section bg-desert-900 text-white">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              How DeFi protocols use Arrakis
-            </h2>
+      {/* Solution */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// protocol-grade intelligence</div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">drive_governance_participation</div>
+            <p className="text-sand text-sm">
+              tiered recognition makes governance matter. your most active users earn
+              visible status. council-level access creates incentive to engage.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              result: voters feel recognized. participation increases.
+            </p>
           </div>
-
-          <div className="space-y-16 max-w-4xl mx-auto">
-            {/* Use Case 1 */}
-            <div className="bg-white/5 rounded-2xl p-8 border border-white/10">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-spice-500 rounded-lg flex items-center justify-center font-bold">
-                  1
-                </div>
-                <h3 className="text-2xl font-bold">Governance Engagement</h3>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-spice-400 font-semibold mb-2">The Scenario:</h4>
-                <p className="text-sand-300">
-                  Your protocol has active governance with weekly proposals. But participation hovers at 5-10%. You need engaged token holders to actually vote.
-                </p>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-spice-400 font-semibold mb-3">With Arrakis:</h4>
-                <ul className="space-y-2">
-                  {[
-                    'Implement conviction-based tier progression',
-                    'Create governance council (Naib tier) for top stakeholders',
-                    'Gate governance discussion channels by tier',
-                    'Award "Voter" badges for participation',
-                    'Surface conviction analytics to identify engaged vs passive holders'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-3">
-                      <CheckCircle className="w-5 h-5 text-spice-400 flex-shrink-0 mt-0.5" />
-                      <span className="text-sand-200">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="bg-spice-500/20 rounded-xl p-4 border border-spice-500/30">
-                <h4 className="text-spice-400 font-semibold mb-1">The Outcome:</h4>
-                <p className="text-white">
-                  Governance becomes aspirational. Members see a path to council status. Participation increases as engagement becomes visible.
-                </p>
-              </div>
-            </div>
-
-            {/* Use Case 2 */}
-            <div className="bg-white/5 rounded-2xl p-8 border border-white/10">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-spice-500 rounded-lg flex items-center justify-center font-bold">
-                  2
-                </div>
-                <h3 className="text-2xl font-bold">Sybil-Resistant Token Distribution</h3>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-spice-400 font-semibold mb-2">The Scenario:</h4>
-                <p className="text-sand-300">
-                  Your protocol is planning a major token distribution. You've been burned before — farmers claimed 60% of your last airdrop. This distribution needs to reward real users.
-                </p>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-spice-400 font-semibold mb-3">With Arrakis:</h4>
-                <ul className="space-y-2">
-                  {[
-                    'Run conviction analysis across all eligible addresses',
-                    'Identify patterns: holding duration, accumulation, protocol usage correlation',
-                    'Flag suspicious addresses (recent buyers, known farmer patterns)',
-                    'Export conviction-weighted eligibility data',
-                    'Execute distribution that rewards genuine users'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-3">
-                      <CheckCircle className="w-5 h-5 text-spice-400 flex-shrink-0 mt-0.5" />
-                      <span className="text-sand-200">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="bg-spice-500/20 rounded-xl p-4 border border-spice-500/30">
-                <h4 className="text-spice-400 font-semibold mb-1">The Outcome:</h4>
-                <p className="text-white">
-                  Distribution goes to users who've been contributing for months, not addresses that appeared last week. Your community sees fairness.
-                </p>
-              </div>
-            </div>
-
-            {/* Use Case 3 */}
-            <div className="bg-white/5 rounded-2xl p-8 border border-white/10">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-spice-500 rounded-lg flex items-center justify-center font-bold">
-                  3
-                </div>
-                <h3 className="text-2xl font-bold">Enterprise Compliance</h3>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-spice-400 font-semibold mb-2">The Scenario:</h4>
-                <p className="text-sand-300">
-                  Your foundation requires audit trails for community tooling decisions. You need to demonstrate data isolation and security practices for governance processes.
-                </p>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-spice-400 font-semibold mb-3">With Arrakis:</h4>
-                <ul className="space-y-2">
-                  {[
-                    'Enable full audit trail logging (Enterprise tier)',
-                    'Row-level security ensures complete tenant isolation',
-                    'Export logs for compliance review',
-                    'Document security architecture for foundation',
-                    'Establish SLA-backed support relationship'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-3">
-                      <CheckCircle className="w-5 h-5 text-spice-400 flex-shrink-0 mt-0.5" />
-                      <span className="text-sand-200">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="bg-spice-500/20 rounded-xl p-4 border border-spice-500/30">
-                <h4 className="text-spice-400 font-semibold mb-1">The Outcome:</h4>
-                <p className="text-white">
-                  Your foundation has the documentation they need. Security review passes. Operations are audit-ready.
-                </p>
-              </div>
-            </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">prevent_sybil_attacks</div>
+            <p className="text-sand text-sm">
+              conviction scoring identifies real users before distributions. analyze
+              holding duration, trading patterns, and protocol usage.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              result: airdrops go to contributors, not bots.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">enterprise_security</div>
+            <p className="text-sand text-sm">
+              postgresql with row-level security for complete tenant isolation. full
+              audit trail for compliance. two-tier architecture ensures uptime.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              result: security you can document to your foundation.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">scale_for_protocols</div>
+            <p className="text-sand text-sm">
+              built for 100,000+ discord members per community and 1,000+ concurrent
+              tenants. sub-100ms eligibility checks. 99.9% uptime architecture.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              result: infrastructure that grows with your protocol.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* Enterprise Architecture Section */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Enterprise Architecture
-            </h2>
-            <p className="text-xl text-desert-600 max-w-3xl mx-auto">
-              Security infrastructure built for protocol-scale operations
+      {/* Use Cases */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// use-cases</div>
+
+        <div className="space-y-6">
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">governance engagement</div>
+            <p className="text-sand-dim text-sm mb-3">
+              scenario: your protocol has active governance with weekly proposals.
+              but participation hovers at 5-10%. you need engaged token holders to vote.
+            </p>
+            <div className="text-sm space-y-1 text-sand">
+              <p>
+                <span className="text-sand-dim">[1]</span> implement conviction-based
+                tier progression
+              </p>
+              <p>
+                <span className="text-sand-dim">[2]</span> create governance council
+                (naib tier) for top stakeholders
+              </p>
+              <p>
+                <span className="text-sand-dim">[3]</span> gate governance discussion
+                channels by tier
+              </p>
+              <p>
+                <span className="text-sand-dim">[4]</span> award &quot;voter&quot; badges for
+                participation
+              </p>
+              <p>
+                <span className="text-sand-dim">[5]</span> surface conviction analytics
+                to identify engaged vs passive
+              </p>
+            </div>
+            <p className="text-spice text-sm mt-3">
+              outcome: governance becomes aspirational. members see a path to council
+              status. participation increases as engagement becomes visible.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8 mb-16">
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <div className="w-12 h-12 bg-desert-900 rounded-xl flex items-center justify-center mb-4">
-                <Database className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Row-Level Security (RLS)</h3>
-              <p className="text-desert-600">
-                Every database query is scoped to your protocol's data. Complete tenant isolation at the database level — not application-level filtering. Your data never touches other tenants.
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">sybil-resistant token distribution</div>
+            <p className="text-sand-dim text-sm mb-3">
+              scenario: your protocol is planning a major token distribution. you&apos;ve
+              been burned before — farmers claimed 60% of your last airdrop.
+            </p>
+            <div className="text-sm space-y-1 text-sand">
+              <p>
+                <span className="text-sand-dim">[1]</span> run conviction analysis
+                across all eligible addresses
+              </p>
+              <p>
+                <span className="text-sand-dim">[2]</span> identify patterns: holding
+                duration, accumulation, protocol usage
+              </p>
+              <p>
+                <span className="text-sand-dim">[3]</span> flag suspicious addresses
+                (recent buyers, known farmer patterns)
+              </p>
+              <p>
+                <span className="text-sand-dim">[4]</span> export conviction-weighted
+                eligibility data
+              </p>
+              <p>
+                <span className="text-sand-dim">[5]</span> execute distribution that
+                rewards genuine users
               </p>
             </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <div className="w-12 h-12 bg-desert-900 rounded-xl flex items-center justify-center mb-4">
-                <FileCheck className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Audit Trail</h3>
-              <p className="text-desert-600">
-                Full logging of all administrative actions: who changed tier configuration, when roles were modified, what eligibility criteria were updated. Export capability for compliance review.
-              </p>
-            </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <div className="w-12 h-12 bg-desert-900 rounded-xl flex items-center justify-center mb-4">
-                <Workflow className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Two-Tier Architecture</h3>
-              <p className="text-desert-600">
-                Tier 1 (Native Reader) provides basic balance/ownership verification always. Tier 2 (Score Service) for advanced analytics with circuit breaker fallback. Your community access is never down.
-              </p>
-            </div>
+            <p className="text-spice text-sm mt-3">
+              outcome: distribution goes to users who&apos;ve contributed for months, not
+              addresses that appeared last week. your community sees fairness.
+            </p>
           </div>
 
-          {/* Infrastructure Stack */}
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <h3 className="text-xl font-bold text-desert-900 mb-6">Infrastructure Stack</h3>
-              <div className="space-y-4">
-                {[
-                  { label: 'Database', value: 'PostgreSQL 15 with RLS' },
-                  { label: 'Cache', value: 'Redis 7' },
-                  { label: 'Secrets', value: 'HCP Vault' },
-                  { label: 'Cloud', value: 'AWS EKS (Kubernetes)' },
-                  { label: 'Monitoring', value: 'Datadog' }
-                ].map((item, i) => (
-                  <div key={i} className="flex justify-between items-center py-2 border-b border-sand-100 last:border-0">
-                    <span className="text-desert-600">{item.label}</span>
-                    <span className="font-medium text-desert-900">{item.value}</span>
-                  </div>
-                ))}
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">enterprise compliance</div>
+            <p className="text-sand-dim text-sm mb-3">
+              scenario: your foundation requires audit trails for community tooling.
+              you need to demonstrate data isolation and security practices.
+            </p>
+            <div className="text-sm space-y-1 text-sand">
+              <p>
+                <span className="text-sand-dim">[1]</span> enable full audit trail
+                logging (enterprise tier)
+              </p>
+              <p>
+                <span className="text-sand-dim">[2]</span> row-level security ensures
+                complete tenant isolation
+              </p>
+              <p>
+                <span className="text-sand-dim">[3]</span> export logs for compliance
+                review
+              </p>
+              <p>
+                <span className="text-sand-dim">[4]</span> document security
+                architecture for foundation
+              </p>
+              <p>
+                <span className="text-sand-dim">[5]</span> establish sla-backed
+                support relationship
+              </p>
+            </div>
+            <p className="text-spice text-sm mt-3">
+              outcome: your foundation has the documentation they need. security
+              review passes. operations are audit-ready.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Enterprise Architecture */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// enterprise_architecture</div>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">row_level_security</div>
+            <p className="text-sand text-sm">
+              every database query is scoped to your protocol&apos;s data. complete tenant
+              isolation at the database level — not application-level filtering.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">audit_trail</div>
+            <p className="text-sand text-sm">
+              full logging of all admin actions: who changed tier config, when roles
+              were modified, what eligibility criteria were updated.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">two_tier_architecture</div>
+            <p className="text-sand text-sm">
+              tier 1 provides basic verification always. tier 2 for advanced analytics
+              with circuit breaker fallback. your access is never down.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4 mt-4">
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-sand-dim text-xs mb-3">// infrastructure_stack</div>
+            <div className="text-sm space-y-2">
+              <div className="flex justify-between text-sand">
+                <span>database</span>
+                <span className="text-sand-dim">postgresql 15 with rls</span>
+              </div>
+              <div className="flex justify-between text-sand">
+                <span>cache</span>
+                <span className="text-sand-dim">redis 7</span>
+              </div>
+              <div className="flex justify-between text-sand">
+                <span>secrets</span>
+                <span className="text-sand-dim">hcp vault</span>
+              </div>
+              <div className="flex justify-between text-sand">
+                <span>cloud</span>
+                <span className="text-sand-dim">aws eks (kubernetes)</span>
+              </div>
+              <div className="flex justify-between text-sand">
+                <span>monitoring</span>
+                <span className="text-sand-dim">datadog</span>
               </div>
             </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 shadow-sm">
-              <h3 className="text-xl font-bold text-desert-900 mb-6">Performance Targets</h3>
-              <div className="space-y-4">
-                {[
-                  { label: 'Basic eligibility check', value: '<100ms' },
-                  { label: 'Advanced eligibility check', value: '<500ms' },
-                  { label: 'Concurrent communities', value: '1,000+' },
-                  { label: 'Members per community', value: '100,000+' },
-                  { label: 'Uptime SLA', value: '99.9%' }
-                ].map((item, i) => (
-                  <div key={i} className="flex justify-between items-center py-2 border-b border-sand-100 last:border-0">
-                    <span className="text-desert-600">{item.label}</span>
-                    <span className="font-bold text-spice-600">{item.value}</span>
-                  </div>
-                ))}
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-sand-dim text-xs mb-3">// performance_targets</div>
+            <div className="text-sm space-y-2">
+              <div className="flex justify-between text-sand">
+                <span>basic eligibility check</span>
+                <span className="text-spice">&lt;100ms</span>
+              </div>
+              <div className="flex justify-between text-sand">
+                <span>advanced eligibility check</span>
+                <span className="text-spice">&lt;500ms</span>
+              </div>
+              <div className="flex justify-between text-sand">
+                <span>concurrent communities</span>
+                <span className="text-spice">1,000+</span>
+              </div>
+              <div className="flex justify-between text-sand">
+                <span>members per community</span>
+                <span className="text-spice">100,000+</span>
+              </div>
+              <div className="flex justify-between text-sand">
+                <span>uptime sla</span>
+                <span className="text-spice">99.9%</span>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Features Grid */}
-      <section className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Features for Protocols
-            </h2>
+      {/* Features */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// features for protocols</div>
+        <div className="border border-sand-dim/30 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-sand-dim/30">
+                <th className="text-left p-3 text-sand-dim">feature</th>
+                <th className="text-left p-3 text-sand-dim">use</th>
+              </tr>
+            </thead>
+            <tbody className="text-sand">
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">conviction scoring</td>
+                <td className="p-3 text-sand-dim">sybil-resistant distributions, governance weighting</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">9-tier progression</td>
+                <td className="p-3 text-sand-dim">governance council, stakeholder hierarchy</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">custom themes</td>
+                <td className="p-3 text-sand-dim">protocol branding, custom tier names</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">audit trail</td>
+                <td className="p-3 text-sand-dim">compliance documentation, foundation requirements</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">api access</td>
+                <td className="p-3 text-sand-dim">custom integrations, governance tooling</td>
+              </tr>
+              <tr>
+                <td className="p-3">multi-chain</td>
+                <td className="p-3 text-sand-dim">l2 deployments, cross-chain holdings</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// recommended tier</div>
+        <div className="border border-spice/50 p-6">
+          <div className="text-spice text-lg mb-2">enterprise $399/mo [recommended]</div>
+          <div className="text-sand-dim text-xs mb-4">for defi protocols</div>
+
+          <div className="grid md:grid-cols-2 gap-4 text-sm text-sand mb-6">
+            <div className="space-y-1">
+              <p>+ all premium features</p>
+              <p>+ unlimited discord servers</p>
+              <p>+ full api access</p>
+            </div>
+            <div className="space-y-1">
+              <p>+ audit trail for compliance</p>
+              <p>+ dedicated slack support</p>
+              <p>+ custom sla available</p>
+            </div>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 mb-16">
-            {[
-              {
-                icon: Activity,
-                name: 'Conviction Scoring',
-                description: 'Sybil-resistant distributions, governance weighting'
-              },
-              {
-                icon: BadgeCheck,
-                name: '9-Tier Progression',
-                description: 'Governance council, stakeholder hierarchy'
-              },
-              {
-                icon: Eye,
-                name: 'Custom Themes',
-                description: 'Protocol branding, custom tier names'
-              },
-              {
-                icon: FileCheck,
-                name: 'Audit Trail',
-                description: 'Compliance documentation, foundation requirements'
-              },
-              {
-                icon: Zap,
-                name: 'API Access',
-                description: 'Custom integrations, governance tooling'
-              },
-              {
-                icon: Server,
-                name: 'Multi-Chain',
-                description: 'L2 deployments, cross-chain holdings'
-              }
-            ].map((feature, i) => (
-              <div key={i} className="bg-sand-50 p-6 rounded-xl border border-sand-200">
-                <feature.icon className="w-8 h-8 text-spice-500 mb-3" />
-                <h3 className="font-bold text-desert-900 mb-2">{feature.name}</h3>
-                <p className="text-desert-600 text-sm">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Recommended Tier */}
-          <div className="max-w-3xl mx-auto bg-gradient-to-br from-desert-900 to-desert-800 rounded-2xl p-8 text-white">
-            <div className="flex items-center gap-3 mb-4">
-              <Building2 className="w-8 h-8 text-spice-400" />
-              <h3 className="text-2xl font-bold">Recommended: Enterprise Tier</h3>
-            </div>
-            <p className="text-3xl font-bold text-spice-400 mb-6">$399/month</p>
-
-            <div className="grid md:grid-cols-2 gap-4 mb-8">
-              {[
-                'All Premium features',
-                'Unlimited Discord servers',
-                'Full API access',
-                'Audit trail for compliance',
-                'Dedicated Slack support',
-                'Custom SLA available'
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-spice-400" />
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-white/10 rounded-xl p-4 mb-6">
-              <p className="text-sand-300">
-                <strong className="text-white">Custom Pricing</strong> available for 10+ community operations, custom security requirements, extended support SLAs, and on-premise considerations.
-              </p>
-            </div>
-
-            <Link href="/pricing" className="btn bg-spice-500 hover:bg-spice-600 text-white w-full py-4 text-lg">
-              Contact Sales
-            </Link>
+          <div className="border border-sand-dim/30 p-3 text-sm text-sand-dim">
+            <span className="text-sand-bright">custom pricing</span> available for 10+
+            community operations, custom security requirements, extended support slas,
+            and on-premise considerations.
           </div>
         </div>
       </section>
 
-      {/* Objection Handling */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Common Questions
-            </h2>
+      {/* FAQ */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// faq</div>
+        <div className="space-y-4 text-sm">
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> we need to security review
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> happy to share architecture
+              documentation. postgresql rls ensures complete data isolation. no shared
+              tenant data. we welcome security audits.
+            </p>
           </div>
-
-          <div className="max-w-3xl mx-auto space-y-6">
-            {[
-              {
-                q: '"We need to security review"',
-                a: 'Happy to share architecture documentation. PostgreSQL RLS ensures complete data isolation. No shared tenant data. We welcome security audits.'
-              },
-              {
-                q: '"Can you handle our scale?"',
-                a: 'Built for 100,000+ members per community and 1,000+ concurrent tenants. Sub-100ms eligibility checks. Two-tier architecture ensures availability.'
-              },
-              {
-                q: '"We have custom requirements"',
-                a: "Enterprise tier includes custom themes, API access, and dedicated support. For unique requirements, let's discuss custom arrangements."
-              },
-              {
-                q: '"What about uptime?"',
-                a: 'Two-tier provider architecture means core token-gating works even if advanced features are degraded. Circuit breakers ensure graceful fallback. 99.9% uptime SLA available.'
-              },
-              {
-                q: '"Our current tools work fine"',
-                a: 'Shadow mode lets you evaluate alongside existing setup. See conviction data for your community without changing anything. Compare intelligence quality before deciding.'
-              },
-              {
-                q: '"This seems expensive compared to free alternatives"',
-                a: 'Free tools provide access control. Arrakis provides intelligence. Preventing one sybil-captured airdrop saves more than years of Enterprise subscription. The ROI is in distribution quality.'
-              }
-            ].map((item, i) => (
-              <div key={i} className="bg-white p-6 rounded-xl border border-sand-200">
-                <h3 className="font-bold text-desert-900 mb-2">{item.q}</h3>
-                <p className="text-desert-600">{item.a}</p>
-              </div>
-            ))}
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> can you handle our scale?
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> built for 100,000+ members per
+              community and 1,000+ concurrent tenants. sub-100ms eligibility checks.
+              two-tier architecture ensures availability.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> we have custom requirements
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> enterprise tier includes custom
+              themes, api access, and dedicated support. for unique requirements, let&apos;s
+              discuss custom arrangements.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> what about uptime?
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> two-tier provider architecture
+              means core token-gating works even if advanced features are degraded.
+              circuit breakers ensure graceful fallback. 99.9% uptime sla available.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> this seems expensive vs free alternatives
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> free tools provide access control.
+              arrakis provides intelligence. preventing one sybil-captured airdrop saves
+              more than years of enterprise subscription.
+            </p>
           </div>
         </div>
       </section>
 
       {/* Getting Started */}
-      <section className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Start with an Enterprise evaluation
-            </h2>
-          </div>
-
-          <div className="max-w-4xl mx-auto">
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[
-                { step: 1, title: 'Contact Sales', desc: "Discuss your protocol's requirements" },
-                { step: 2, title: 'Security Review', desc: 'We provide architecture documentation' },
-                { step: 3, title: 'Trial Setup', desc: 'Guided Enterprise configuration' },
-                { step: 4, title: 'Shadow Mode', desc: 'Evaluate conviction data alongside current tools' },
-                { step: 5, title: 'Foundation Review', desc: 'Document security and compliance' },
-                { step: 6, title: 'Production Deployment', desc: 'Full rollout with dedicated support' }
-              ].map((item, i) => (
-                <div key={i} className="bg-sand-50 p-6 rounded-xl border border-sand-200">
-                  <div className="w-10 h-10 bg-spice-500 rounded-lg flex items-center justify-center text-white font-bold mb-4">
-                    {item.step}
-                  </div>
-                  <h3 className="font-bold text-desert-900 mb-2">{item.title}</h3>
-                  <p className="text-desert-600 text-sm">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// enterprise evaluation</div>
+        <div className="text-sm space-y-1 text-sand">
+          <p>
+            <span className="text-sand-dim">[1]</span> contact sales - discuss your
+            protocol&apos;s requirements
+          </p>
+          <p>
+            <span className="text-sand-dim">[2]</span> security review - we provide
+            architecture documentation
+          </p>
+          <p>
+            <span className="text-sand-dim">[3]</span> trial setup - guided enterprise
+            configuration
+          </p>
+          <p>
+            <span className="text-sand-dim">[4]</span> shadow mode - evaluate conviction
+            data alongside current tools
+          </p>
+          <p>
+            <span className="text-sand-dim">[5]</span> foundation review - document
+            security and compliance
+          </p>
+          <p>
+            <span className="text-sand-dim">[6]</span> production deployment - full
+            rollout with dedicated support
+          </p>
         </div>
       </section>
 
-      {/* Final CTA */}
-      <section className="section bg-gradient-to-b from-desert-900 to-desert-950 text-white">
-        <div className="container-custom">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-5xl font-bold mb-6">
-              Protocol-grade community infrastructure
-            </h2>
-            <p className="text-xl text-sand-300 mb-8">
-              Enterprise security. Conviction intelligence. The foundation your protocol requires.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Link href="/pricing" className="btn bg-spice-500 hover:bg-spice-600 text-white px-8 py-4 text-lg">
-                Contact Sales
-                <ArrowRight className="ml-2 w-5 h-5 inline" />
-              </Link>
-              <Link href="/pricing" className="btn bg-white/10 hover:bg-white/20 text-white border border-white/30 px-8 py-4 text-lg">
-                Schedule Architecture Review
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-              {[
-                'PostgreSQL RLS for data isolation',
-                'Full audit trail',
-                '99.9% uptime SLA',
-                'Dedicated support'
-              ].map((item, i) => (
-                <div key={i} className="flex items-center justify-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-spice-400" />
-                  <span className="text-sand-300 text-sm">{item}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* CTA */}
+      <section className="border border-spice/50 p-6 text-center">
+        <p className="text-sand-bright text-lg mb-2">
+          protocol-grade community infrastructure
+        </p>
+        <p className="text-sand-dim text-sm mb-6">
+          enterprise security. conviction intelligence. the foundation your protocol
+          requires.
+        </p>
+        <div className="flex flex-wrap justify-center gap-4 text-sm">
+          <Link
+            href="https://discord.gg/thehoneyjar"
+            className="text-spice hover:text-spice-bright"
+          >
+            [contact sales]
+          </Link>
+          <Link href="/pricing" className="text-sand hover:text-sand-bright">
+            [view pricing]
+          </Link>
         </div>
+        <p className="text-sand-dim text-xs mt-4">
+          postgresql rls • full audit trail • 99.9% uptime sla • dedicated support
+        </p>
       </section>
-    </main>
+    </div>
   );
 }

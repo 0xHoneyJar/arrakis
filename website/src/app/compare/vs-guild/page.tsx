@@ -1,693 +1,439 @@
-'use client';
-
+import type { Metadata } from 'next';
 import Link from 'next/link';
-import {
-  ArrowRight,
-  Check,
-  X,
-  Minus,
-  Shield,
-  TrendingUp,
-  Users,
-  BarChart3,
-  Clock,
-  Layers,
-  Award,
-  Eye,
-  Zap,
-  RefreshCw,
-  CheckCircle,
-  MessageCircle,
-  DollarSign,
-  Target
-} from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: 'vs guild.xyz // ARRAKIS',
+  description:
+    'Guild.xyz manages access. Arrakis creates value. Compare engagement intelligence vs access control.',
+};
 
 export default function VsGuildPage() {
   return (
-    <main className="min-h-screen">
-      {/* Hero Section */}
-      <section className="section bg-gradient-to-b from-desert-900 to-desert-800 text-white">
-        <div className="container-custom">
-          <div className="max-w-4xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-spice-500/20 text-spice-300 px-4 py-2 rounded-full text-sm font-medium mb-6">
-              Comparison
-            </div>
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              Guild.xyz manages access. Arrakis creates value.
-            </h1>
-            <p className="text-xl md:text-2xl text-sand-300 mb-8 max-w-3xl mx-auto">
-              Guild.xyz offers free token-gating with impressive chain support. But when you need to know <em>who matters</em> in your community — not just who can enter — that's where Arrakis begins.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/pricing" className="btn bg-spice-500 hover:bg-spice-600 text-white px-8 py-4 text-lg">
-                Try Arrakis Free
-              </Link>
-              <a href="#comparison" className="btn bg-white/10 hover:bg-white/20 text-white border border-white/30 px-8 py-4 text-lg">
-                See Full Comparison
-              </a>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-16">
+      {/* Header */}
+      <section>
+        <div className="text-sand-dim text-xs mb-2">// compare / vs-guild</div>
+        <h1 className="text-2xl text-sand-bright">
+          guild.xyz manages access. arrakis creates value.
+        </h1>
+        <p className="text-sand mt-2">
+          guild.xyz offers free token-gating with impressive chain support. but when
+          you need to know who matters in your community — not just who can enter —
+          that&apos;s where arrakis begins.
+        </p>
       </section>
 
       {/* Quick Comparison */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            {/* Arrakis */}
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border-2 border-spice-500">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center">
-                  <span className="text-white font-bold text-xl">A</span>
-                </div>
-                <h3 className="text-2xl font-bold text-desert-900">Arrakis</h3>
-              </div>
-              <ul className="space-y-3">
-                {[
-                  'Token-gating',
-                  'Multi-chain',
-                  'Conviction scoring',
-                  '9-tier progression',
-                  '10+ badges',
-                  'Shadow mode',
-                  'Analytics dashboard',
-                  'Telegram support'
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3">
-                    <Check className="w-5 h-5 text-spice-500" />
-                    <span className="text-desert-800">{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-6 pt-6 border-t border-spice-200">
-                <p className="text-desert-600">Free + Premium: <span className="font-bold text-desert-900">$99/mo</span></p>
-              </div>
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// quick_comparison</div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border border-spice/50 p-4">
+            <div className="text-spice mb-3">ARRAKIS</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-spice">+</span> token-gating</p>
+              <p><span className="text-spice">+</span> multi-chain</p>
+              <p><span className="text-spice">+</span> conviction scoring</p>
+              <p><span className="text-spice">+</span> 9-tier progression</p>
+              <p><span className="text-spice">+</span> 10+ badges</p>
+              <p><span className="text-spice">+</span> shadow mode</p>
+              <p><span className="text-spice">+</span> analytics dashboard</p>
+              <p><span className="text-spice">+</span> telegram support</p>
             </div>
-
-            {/* Guild.xyz */}
-            <div className="bg-white p-8 rounded-2xl border border-sand-200">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-sand-200 rounded-xl flex items-center justify-center">
-                  <span className="text-desert-600 font-bold text-xl">G</span>
-                </div>
-                <h3 className="text-2xl font-bold text-desert-900">Guild.xyz</h3>
-              </div>
-              <ul className="space-y-3">
-                {[
-                  { text: 'Token-gating', has: true },
-                  { text: 'Multi-chain (60+ EVM)', has: true },
-                  { text: 'No conviction scoring', has: false },
-                  { text: 'Basic requirements', has: 'partial' },
-                  { text: 'Points system', has: 'partial' },
-                  { text: 'No coexistence mode', has: false },
-                  { text: 'Basic analytics', has: 'partial' },
-                  { text: 'No Telegram', has: false }
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3">
-                    {item.has === true ? (
-                      <Check className="w-5 h-5 text-green-500" />
-                    ) : item.has === 'partial' ? (
-                      <Minus className="w-5 h-5 text-yellow-500" />
-                    ) : (
-                      <Minus className="w-5 h-5 text-sand-400" />
-                    )}
-                    <span className={item.has === true ? 'text-desert-800' : item.has === 'partial' ? 'text-desert-600' : 'text-desert-400'}>{item.text}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-6 pt-6 border-t border-sand-200">
-                <p className="text-desert-600">Price: <span className="font-bold text-green-600">Free (all features)</span></p>
-              </div>
+            <div className="text-sand-dim text-xs mt-4 pt-3 border-t border-sand-dim/30">
+              free + premium: $99/mo
             </div>
           </div>
-
-          {/* Core Difference */}
-          <div className="max-w-3xl mx-auto mt-16 text-center">
-            <h3 className="text-2xl font-bold text-desert-900 mb-6">The Core Difference</h3>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="bg-white p-6 rounded-xl border border-sand-200">
-                <p className="text-desert-600 mb-2">Guild.xyz answers:</p>
-                <p className="text-xl font-bold text-desert-900">"Does this wallet meet our requirements?"</p>
-              </div>
-              <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-6 rounded-xl border border-spice-200">
-                <p className="text-desert-600 mb-2">Arrakis answers:</p>
-                <p className="text-xl font-bold text-spice-600">"How committed is this person to our community?"</p>
-              </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-sand-bright mb-3">GUILD.XYZ</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-sand-dim">+</span> token-gating</p>
+              <p><span className="text-sand-dim">+</span> multi-chain (60+ evm)</p>
+              <p><span className="text-sand-dim">-</span> no conviction scoring</p>
+              <p><span className="text-sand-dim">~</span> basic requirements</p>
+              <p><span className="text-sand-dim">~</span> points system</p>
+              <p><span className="text-sand-dim">-</span> no coexistence mode</p>
+              <p><span className="text-sand-dim">~</span> basic analytics</p>
+              <p><span className="text-sand-dim">-</span> no telegram</p>
+            </div>
+            <div className="text-sand-dim text-xs mt-4 pt-3 border-t border-sand-dim/30">
+              price: free (all features)
             </div>
           </div>
         </div>
       </section>
 
-      {/* Detailed Comparison Table */}
-      <section id="comparison" className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Detailed Feature Comparison
-            </h2>
+      {/* Core Difference */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// core_difference</div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border border-sand-dim/30 p-4 text-center">
+            <div className="text-sand-dim text-xs mb-2">guild.xyz answers:</div>
+            <div className="text-sand-bright">
+              &quot;does this wallet meet our requirements?&quot;
+            </div>
           </div>
-
-          <div className="max-w-4xl mx-auto overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b-2 border-sand-200">
-                  <th className="text-left py-4 px-4 text-desert-600 font-medium">Feature</th>
-                  <th className="text-center py-4 px-4 text-spice-600 font-bold">Arrakis</th>
-                  <th className="text-center py-4 px-4 text-desert-600 font-bold">Guild.xyz</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Token-Gating Section */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Token-Gating</td>
-                </tr>
-                {[
-                  { feature: 'ERC20 balance check', arrakis: true, guild: true },
-                  { feature: 'NFT ownership', arrakis: true, guild: true },
-                  { feature: 'Multi-chain support', arrakis: 'Score Service', guild: '60+ EVM' },
-                  { feature: 'Multi-wallet per user', arrakis: true, guild: true }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      {row.arrakis === true ? (
-                        <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                      ) : (
-                        <span className="text-spice-600 font-medium">{row.arrakis}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {row.guild === true ? (
-                        <Check className="w-5 h-5 text-green-500 mx-auto" />
-                      ) : row.guild === false ? (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      ) : (
-                        <span className="text-desert-600">{row.guild}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Requirements Engine */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Requirements Engine</td>
-                </tr>
-                {[
-                  { feature: 'On-chain requirements', arrakis: true, guild: true },
-                  { feature: 'Off-chain requirements (GitHub, Twitter)', arrakis: false, guild: true },
-                  { feature: 'Custom logic', arrakis: false, guild: true }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      {row.arrakis === true ? (
-                        <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                      ) : (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {row.guild === true ? (
-                        <Check className="w-5 h-5 text-green-500 mx-auto" />
-                      ) : (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Engagement Intelligence */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Engagement Intelligence</td>
-                </tr>
-                {[
-                  { feature: 'Conviction scoring', arrakis: true, guild: false },
-                  { feature: 'Holding duration analysis', arrakis: true, guild: false },
-                  { feature: 'Diamond hands identification', arrakis: true, guild: false }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Progression System */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Progression System</td>
-                </tr>
-                {[
-                  { feature: 'Tiered roles', arrakis: '9 tiers', guild: 'Requirements-based' },
-                  { feature: 'Dynamic rank progression', arrakis: true, guild: false },
-                  { feature: 'Badge gamification', arrakis: '10+ types', guild: 'Points' },
-                  { feature: 'Badge lineage', arrakis: true, guild: false }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      {row.arrakis === true ? (
-                        <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                      ) : (
-                        <span className="text-spice-600 font-medium">{row.arrakis}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {row.guild === true ? (
-                        <Check className="w-5 h-5 text-green-500 mx-auto" />
-                      ) : row.guild === false ? (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      ) : (
-                        <span className="text-desert-500 text-sm">{row.guild}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Platforms */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Platforms</td>
-                </tr>
-                {[
-                  { feature: 'Discord', arrakis: true, guild: true },
-                  { feature: 'Telegram', arrakis: true, guild: false },
-                  { feature: 'Other (GitHub, Google)', arrakis: false, guild: true }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      {row.arrakis === true ? (
-                        <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                      ) : (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {row.guild === true ? (
-                        <Check className="w-5 h-5 text-green-500 mx-auto" />
-                      ) : (
-                        <Minus className="w-5 h-5 text-sand-400 mx-auto" />
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {/* Pricing */}
-                <tr className="bg-sand-50">
-                  <td colSpan={3} className="py-3 px-4 font-bold text-desert-900">Pricing</td>
-                </tr>
-                {[
-                  { feature: 'Free tier', arrakis: true as boolean | string, guild: 'All features free' },
-                  { feature: 'Premium features', arrakis: '$99/mo' as boolean | string, guild: 'Free' }
-                ].map((row, i) => (
-                  <tr key={i} className="border-b border-sand-100">
-                    <td className="py-3 px-4 text-desert-700">{row.feature}</td>
-                    <td className="py-3 px-4 text-center">
-                      {row.arrakis === true ? (
-                        <Check className="w-5 h-5 text-spice-500 mx-auto" />
-                      ) : (
-                        <span className="text-spice-600 font-medium">{String(row.arrakis)}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="text-green-600 font-medium">{row.guild}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="border border-spice/50 p-4 text-center">
+            <div className="text-sand-dim text-xs mb-2">arrakis answers:</div>
+            <div className="text-spice">
+              &quot;how committed is this person to our community?&quot;
+            </div>
           </div>
+        </div>
+      </section>
+
+      {/* Detailed Comparison */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// detailed_comparison</div>
+        <div className="border border-sand-dim/30 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-sand-dim/30">
+                <th className="text-left p-3 text-sand-dim">feature</th>
+                <th className="text-center p-3 text-spice">arrakis</th>
+                <th className="text-center p-3 text-sand-dim">guild.xyz</th>
+              </tr>
+            </thead>
+            <tbody className="text-sand">
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>token-gating</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">erc20 balance check</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">nft ownership</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">multi-chain support</td>
+                <td className="p-3 text-center text-spice">score service</td>
+                <td className="p-3 text-center text-sand-dim">60+ evm</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>requirements engine</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">on-chain requirements</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">off-chain requirements</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">custom logic</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>engagement intelligence</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">conviction scoring</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">holding duration analysis</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">diamond hands identification</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>progression system</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">tiered roles</td>
+                <td className="p-3 text-center text-spice">9 tiers</td>
+                <td className="p-3 text-center text-sand-dim">requirements-based</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">dynamic rank progression</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">badge gamification</td>
+                <td className="p-3 text-center text-spice">10+ types</td>
+                <td className="p-3 text-center text-sand-dim">points</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>platforms</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">discord</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">telegram</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">other (github, google)</td>
+                <td className="p-3 text-center text-sand-dim">—</td>
+                <td className="p-3 text-center text-sand-dim">✓</td>
+              </tr>
+
+              <tr className="border-b border-sand-dim/10 bg-sand-dim/5">
+                <td className="p-3 text-sand-bright" colSpan={3}>pricing</td>
+              </tr>
+              <tr className="border-b border-sand-dim/10">
+                <td className="p-3">free tier</td>
+                <td className="p-3 text-center text-spice">✓</td>
+                <td className="p-3 text-center text-sand-dim">all features free</td>
+              </tr>
+              <tr>
+                <td className="p-3">premium features</td>
+                <td className="p-3 text-center text-spice">$99/mo</td>
+                <td className="p-3 text-center text-sand-dim">free</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
       {/* What Guild.xyz Does Well */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-8 text-center">
-              What Guild.xyz Does Well
-            </h2>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200 mb-8">
-              <h3 className="text-xl font-bold text-desert-900 mb-4">Free and Flexible Access Management</h3>
-              <p className="text-desert-600 mb-6">
-                Guild.xyz offers a generous free tier with impressive flexibility. Their requirements engine supports complex logic across on-chain and off-chain conditions.
-              </p>
-              <div className="grid md:grid-cols-2 gap-4">
-                {[
-                  'Completely free (all features)',
-                  '60+ EVM chains',
-                  'Flexible requirements (on-chain + off-chain)',
-                  'Clean UX/UI',
-                  'Multi-platform (GitHub, Google Workspace)'
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Check className="w-5 h-5 text-green-500" />
-                    <span className="text-desert-700">{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-sand-100 to-sand-50 p-6 rounded-xl border border-sand-200 text-center">
-              <p className="text-desert-700">
-                <strong>If you need flexible access management</strong> with complex requirements logic, Guild.xyz is powerful.
-              </p>
-            </div>
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// what_guild_does_well</div>
+        <div className="border border-sand-dim/30 p-4">
+          <div className="text-sand-bright mb-3">free and flexible access management</div>
+          <p className="text-sand text-sm mb-4">
+            guild.xyz offers a generous free tier with impressive flexibility. their
+            requirements engine supports complex logic across on-chain and off-chain conditions.
+          </p>
+          <div className="grid md:grid-cols-2 gap-2 text-sm">
+            <div className="text-sand"><span className="text-sand-dim">+</span> completely free (all features)</div>
+            <div className="text-sand"><span className="text-sand-dim">+</span> 60+ evm chains</div>
+            <div className="text-sand"><span className="text-sand-dim">+</span> flexible requirements</div>
+            <div className="text-sand"><span className="text-sand-dim">+</span> clean ux/ui</div>
+            <div className="text-sand"><span className="text-sand-dim">+</span> multi-platform (github, google)</div>
           </div>
+          <p className="text-sand-dim text-sm mt-4 pt-3 border-t border-sand-dim/30">
+            if you need flexible access management with complex requirements logic,
+            guild.xyz is powerful.
+          </p>
         </div>
       </section>
 
       {/* What Arrakis Adds */}
-      <section className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              From Access Management to Engagement Intelligence
-            </h2>
-            <p className="text-xl text-desert-600">
-              Guild.xyz tells you who <em>can</em> access. Arrakis tells you who <em>matters</em>.
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// what_arrakis_adds</div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">conviction_scoring</div>
+            <p className="text-sand text-sm">
+              guild.xyz checks if requirements are met right now. arrakis analyzes
+              behavior over time — holding duration, trading patterns, accumulation.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              the difference: a wallet that bought yesterday and one that held for
+              two years both pass guild.xyz requirements. only arrakis distinguishes them.
             </p>
           </div>
-
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <TrendingUp className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Conviction Scoring</h3>
-              <p className="text-desert-600 mb-4">
-                Guild.xyz checks if requirements are met right now. Arrakis analyzes behavior over time — holding duration, trading patterns, accumulation — to identify who truly believes in your project.
-              </p>
-              <div className="bg-white/50 rounded-lg p-3 border border-spice-100">
-                <p className="text-sm text-desert-700">
-                  <strong>The difference:</strong> A wallet that bought yesterday and one that held for two years both pass Guild.xyz requirements. Only Arrakis distinguishes them.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Layers className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">9-Tier Progression</h3>
-              <p className="text-desert-600 mb-4">
-                Guild.xyz assigns roles based on requirements. Arrakis creates a progression journey from Outsider to Naib. Your community has visible hierarchy that drives engagement through status.
-              </p>
-              <div className="bg-white/50 rounded-lg p-3 border border-spice-100">
-                <p className="text-sm text-desert-700">
-                  <strong>The difference:</strong> Guild.xyz: "You meet requirements." Arrakis: "You're rank #12 and climbing toward Fedaykin Elite."
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <MessageCircle className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Telegram Support</h3>
-              <p className="text-desert-600 mb-4">
-                Guild.xyz focuses on Discord and web platforms. Arrakis supports both Discord and Telegram for communities that span both platforms.
-              </p>
-            </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border border-spice-200">
-              <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center mb-4">
-                <Eye className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-desert-900 mb-3">Shadow Mode</h3>
-              <p className="text-desert-600 mb-4">
-                Guild.xyz is all-or-nothing. Arrakis lets you run in shadow mode alongside any existing setup — see conviction data before committing.
-              </p>
-            </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">9_tier_progression</div>
+            <p className="text-sand text-sm">
+              guild.xyz assigns roles based on requirements. arrakis creates a
+              progression journey from outsider to naib. visible hierarchy drives engagement.
+            </p>
+            <p className="text-sand-dim text-xs mt-2">
+              guild: &quot;you meet requirements.&quot; arrakis: &quot;you&apos;re rank #12 and climbing
+              toward fedaykin elite.&quot;
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">telegram_support</div>
+            <p className="text-sand text-sm">
+              guild.xyz focuses on discord and web platforms. arrakis supports both
+              discord and telegram for communities that span both platforms.
+            </p>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-spice mb-2">shadow_mode</div>
+            <p className="text-sand text-sm">
+              guild.xyz is all-or-nothing. arrakis lets you run in shadow mode
+              alongside any existing setup — see conviction data before committing.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* The Free vs Paid Trade-off */}
-      <section className="section bg-desert-900 text-white">
-        <div className="container-custom">
-          <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                The Free vs Paid Trade-off
-              </h2>
-            </div>
+      {/* Free vs Paid Trade-off */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// free_vs_paid_tradeoff</div>
+        <pre className="text-sand text-xs overflow-x-auto whitespace-pre border border-sand-dim/30 p-4">
+{`┌────────────────────────────────────────────────────────────────────────┐
+│                     PRICING COMPARISON                                 │
+├────────────────────────────┬─────────────────┬────────────────────────┤
+│  feature set               │  guild.xyz      │  arrakis               │
+├────────────────────────────┼─────────────────┼────────────────────────┤
+│  basic token-gating        │  free           │  free                  │
+│  60+ chains                │  free           │  —                     │
+│  off-chain requirements    │  free           │  —                     │
+│  conviction scoring        │  — not avail    │  $99/mo                │
+│  9-tier progression        │  — not avail    │  $99/mo                │
+│  analytics + insights      │  — not avail    │  $99/mo                │
+│  telegram support          │  — not avail    │  $99/mo                │
+└────────────────────────────┴─────────────────┴────────────────────────┘
 
-            <div className="grid md:grid-cols-2 gap-8 mb-12">
-              <div className="bg-white/5 p-8 rounded-2xl border border-white/10">
-                <h3 className="text-xl font-bold mb-4 text-green-400">Guild.xyz: Free Everything</h3>
-                <p className="text-sand-300">
-                  Guild.xyz offers all features free. That's compelling. But there's no engagement intelligence at any price point.
-                </p>
-              </div>
-              <div className="bg-spice-500/20 p-8 rounded-2xl border border-spice-500/30">
-                <h3 className="text-xl font-bold mb-4 text-spice-400">Arrakis: Free + Premium Intelligence</h3>
-                <p className="text-sand-300">
-                  Free tier for basic gating. Premium ($99/mo) adds the intelligence layer that no free tool can provide.
-                </p>
-              </div>
-            </div>
-
-            {/* Pricing Comparison Table */}
-            <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="text-left py-4 px-6 text-sand-300">Feature Set</th>
-                    <th className="text-center py-4 px-6 text-sand-300">Guild.xyz</th>
-                    <th className="text-center py-4 px-6 text-spice-400">Arrakis</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    { feature: 'Basic token-gating', guild: 'Free', arrakis: 'Free' },
-                    { feature: '60+ chains', guild: 'Free', arrakis: '—' },
-                    { feature: 'Off-chain requirements', guild: 'Free', arrakis: '—' },
-                    { feature: 'Conviction scoring', guild: '— Not available', arrakis: '$99/mo' },
-                    { feature: '9-tier progression', guild: '— Not available', arrakis: '$99/mo' },
-                    { feature: 'Analytics + insights', guild: '— Not available', arrakis: '$99/mo' },
-                    { feature: 'Telegram support', guild: '— Not available', arrakis: '$99/mo' }
-                  ].map((row, i) => (
-                    <tr key={i} className="border-b border-white/5">
-                      <td className="py-3 px-6 text-sand-200">{row.feature}</td>
-                      <td className="py-3 px-6 text-center">
-                        <span className={row.guild === 'Free' ? 'text-green-400' : 'text-sand-500'}>{row.guild}</span>
-                      </td>
-                      <td className="py-3 px-6 text-center">
-                        <span className={row.arrakis === 'Free' ? 'text-green-400' : row.arrakis === '—' ? 'text-sand-500' : 'text-spice-400'}>{row.arrakis}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-12 grid md:grid-cols-2 gap-8">
-              <div className="bg-white/5 p-6 rounded-xl border border-white/10">
-                <h4 className="font-bold text-sand-200 mb-2">If you only need access control:</h4>
-                <p className="text-sand-300">Guild.xyz free tier is hard to beat.</p>
-              </div>
-              <div className="bg-spice-500/20 p-6 rounded-xl border border-spice-500/30">
-                <h4 className="font-bold text-spice-400 mb-2">If you need to know who your diamond hands are:</h4>
-                <p className="text-sand-200">No amount of Guild.xyz features provides that. Arrakis Premium does.</p>
-              </div>
-            </div>
-          </div>
-        </div>
+if you only need access control: guild.xyz free tier is hard to beat.
+if you need to know who your diamond hands are: no amount of guild.xyz
+features provides that. arrakis premium does.`}
+        </pre>
       </section>
 
-      {/* ROI Section */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="max-w-3xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-                ROI Calculation
-              </h2>
-              <p className="text-xl text-desert-600">
-                Why pay when free exists?
+      {/* ROI Calculation */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// roi_calculation</div>
+        <div className="border border-sand-dim/30 p-4">
+          <div className="text-spice mb-3">scenario: planning a $1M airdrop</div>
+          <div className="grid md:grid-cols-2 gap-4 text-sm mb-4">
+            <div className="border border-sand-dim/30 p-3">
+              <div className="text-sand-bright mb-2">with guild.xyz (free):</div>
+              <p className="text-sand-dim">
+                gate access based on requirements. no insight into farmer vs believer.
+                risk: 50%+ goes to farmers.
               </p>
             </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-spice-500 rounded-xl flex items-center justify-center">
-                  <Target className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="text-xl font-bold text-desert-900">Scenario: Planning a $1M airdrop</h3>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-6 mb-6">
-                <div className="bg-sand-50 p-4 rounded-xl">
-                  <h4 className="font-bold text-desert-900 mb-2">With Guild.xyz (free):</h4>
-                  <ul className="text-sm text-desert-600 space-y-1">
-                    <li>• Gate access based on requirements</li>
-                    <li>• No insight into farmer vs believer</li>
-                    <li className="text-red-600 font-medium">• Risk: 50%+ goes to farmers</li>
-                  </ul>
-                </div>
-                <div className="bg-spice-50 p-4 rounded-xl border border-spice-200">
-                  <h4 className="font-bold text-desert-900 mb-2">With Arrakis ($99/mo):</h4>
-                  <ul className="text-sm text-desert-600 space-y-1">
-                    <li>• Conviction scoring identifies diamond hands</li>
-                    <li>• Weight distribution by commitment</li>
-                    <li className="text-spice-600 font-medium">• Better allocation to true community</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-r from-spice-100 to-spice-50 p-4 rounded-xl border border-spice-200 text-center">
-                <p className="text-desert-800">
-                  <strong className="text-spice-600">ROI:</strong> If conviction data improves distribution by even 10%, that's <strong>$100,000 value</strong> for $99/month.
-                </p>
-              </div>
+            <div className="border border-spice/50 p-3">
+              <div className="text-spice mb-2">with arrakis ($99/mo):</div>
+              <p className="text-sand-dim">
+                conviction scoring identifies diamond hands. weight distribution by
+                commitment. better allocation to true community.
+              </p>
             </div>
           </div>
+          <p className="text-sand text-sm">
+            <span className="text-spice">roi:</span> if conviction data improves distribution
+            by even 10%, that&apos;s $100,000 value for $99/month.
+          </p>
         </div>
       </section>
 
       {/* When to Choose */}
-      <section className="section">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              When to Choose Each
-            </h2>
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// when_to_choose</div>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-sand-bright text-sm mb-3">choose guild.xyz if:</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-sand-dim">-</span> free is the primary requirement</p>
+              <p><span className="text-sand-dim">-</span> you need 60+ chain support</p>
+              <p><span className="text-sand-dim">-</span> you want off-chain requirements</p>
+              <p><span className="text-sand-dim">-</span> access management is the only goal</p>
+              <p><span className="text-sand-dim">-</span> you don&apos;t need conviction data</p>
+            </div>
           </div>
-
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <div className="bg-white p-8 rounded-2xl border border-sand-200">
-              <h3 className="text-xl font-bold text-desert-900 mb-6">Choose Guild.xyz If:</h3>
-              <ul className="space-y-3">
-                {[
-                  'Free is the primary requirement',
-                  'You need 60+ chain support',
-                  'You want off-chain requirements',
-                  'Access management is the only goal',
-                  "You don't need conviction data"
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-desert-600">{item}</span>
-                  </li>
-                ))}
-              </ul>
+          <div className="border border-spice/50 p-4">
+            <div className="text-spice text-sm mb-3">choose arrakis if:</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-spice">+</span> you need to identify valuable members</p>
+              <p><span className="text-spice">+</span> you&apos;re planning airdrops</p>
+              <p><span className="text-spice">+</span> you want tiered progression</p>
+              <p><span className="text-spice">+</span> you need telegram support</p>
+              <p><span className="text-spice">+</span> you value engagement over access</p>
             </div>
-
-            <div className="bg-gradient-to-br from-spice-50 to-sand-50 p-8 rounded-2xl border-2 border-spice-500">
-              <h3 className="text-xl font-bold text-desert-900 mb-6">Choose Arrakis If:</h3>
-              <ul className="space-y-3">
-                {[
-                  'You need to identify valuable members',
-                  "You're planning airdrops",
-                  'You want tiered progression',
-                  'You need Telegram support',
-                  'You value engagement over access'
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <Check className="w-5 h-5 text-spice-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-desert-700">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="bg-white p-8 rounded-2xl border border-sand-200">
-              <h3 className="text-xl font-bold text-desert-900 mb-6">Use Both If:</h3>
-              <ul className="space-y-3">
-                {[
-                  'You want Guild.xyz for off-chain requirements',
-                  'You want Arrakis for on-chain intelligence',
-                  'Different use cases in same community'
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <Check className="w-5 h-5 text-desert-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-desert-600">{item}</span>
-                  </li>
-                ))}
-              </ul>
+          </div>
+          <div className="border border-sand-dim/30 p-4">
+            <div className="text-sand-bright text-sm mb-3">use both if:</div>
+            <div className="text-sm text-sand space-y-1">
+              <p><span className="text-sand-dim">-</span> guild for off-chain requirements</p>
+              <p><span className="text-sand-dim">-</span> arrakis for on-chain intelligence</p>
+              <p><span className="text-sand-dim">-</span> different use cases in same community</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* FAQ / Objections */}
-      <section className="section bg-sand-50">
-        <div className="container-custom">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-desert-900 mb-4">
-              Common Questions
-            </h2>
-          </div>
-
-          <div className="max-w-3xl mx-auto space-y-6">
-            {[
-              {
-                q: '"Guild.xyz is free — why pay for Arrakis?"',
-                a: "Free is great for access control. But when you need to know who your diamond hands are — not just who holds tokens — Guild.xyz can't tell you. No free tool can. That intelligence has value, especially before airdrops."
-              },
-              {
-                q: '"Guild.xyz has more chain support (60+ vs Score Service)"',
-                a: "True. If you need specific chains Guild.xyz supports that we don't, use Guild.xyz for those. But chain count doesn't reveal conviction. A holder on 60 chains means nothing if you don't know which ones are farmers."
-              },
-              {
-                q: '"I need off-chain requirements (GitHub, Twitter)"',
-                a: "Guild.xyz is better for that. We focus on on-chain intelligence. Consider using both — Guild.xyz for off-chain requirements, Arrakis for conviction-based tiering."
-              },
-              {
-                q: '"Everything I need is free with Guild.xyz"',
-                a: "If access management is all you need, stay with Guild.xyz. But ask: Do you know who your top 7 holders are? Who's held longest? Who's accumulating vs selling? If those questions matter, that's where we start."
-              }
-            ].map((item, i) => (
-              <div key={i} className="bg-white p-6 rounded-xl border border-sand-200">
-                <h3 className="font-bold text-desert-900 mb-3">{item.q}</h3>
-                <p className="text-desert-600">{item.a}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className="section bg-gradient-to-b from-desert-900 to-desert-950 text-white">
-        <div className="container-custom">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-5xl font-bold mb-6">
-              Free works until you need to know who matters
-            </h2>
-            <p className="text-xl text-sand-300 mb-8">
-              Guild.xyz gates access. Arrakis identifies value. Start free, upgrade when conviction data proves its worth.
+      {/* FAQ */}
+      <section>
+        <div className="text-sand-dim text-xs mb-4">// faq</div>
+        <div className="space-y-4 text-sm">
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> guild.xyz is free — why pay for arrakis?
             </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Link href="/pricing" className="btn bg-spice-500 hover:bg-spice-600 text-white px-8 py-4 text-lg">
-                Start Free
-                <ArrowRight className="ml-2 w-5 h-5 inline" />
-              </Link>
-              <Link href="/pricing" className="btn bg-white/10 hover:bg-white/20 text-white border border-white/30 px-8 py-4 text-lg">
-                See Pricing
-              </Link>
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-6">
-              {[
-                'Free tier available',
-                'Shadow mode evaluation',
-                'No credit card required'
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-spice-400" />
-                  <span className="text-sand-300">{item}</span>
-                </div>
-              ))}
-            </div>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> free is great for access control. but
+              when you need to know who your diamond hands are — not just who holds tokens —
+              guild.xyz can&apos;t tell you. no free tool can. that intelligence has value,
+              especially before airdrops.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> guild.xyz has more chain support
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> true. if you need specific chains
+              guild.xyz supports that we don&apos;t, use guild.xyz for those. but chain count
+              doesn&apos;t reveal conviction. a holder on 60 chains means nothing if you don&apos;t
+              know which ones are farmers.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> i need off-chain requirements
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> guild.xyz is better for that. we focus
+              on on-chain intelligence. consider using both — guild.xyz for off-chain
+              requirements, arrakis for conviction-based tiering.
+            </p>
+          </div>
+          <div>
+            <p className="text-sand-bright">
+              <span className="text-spice">Q:</span> everything i need is free with guild.xyz
+            </p>
+            <p className="text-sand mt-1">
+              <span className="text-sand-dim">A:</span> if access management is all you need,
+              stay with guild.xyz. but ask: do you know who your top 7 holders are? who&apos;s
+              held longest? who&apos;s accumulating vs selling? if those questions matter, that&apos;s
+              where we start.
+            </p>
           </div>
         </div>
       </section>
-    </main>
+
+      {/* CTA */}
+      <section className="border border-spice/50 p-6 text-center">
+        <p className="text-sand-bright text-lg mb-2">
+          free works until you need to know who matters
+        </p>
+        <p className="text-sand-dim text-sm mb-6">
+          guild.xyz gates access. arrakis identifies value. start free, upgrade when
+          conviction data proves its worth.
+        </p>
+        <div className="flex flex-wrap justify-center gap-4 text-sm">
+          <Link
+            href="https://discord.gg/thehoneyjar"
+            className="text-spice hover:text-spice-bright"
+          >
+            [start free]
+          </Link>
+          <Link href="/pricing" className="text-sand hover:text-sand-bright">
+            [view pricing]
+          </Link>
+        </div>
+        <p className="text-sand-dim text-xs mt-4">
+          free tier available • shadow mode evaluation • no credit card required
+        </p>
+      </section>
+    </div>
   );
 }
