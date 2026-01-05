@@ -47,6 +47,9 @@ export function Footer() {
             <Link href="/compare/vs-guild" className="block text-sand hover:text-sand-bright">
               vs-guild
             </Link>
+            <Link href="/compare/vs-matrica" className="block text-sand hover:text-sand-bright">
+              vs-matrica
+            </Link>
           </div>
         </div>
 
@@ -56,6 +59,14 @@ export function Footer() {
             <Link href="/about" className="block text-sand hover:text-sand-bright">
               about
             </Link>
+            <a
+              href="https://github.com/0xHoneyJar/arrakis"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-sand hover:text-sand-bright"
+            >
+              github
+            </a>
             <a
               href="https://discord.gg/thehoneyjar"
               target="_blank"
@@ -94,7 +105,25 @@ export function Footer() {
       <div className="mt-8 text-sand-dim/50 text-xs space-y-1">
         <div>{`/* the spice must flow */`}</div>
         <div>
-          design inspired by{' '}
+          built with{' '}
+          <a
+            href="https://github.com/0xHoneyJar/loa"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sand-dim/70 hover:text-sand-dim underline"
+          >
+            loa
+          </a>
+          {' '}by{' '}
+          <a
+            href="https://thehoneyjar.xyz"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sand-dim/70 hover:text-sand-dim underline"
+          >
+            thj
+          </a>
+          {' '}• design inspired by{' '}
           <a
             href="https://github.com/ertdfgcvb/play.core"
             target="_blank"
@@ -102,6 +131,15 @@ export function Footer() {
             className="text-sand-dim/70 hover:text-sand-dim underline"
           >
             play.core
+          </a>
+        </div>
+        <div>
+          contact:{' '}
+          <a
+            href="mailto:hello@0xhoneyjar.xyz"
+            className="text-sand-dim/70 hover:text-sand-dim underline"
+          >
+            hello@0xhoneyjar.xyz
           </a>
         </div>
       </div>
