@@ -219,28 +219,28 @@ export default function AboutPage() {
               <div>
                 <span className="text-sand-dim">general:</span>{' '}
                 <a
-                  href="mailto:hello@thehoneyjar.xyz"
+                  href="mailto:fud@0xhoneyjar.xyz"
                   className="text-sand hover:text-sand-bright"
                 >
-                  hello@thehoneyjar.xyz
+                  fud@0xhoneyjar.xyz
                 </a>
               </div>
               <div>
                 <span className="text-sand-dim">sales:</span>{' '}
                 <a
-                  href="mailto:hello@thehoneyjar.xyz"
+                  href="mailto:henlo@0xhoneyjar.xyz"
                   className="text-sand hover:text-sand-bright"
                 >
-                  hello@thehoneyjar.xyz
+                  henlo@0xhoneyjar.xyz
                 </a>
               </div>
               <div>
                 <span className="text-sand-dim">security:</span>{' '}
                 <a
-                  href="mailto:security@thehoneyjar.xyz"
+                  href="mailto:security@0xhoneyjar.xyz"
                   className="text-sand hover:text-sand-bright"
                 >
-                  security@thehoneyjar.xyz
+                  security@0xhoneyjar.xyz
                 </a>
               </div>
             </div>
@@ -251,12 +251,12 @@ export default function AboutPage() {
             <div className="space-y-2 text-sm">
               <div>
                 <a
-                  href="https://twitter.com/0xHoneyJar"
+                  href="https://dune.com/thj"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sand hover:text-sand-bright"
                 >
-                  <span className="text-spice">&gt;</span> twitter @0xHoneyJar
+                  <span className="text-spice">&gt;</span> discord.gg/thehoneyjar
                 </a>
               </div>
               <div>
@@ -271,12 +271,12 @@ export default function AboutPage() {
               </div>
               <div>
                 <a
-                  href="https://github.com/0xHoneyJar"
+                  href="https://github.com/0xHoneyJar/arrakis"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sand hover:text-sand-bright"
                 >
-                  <span className="text-spice">&gt;</span> github.com/0xHoneyJar
+                  <span className="text-spice">&gt;</span> github.com/0xHoneyJar/arrakis
                 </a>
               </div>
             </div>
