@@ -2,12 +2,74 @@
  * Simple Prometheus Metrics for Sietch Service
  *
  * Exposes metrics in Prometheus text format for monitoring
+ *
+ * Sprint 68: Added observability metrics:
+ * - sietch_gossip_convergence_seconds (Task 68.3)
+ * - sietch_fast_path_latency_ms (Task 68.4)
+ * - sietch_mfa_* counters (Task 68.5)
  */
 
 import { getHealthStatus } from '../db/index.js';
 import * as queries from '../db/index.js';
 
-// Simple in-memory counters and gauges
+// =============================================================================
+// Histogram Configuration
+// =============================================================================
+
+/** Gossip convergence histogram buckets (seconds) - Task 68.3 */
+const GOSSIP_CONVERGENCE_BUCKETS = [0.1, 0.25, 0.5, 1, 2, 5, 10];
+
+/** Fast-path latency histogram buckets (milliseconds) - Task 68.4 */
+const FAST_PATH_LATENCY_BUCKETS = [5, 10, 25, 50, 100, 250, 500];
+
+// =============================================================================
+// Histogram Data Structure
+// =============================================================================
+
+/**
+ * Histogram data for a metric
+ */
+interface HistogramData {
+  buckets: Map<number, number>; // bucket upper bound -> count
+  sum: number;
+  count: number;
+}
+
+/**
+ * Create empty histogram data
+ */
+function createHistogram(buckets: number[]): HistogramData {
+  const bucketMap = new Map<number, number>();
+  for (const b of buckets) {
+    bucketMap.set(b, 0);
+  }
+  bucketMap.set(Infinity, 0); // +Inf bucket
+  return {
+    buckets: bucketMap,
+    sum: 0,
+    count: 0,
+  };
+}
+
+/**
+ * Observe a value in a histogram
+ */
+function observeHistogram(histogram: HistogramData, value: number): void {
+  histogram.sum += value;
+  histogram.count++;
+
+  // Increment all buckets where value <= bucket
+  for (const [bucket, count] of histogram.buckets) {
+    if (value <= bucket) {
+      histogram.buckets.set(bucket, count + 1);
+    }
+  }
+}
+
+// =============================================================================
+// Metrics Interface
+// =============================================================================
+
 interface Metrics {
   // HTTP metrics
   httpRequestsTotal: Map<string, number>;
@@ -24,6 +86,18 @@ interface Metrics {
   // Health metrics
   lastSuccessfulQueryTimestamp: number;
   gracePeriodActive: number;
+
+  // Sprint 68 - Observability metrics
+  // Task 68.3: Gossip convergence
+  gossipConvergence: HistogramData;
+
+  // Task 68.4: Fast-path latency (per operation type)
+  fastPathLatency: Map<string, HistogramData>;
+
+  // Task 68.5: MFA metrics (per method and tier)
+  mfaAttemptTotal: Map<string, number>;
+  mfaSuccessTotal: Map<string, number>;
+  mfaTimeoutTotal: Map<string, number>;
 }
 
 const metrics: Metrics = {
@@ -37,6 +111,13 @@ const metrics: Metrics = {
   alertsSentTotal: 0,
   lastSuccessfulQueryTimestamp: 0,
   gracePeriodActive: 0,
+
+  // Sprint 68 metrics
+  gossipConvergence: createHistogram(GOSSIP_CONVERGENCE_BUCKETS),
+  fastPathLatency: new Map(),
+  mfaAttemptTotal: new Map(),
+  mfaSuccessTotal: new Map(),
+  mfaTimeoutTotal: new Map(),
 };
 
 /**
@@ -64,6 +145,81 @@ export function recordHttpRequest(
     key,
     (metrics.httpRequestDurationCount.get(key) ?? 0) + 1
   );
+}
+
+// =============================================================================
+// Sprint 68 Metric Recording Functions
+// =============================================================================
+
+/**
+ * Record gossip convergence time (Task 68.3)
+ *
+ * Tracks how long it takes for state changes to propagate
+ * from initiation to confirmation.
+ *
+ * Alert threshold: p99 > 2 seconds
+ *
+ * @param seconds - Time in seconds for state change propagation
+ */
+export function recordGossipConvergence(seconds: number): void {
+  observeHistogram(metrics.gossipConvergence, seconds);
+}
+
+/**
+ * Record fast-path latency (Task 68.4)
+ *
+ * Tracks latency for "fast path" operations:
+ * - Redis cache hits
+ * - Eligibility checks
+ * - Other low-latency operations
+ *
+ * Alert thresholds:
+ * - p99 > 50ms: warning
+ * - p99 > 100ms: page
+ *
+ * @param operationType - Type of operation (e.g., 'redis_cache_hit', 'eligibility_check')
+ * @param latencyMs - Latency in milliseconds
+ */
+export function recordFastPathLatency(operationType: string, latencyMs: number): void {
+  if (!metrics.fastPathLatency.has(operationType)) {
+    metrics.fastPathLatency.set(operationType, createHistogram(FAST_PATH_LATENCY_BUCKETS));
+  }
+  observeHistogram(metrics.fastPathLatency.get(operationType)!, latencyMs);
+}
+
+/**
+ * Record MFA attempt (Task 68.5)
+ *
+ * @param method - MFA method ('totp', 'duo', 'backup')
+ * @param tier - Risk tier ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
+ */
+export function recordMfaAttempt(method: string, tier: string): void {
+  const key = `${method}|${tier}`;
+  metrics.mfaAttemptTotal.set(key, (metrics.mfaAttemptTotal.get(key) ?? 0) + 1);
+}
+
+/**
+ * Record MFA success (Task 68.5)
+ *
+ * @param method - MFA method ('totp', 'duo', 'backup')
+ * @param tier - Risk tier ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
+ */
+export function recordMfaSuccess(method: string, tier: string): void {
+  const key = `${method}|${tier}`;
+  metrics.mfaSuccessTotal.set(key, (metrics.mfaSuccessTotal.get(key) ?? 0) + 1);
+}
+
+/**
+ * Record MFA timeout (Task 68.5)
+ *
+ * Alert threshold: timeout_rate > 10% triggers investigation
+ *
+ * @param method - MFA method ('totp', 'duo', 'backup')
+ * @param tier - Risk tier ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
+ */
+export function recordMfaTimeout(method: string, tier: string): void {
+  const key = `${method}|${tier}`;
+  metrics.mfaTimeoutTotal.set(key, (metrics.mfaTimeoutTotal.get(key) ?? 0) + 1);
 }
 
 /**
@@ -232,6 +388,57 @@ export function getPrometheusMetrics(): string {
     'Process uptime in seconds',
     process.uptime()
   );
+
+  // ===========================================================================
+  // Sprint 68 - Observability Metrics
+  // ===========================================================================
+
+  // Task 68.3: Gossip Convergence Histogram
+  // Alert threshold: p99 > 2 seconds
+  lines.push('# HELP sietch_gossip_convergence_seconds Time for state changes to propagate');
+  lines.push('# TYPE sietch_gossip_convergence_seconds histogram');
+  for (const [bucket, count] of metrics.gossipConvergence.buckets) {
+    const le = bucket === Infinity ? '+Inf' : bucket.toString();
+    lines.push(`sietch_gossip_convergence_seconds_bucket{le="${le}"} ${count}`);
+  }
+  lines.push(`sietch_gossip_convergence_seconds_sum ${metrics.gossipConvergence.sum}`);
+  lines.push(`sietch_gossip_convergence_seconds_count ${metrics.gossipConvergence.count}`);
+
+  // Task 68.4: Fast-Path Latency Histogram (per operation type)
+  // Alert thresholds: p99 > 50ms (warning), p99 > 100ms (page)
+  lines.push('# HELP sietch_fast_path_latency_ms Latency for fast-path operations');
+  lines.push('# TYPE sietch_fast_path_latency_ms histogram');
+  for (const [operationType, histogram] of metrics.fastPathLatency) {
+    for (const [bucket, count] of histogram.buckets) {
+      const le = bucket === Infinity ? '+Inf' : bucket.toString();
+      lines.push(`sietch_fast_path_latency_ms_bucket{operation="${operationType}",le="${le}"} ${count}`);
+    }
+    lines.push(`sietch_fast_path_latency_ms_sum{operation="${operationType}"} ${histogram.sum}`);
+    lines.push(`sietch_fast_path_latency_ms_count{operation="${operationType}"} ${histogram.count}`);
+  }
+
+  // Task 68.5: MFA Metrics (per method and tier)
+  // Alert threshold: timeout_rate > 10% triggers investigation
+  lines.push('# HELP sietch_mfa_attempt_total Total MFA verification attempts');
+  lines.push('# TYPE sietch_mfa_attempt_total counter');
+  for (const [key, count] of metrics.mfaAttemptTotal) {
+    const [method, tier] = key.split('|');
+    lines.push(`sietch_mfa_attempt_total{method="${method}",tier="${tier}"} ${count}`);
+  }
+
+  lines.push('# HELP sietch_mfa_success_total Total successful MFA verifications');
+  lines.push('# TYPE sietch_mfa_success_total counter');
+  for (const [key, count] of metrics.mfaSuccessTotal) {
+    const [method, tier] = key.split('|');
+    lines.push(`sietch_mfa_success_total{method="${method}",tier="${tier}"} ${count}`);
+  }
+
+  lines.push('# HELP sietch_mfa_timeout_total Total MFA verification timeouts');
+  lines.push('# TYPE sietch_mfa_timeout_total counter');
+  for (const [key, count] of metrics.mfaTimeoutTotal) {
+    const [method, tier] = key.split('|');
+    lines.push(`sietch_mfa_timeout_total{method="${method}",tier="${tier}"} ${count}`);
+  }
 
   return lines.join('\n') + '\n';
 }

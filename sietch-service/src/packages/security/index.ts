@@ -4,12 +4,16 @@
  * Sprint 47: Kill Switch & MFA for Arrakis SaaS
  * Sprint 50: Post-Audit Hardening (P0)
  * Sprint 51: Session Security Enhancements (P1)
+ * Sprint 68: MFA Hardening (Duo Integration)
  *
  * @module packages/security
  */
 
 // Types
 export * from './types.js';
+
+// MFA Module (Sprint 68)
+export * from './mfa/index.js';
 
 // MFA Service
 export { MFAService, MFAError } from './MFAService.js';
