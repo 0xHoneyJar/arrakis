@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 // Simplex noise implementation (adapted from blindman67/SimplexNoiseJS)
 function createNoise(seed: number) {
-  const F2 = 0.5 * (Math.sqrt(3) - 1);
-  const G2 = (3 - Math.sqrt(3)) / 6;
   const F3 = 1 / 3;
   const G3 = 1 / 6;
 
@@ -18,11 +16,9 @@ function createNoise(seed: number) {
   const perm = new Uint8Array(512);
   const permMod12 = new Uint8Array(512);
 
-  // Seed the permutation table
   const p = new Uint8Array(256);
   for (let i = 0; i < 256; i++) p[i] = i;
 
-  // Fisher-Yates shuffle with seed
   let s = seed;
   for (let i = 255; i > 0; i--) {
     s = (s * 16807) % 2147483647;
@@ -122,6 +118,9 @@ interface AsciiNoiseProps {
   height?: number;
   speed?: number;
   scale?: number;
+  autoSize?: boolean;
+  charWidth?: number;
+  charHeight?: number;
 }
 
 export function AsciiNoise({
@@ -129,17 +128,42 @@ export function AsciiNoise({
   width = 80,
   height = 12,
   speed = 0.0007,
-  scale = 0.03
+  scale = 0.03,
+  autoSize = false,
+  charWidth = 6,
+  charHeight = 12,
 }: AsciiNoiseProps) {
   const [output, setOutput] = useState<string>('');
-  const frameRef = useRef<number>(0);
+  const [dimensions, setDimensions] = useState({ cols: width, rows: height });
+  const containerRef = useRef<HTMLPreElement>(null);
   const noiseRef = useRef<ReturnType<typeof createNoise> | null>(null);
 
+  // Handle auto-sizing
   useEffect(() => {
-    // Initialize noise with current timestamp as seed
+    if (!autoSize) {
+      setDimensions({ cols: width, rows: height });
+      return;
+    }
+
+    const updateSize = () => {
+      if (containerRef.current?.parentElement) {
+        const parent = containerRef.current.parentElement;
+        const cols = Math.floor(parent.clientWidth / charWidth);
+        const rows = Math.floor(parent.clientHeight / charHeight);
+        setDimensions({ cols: Math.max(10, cols), rows: Math.max(5, rows) });
+      }
+    };
+
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, [autoSize, width, height, charWidth, charHeight]);
+
+  // Animation loop
+  useEffect(() => {
     noiseRef.current = createNoise(Date.now());
 
-    const aspect = 2.0; // Character aspect ratio approximation
+    const aspect = 2.0;
     let animationId: number;
     const startTime = performance.now();
 
@@ -149,9 +173,9 @@ export function AsciiNoise({
       const t = (performance.now() - startTime) * speed;
       const lines: string[] = [];
 
-      for (let y = 0; y < height; y++) {
+      for (let y = 0; y < dimensions.rows; y++) {
         let line = '';
-        for (let x = 0; x < width; x++) {
+        for (let x = 0; x < dimensions.cols; x++) {
           const nx = x * scale;
           const ny = (y * scale) / aspect + t;
           const value = noiseRef.current.noise3D(nx, ny, t);
@@ -172,10 +196,13 @@ export function AsciiNoise({
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [width, height, speed, scale]);
+  }, [dimensions.cols, dimensions.rows, speed, scale]);
 
   return (
-    <pre className={`font-mono leading-none select-none ${className}`}>
+    <pre
+      ref={containerRef}
+      className={`font-mono leading-none select-none overflow-hidden ${className}`}
+    >
       {output}
     </pre>
   );
