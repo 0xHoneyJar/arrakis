@@ -2,13 +2,19 @@
  * Logging Infrastructure
  *
  * Sprint 56: Shadow Mode Foundation
+ * Sprint 69: Trace Context Integration
  *
  * Simple logging interface for packages. Uses console with
  * structured logging format until a more sophisticated solution
  * is needed.
  *
+ * Now integrates with tracing infrastructure to automatically
+ * include trace/span IDs in log output.
+ *
  * @module packages/infrastructure/logging
  */
+
+import { getTraceLogFields } from '../tracing';
 
 /**
  * Log level types
@@ -35,6 +41,8 @@ export interface LoggerOptions {
   level?: LogLevel;
   /** Enable JSON output (default: false) */
   json?: boolean;
+  /** Include trace context in logs (default: true) */
+  includeTrace?: boolean;
 }
 
 /**
@@ -48,17 +56,19 @@ const LOG_PRIORITY: Record<LogLevel, number> = {
 };
 
 /**
- * Simple console-based logger
+ * Simple console-based logger with trace context integration
  */
 class ConsoleLogger implements ILogger {
   private readonly service: string;
   private readonly minLevel: number;
   private readonly json: boolean;
+  private readonly includeTrace: boolean;
 
   constructor(options: LoggerOptions) {
     this.service = options.service;
     this.minLevel = LOG_PRIORITY[options.level ?? 'info'];
     this.json = options.json ?? false;
+    this.includeTrace = options.includeTrace ?? true;
   }
 
   debug(message: string, context?: Record<string, unknown>): void {
@@ -88,20 +98,29 @@ class ConsoleLogger implements ILogger {
 
     const timestamp = new Date().toISOString();
 
+    // Get trace context if enabled
+    const traceFields = this.includeTrace ? getTraceLogFields() : {};
+
     if (this.json) {
       const logEntry = {
         timestamp,
         level,
         service: this.service,
         message,
+        ...traceFields,
         ...context,
       };
       console.log(JSON.stringify(logEntry));
     } else {
+      // Format trace ID for text output (shortened for readability)
+      const traceId = traceFields.traceId;
+      const tracePrefix = traceId && traceId !== 'no-trace'
+        ? ` [trace:${traceId.slice(0, 8)}]`
+        : '';
       const contextStr = context
         ? ` ${JSON.stringify(context)}`
         : '';
-      const prefix = `[${timestamp}] [${level.toUpperCase()}] [${this.service}]`;
+      const prefix = `[${timestamp}] [${level.toUpperCase()}] [${this.service}]${tracePrefix}`;
       console.log(`${prefix} ${message}${contextStr}`);
     }
   }
