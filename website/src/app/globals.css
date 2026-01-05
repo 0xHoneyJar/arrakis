@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 250 250 249;
+    --foreground: 28 25 23;
+    --muted: 245 245 244;
+    --muted-foreground: 120 113 108;
+    --accent: 249 115 22;
+    --accent-foreground: 255 255 255;
+  }
+
+  body {
+    @apply bg-stone-50 text-stone-900 antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-sans tracking-tight;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-6 py-3 font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply btn bg-spice-500 text-white hover:bg-spice-600 focus:ring-spice-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-stone-100 text-stone-900 hover:bg-stone-200 focus:ring-stone-400;
+  }
+
+  .btn-outline {
+    @apply btn border-2 border-stone-300 bg-transparent text-stone-900 hover:bg-stone-100 focus:ring-stone-400;
+  }
+
+  .section {
+    @apply py-16 md:py-24 lg:py-32;
+  }
+
+  .container-custom {
+    @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+}
