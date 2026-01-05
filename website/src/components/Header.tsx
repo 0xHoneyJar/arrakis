@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { AsciiLogoCompact } from './AsciiLogo';
 
 const navLinks = [
   { href: '/features', label: 'features' },
@@ -16,8 +17,9 @@ export function Header() {
   return (
     <header>
       <nav className="flex items-center justify-between">
-        <Link href="/" className="text-sand-bright hover:text-spice">
-          <span className="text-spice">&gt;</span> ARRAKIS
+        <Link href="/" className="text-sand-bright hover:text-spice flex items-center gap-1">
+          <AsciiLogoCompact />
+          <span>ARRAKIS</span>
         </Link>
 
         {/* Desktop nav */}

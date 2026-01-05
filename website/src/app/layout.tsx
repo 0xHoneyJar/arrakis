@@ -7,6 +7,13 @@ export const metadata: Metadata = {
   title: 'ARRAKIS // Engagement Intelligence',
   description:
     'Know your community, not just your holders. Conviction scoring, 9-tier progression, and zero-risk adoption.',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/icon.svg',
+  },
   openGraph: {
     title: 'ARRAKIS // Engagement Intelligence',
     description:
