@@ -56,9 +56,14 @@ export function Footer() {
         <div>
           <div className="text-sand-dim mb-3">// links</div>
           <div className="space-y-2">
-            <Link href="/about" className="block text-sand hover:text-sand-bright">
-              about
-            </Link>
+            <a
+              href="https://dune.com/thj"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-sand hover:text-sand-bright"
+            >
+              dune
+            </a>
             <a
               href="https://github.com/0xHoneyJar/arrakis"
               target="_blank"

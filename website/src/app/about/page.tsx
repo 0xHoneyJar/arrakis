@@ -6,7 +6,7 @@ import { RandomAsciiChars } from '@/components/RandomAsciiChars';
 export const metadata: Metadata = {
   title: 'about // ARRAKIS',
   description:
-    'Built on Collab.Land by the #1 team on Dune Analytics. 65+ sprints of development.',
+    'The #1 Dune team brings on-chain intelligence to your Discord — no SQL required. 65+ sprints. Zero code. Built on Collab.Land.',
 };
 
 export default function AboutPage() {
@@ -17,14 +17,14 @@ export default function AboutPage() {
         <RandomAsciiChars count={10} variant="mixed" className="text-sand-dim" />
         <div className="text-sand-dim text-xs mb-2">// about</div>
         <h1 className="text-2xl text-sand-bright">
-          built on collab.land. by the #1 team on dune analytics.
+          dune analytics power. zero code required.
         </h1>
         <p className="text-sand mt-2">
-          arrakis extends collab.land with engagement intelligence. you trust
-          collab.land — we just make it smarter.
+          the #1 dune team brings on-chain community intelligence to your discord —
+          no SQL queries, no dashboards, no data analysts needed.
         </p>
         <p className="text-spice text-sm mt-4">
-          available through the collab.land marketplace
+          built on collab.land • powered by dune expertise
         </p>
       </section>
 
@@ -35,25 +35,26 @@ export default function AboutPage() {
         <div className="text-sand-dim text-xs mb-4">// mission</div>
         <div className="border border-sand-dim/30 p-4 space-y-4 text-sand">
           <p>
-            collab.land solved token-gating. but communities deserve more than binary
-            access control — they deserve to know who actually believes in their project.
+            on-chain data holds incredible insights about your community — who&apos;s been
+            holding since day one, who accumulates during dips, who really believes in
+            your project.
           </p>
           <p className="text-spice">
-            we&apos;re extending collab.land with engagement intelligence.
+            but getting those insights requires dune queries, dashboards, and data analysts.
+            most communities can&apos;t afford that expertise.
           </p>
           <p>
-            you don&apos;t need to trust anything beyond collab.land. arrakis uses their
-            infrastructure for wallet verification and token checking. we just add
-            conviction scoring and tiered progression on top.
+            we&apos;re the #1 team on dune analytics. we&apos;ve spent years mastering on-chain
+            data for protocols, DAOs, and NFT projects. now we&apos;ve packaged that expertise
+            into a tool anyone can use — no SQL, no dashboards, no code.
           </p>
           <p>
-            we analyze on-chain behavior to identify conviction — holding duration,
-            trading patterns, accumulation history. then we create tiered experiences
-            that reward that commitment.
+            arrakis delivers conviction insights as discord roles that update automatically.
+            holding duration, trading patterns, on-chain activity — all curated for you.
           </p>
           <p className="text-sand-bright">
-            result: the same collab.land trust you rely on, with the intelligence
-            to know who your real community actually is.
+            result: dune analytics power delivered to your discord. 15 minutes to setup.
+            zero code required.
           </p>
         </div>
       </section>
@@ -68,77 +69,75 @@ export default function AboutPage() {
           <div className="border border-sand-dim/30 p-4">
             <div className="text-spice mb-2">the problem we kept seeing</div>
             <p className="text-sand mb-4">
-              working on dune analytics, we built dashboards for dozens of protocols.
-              again and again, we saw the same pattern:
+              working as the #1 dune analytics team, we built dashboards for dozens of
+              protocols. again and again, we saw the same pattern:
             </p>
             <div className="text-sm text-sand space-y-1">
               <p>
-                <span className="text-sand-dim">-</span> communities couldn&apos;t distinguish
-                believers from speculators
+                <span className="text-sand-dim">-</span> communities wanted conviction data
+                but couldn&apos;t afford data analysts
               </p>
               <p>
-                <span className="text-sand-dim">-</span> airdrops went to farmers, diluting
-                loyal holders
+                <span className="text-sand-dim">-</span> airdrops went to farmers because
+                nobody could identify real holders
               </p>
               <p>
-                <span className="text-sand-dim">-</span> governance participation was abysmal
+                <span className="text-sand-dim">-</span> on-chain insights lived in CSVs,
+                not where communities engage
               </p>
               <p>
-                <span className="text-sand-dim">-</span> discord servers felt flat — everyone
-                looked the same
+                <span className="text-sand-dim">-</span> dashboards got stale — one-time
+                snapshots don&apos;t capture dynamic communities
               </p>
             </div>
             <p className="text-sand-bright mt-4">
-              token-gating solved access. but it didn&apos;t solve engagement.
+              powerful on-chain data existed. it just wasn&apos;t accessible.
             </p>
           </div>
 
           <div className="border border-spice/30 p-4">
-            <div className="text-spice mb-2">the solution we built</div>
+            <div className="text-spice mb-2">the solution: dune for discord</div>
             <p className="text-sand">
-              we realized the same on-chain intelligence we used for analytics could be
-              applied to community management. but we didn&apos;t want to build yet another
-              platform requiring new trust. so we built on top of collab.land.
+              we realized we could package our dune expertise into a tool anyone could use.
+              no SQL queries. no dashboard building. no data engineering.
             </p>
             <p className="text-sand mt-4">
-              arrakis extends collab.land with conviction scoring and tiered progression.
-              you don&apos;t need to trust anything new — we use their infrastructure for
-              wallet verification.
+              arrakis delivers conviction insights as discord roles. holding duration,
+              trading patterns, on-chain activity — all curated into a 15-minute setup
+              that updates automatically every 6 hours.
             </p>
             <p className="text-spice mt-4">
-              arrakis: the engagement layer for collab.land.
+              arrakis: a dune wizard embedded in your discord.
             </p>
           </div>
 
           <div className="border border-sand-dim/30 p-4">
-            <div className="text-spice mb-2">65+ sprints of building</div>
+            <div className="text-spice mb-2">65+ sprints of dune expertise</div>
             <p className="text-sand mb-4">
-              this isn&apos;t a weekend project. arrakis has been through 65+ development
-              sprints building on top of collab.land:
+              this isn&apos;t a weekend project. arrakis represents 65+ sprints of
+              packaging our dune analytics expertise into accessible tooling:
             </p>
             <div className="text-sm text-sand space-y-1">
               <p>
-                <span className="text-spice">+</span> collab.land marketplace integration
+                <span className="text-spice">+</span> years of on-chain analytics experience
               </p>
               <p>
-                <span className="text-spice">+</span> enterprise-grade postgresql with
-                row-level security
+                <span className="text-spice">+</span> conviction scoring algorithms — no
+                queries needed
               </p>
               <p>
-                <span className="text-spice">+</span> two-tier architecture for 99.9%
-                uptime
+                <span className="text-spice">+</span> pre-built insights that update
+                automatically
               </p>
               <p>
-                <span className="text-spice">+</span> 9-tier progression system
-                (sietchtheme)
+                <span className="text-spice">+</span> self-service wizard — 15 minute setup
               </p>
               <p>
-                <span className="text-spice">+</span> conviction scoring powered by dune
-                expertise
+                <span className="text-spice">+</span> enterprise-grade infrastructure with RLS
               </p>
             </div>
             <p className="text-sand-bright mt-4">
-              we&apos;ve built something serious on a foundation you already trust.
+              the power of dune. the simplicity of a discord bot. zero code required.
             </p>
           </div>
         </div>
@@ -151,31 +150,31 @@ export default function AboutPage() {
         <div className="text-sand-dim text-xs mb-4">// values</div>
         <div className="grid md:grid-cols-2 gap-4">
           <div className="border border-sand-dim/30 p-4">
-            <div className="text-spice mb-2">intelligence over access</div>
+            <div className="text-spice mb-2">dune power, zero code</div>
             <p className="text-sand text-sm">
-              token-gating is table stakes. the future is understanding who matters,
-              not just who can enter.
+              on-chain analytics shouldn&apos;t require SQL expertise. we&apos;ve done the
+              hard work so you don&apos;t have to.
             </p>
           </div>
           <div className="border border-sand-dim/30 p-4">
-            <div className="text-spice mb-2">engagement through recognition</div>
+            <div className="text-spice mb-2">insights where you engage</div>
             <p className="text-sand text-sm">
-              people engage when they feel recognized. tiered progression and visible
-              status create motivation.
+              analytics in spreadsheets don&apos;t drive action. insights delivered as
+              discord roles create engagement.
             </p>
           </div>
           <div className="border border-sand-dim/30 p-4">
-            <div className="text-spice mb-2">zero-risk adoption</div>
+            <div className="text-spice mb-2">curated, not overwhelming</div>
             <p className="text-sand text-sm">
-              switching tools shouldn&apos;t require a leap of faith. shadow mode lets you
-              validate before committing.
+              we don&apos;t dump raw data on you. we curate conviction insights into
+              actionable tiers and badges.
             </p>
           </div>
           <div className="border border-sand-dim/30 p-4">
-            <div className="text-spice mb-2">security by design</div>
+            <div className="text-spice mb-2">always fresh</div>
             <p className="text-sand text-sm">
-              postgresql row-level security isn&apos;t optional — it&apos;s foundational. we
-              build for enterprise even when serving small communities.
+              one-time snapshots get stale. arrakis updates every 6 hours automatically
+              so your community data is always current.
             </p>
           </div>
         </div>
@@ -185,22 +184,26 @@ export default function AboutPage() {
       <section>
         <div className="text-sand-dim text-xs mb-4">// credentials</div>
         <div className="border border-sand-dim/30 p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div>
-              <div className="text-spice text-2xl">65+</div>
-              <div className="text-sand-dim text-sm">sprints</div>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
             <div>
               <div className="text-spice text-2xl">#1</div>
               <div className="text-sand-dim text-sm">dune team</div>
             </div>
             <div>
-              <div className="text-spice text-2xl">99.9%</div>
-              <div className="text-sand-dim text-sm">uptime</div>
+              <div className="text-spice text-2xl">0</div>
+              <div className="text-sand-dim text-sm">code needed</div>
             </div>
             <div>
-              <div className="text-spice text-2xl">RLS</div>
-              <div className="text-sand-dim text-sm">security</div>
+              <div className="text-spice text-2xl">15</div>
+              <div className="text-sand-dim text-sm">min setup</div>
+            </div>
+            <div>
+              <div className="text-spice text-2xl">6h</div>
+              <div className="text-sand-dim text-sm">auto-refresh</div>
+            </div>
+            <div>
+              <div className="text-spice text-2xl">65+</div>
+              <div className="text-sand-dim text-sm">sprints</div>
             </div>
           </div>
         </div>
@@ -286,23 +289,23 @@ export default function AboutPage() {
       {/* CTA */}
       <section className="relative border border-spice/50 p-6 text-center overflow-hidden">
         <RandomAsciiChars count={8} variant="spice" className="text-spice" minOpacity={0.05} maxOpacity={0.15} />
-        <p className="text-sand-bright text-lg mb-2">ready to extend collab.land?</p>
+        <p className="text-sand-bright text-lg mb-2">ready for dune-powered community intelligence?</p>
         <p className="text-sand-dim text-sm mb-6">
-          install from the collab.land marketplace. same trust, more intelligence.
+          15 minutes to setup. no SQL. no data analysts. no code.
         </p>
         <div className="flex flex-wrap justify-center gap-4 text-sm">
           <Link
             href="https://discord.gg/thehoneyjar"
             className="text-spice hover:text-spice-bright"
           >
-            [join discord]
+            [start free]
           </Link>
           <Link href="/pricing" className="text-sand hover:text-sand-bright">
             [view pricing]
           </Link>
         </div>
         <p className="text-sand-dim text-xs mt-4">
-          built on collab.land • available through their marketplace
+          powered by dune expertise • built on collab.land • zero code required
         </p>
       </section>
     </div>
