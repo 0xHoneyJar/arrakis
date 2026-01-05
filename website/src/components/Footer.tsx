@@ -75,14 +75,6 @@ export function Footer() {
             >
               discord
             </a>
-            <a
-              href="https://twitter.com/0xHoneyJar"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block text-sand hover:text-sand-bright"
-            >
-              twitter
-            </a>
           </div>
         </div>
       </div>
@@ -116,7 +108,7 @@ export function Footer() {
           </a>
           {' '}by{' '}
           <a
-            href="https://thehoneyjar.xyz"
+            href="https://0xHoneyJar.xyz"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sand-dim/70 hover:text-sand-dim underline"
@@ -136,10 +128,10 @@ export function Footer() {
         <div>
           contact:{' '}
           <a
-            href="mailto:hello@0xhoneyjar.xyz"
+            href="mailto:henlo@0xhoneyjar.xyz"
             className="text-sand-dim/70 hover:text-sand-dim underline"
           >
-            hello@0xhoneyjar.xyz
+            henlo@0xhoneyjar.xyz
           </a>
         </div>
       </div>

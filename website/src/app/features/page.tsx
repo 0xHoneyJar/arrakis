@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AsciiAccent, AsciiDivider } from '@/components/AsciiAccent';
+import { RandomAsciiChars } from '@/components/RandomAsciiChars';
 
 export const metadata: Metadata = {
   title: 'features // ARRAKIS',
@@ -11,7 +13,8 @@ export default function FeaturesPage() {
   return (
     <div className="space-y-16">
       {/* Header */}
-      <section>
+      <section className="relative">
+        <RandomAsciiChars count={12} variant="dune" className="text-sand-dim" />
         <div className="text-sand-dim text-xs mb-2">// features</div>
         <h1 className="text-2xl text-sand-bright">
           engagement intelligence for collab.land
@@ -24,6 +27,8 @@ export default function FeaturesPage() {
           available through the collab.land marketplace
         </p>
       </section>
+
+      <AsciiAccent variant="subtle" />
 
       {/* Feature Index */}
       <section>
@@ -140,6 +145,8 @@ export default function FeaturesPage() {
           </div>
         </div>
       </section>
+
+      <AsciiDivider />
 
       {/* Badge System */}
       <section id="badges">
@@ -263,6 +270,8 @@ export default function FeaturesPage() {
         </div>
       </section>
 
+      <AsciiAccent variant="default" height={2} />
+
       {/* Enterprise Security */}
       <section id="enterprise">
         <div className="text-sand-dim text-xs mb-4">// enterprise_security [enterprise]</div>
@@ -337,8 +346,11 @@ export default function FeaturesPage() {
         </div>
       </section>
 
+      <AsciiAccent variant="bright" height={3} />
+
       {/* CTA */}
-      <section className="border border-spice/50 p-6 text-center">
+      <section className="relative border border-spice/50 p-6 text-center overflow-hidden">
+        <RandomAsciiChars count={8} variant="spice" className="text-spice" minOpacity={0.05} maxOpacity={0.15} />
         <p className="text-sand-bright text-lg mb-2">ready to extend collab.land?</p>
         <p className="text-sand-dim text-sm mb-6">
           install from the collab.land marketplace. same trust, more intelligence.

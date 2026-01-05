@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AsciiAccent, AsciiDivider } from '@/components/AsciiAccent';
+import { RandomAsciiChars } from '@/components/RandomAsciiChars';
 
 export const metadata: Metadata = {
   title: 'about // ARRAKIS',
@@ -11,7 +13,8 @@ export default function AboutPage() {
   return (
     <div className="space-y-16">
       {/* Header */}
-      <section>
+      <section className="relative">
+        <RandomAsciiChars count={10} variant="mixed" className="text-sand-dim" />
         <div className="text-sand-dim text-xs mb-2">// about</div>
         <h1 className="text-2xl text-sand-bright">
           built on collab.land. by the #1 team on dune analytics.
@@ -24,6 +27,8 @@ export default function AboutPage() {
           available through the collab.land marketplace
         </p>
       </section>
+
+      <AsciiAccent variant="subtle" />
 
       {/* Mission */}
       <section>
@@ -52,6 +57,8 @@ export default function AboutPage() {
           </p>
         </div>
       </section>
+
+      <AsciiDivider />
 
       {/* Story */}
       <section>
@@ -136,6 +143,8 @@ export default function AboutPage() {
           </div>
         </div>
       </section>
+
+      <AsciiAccent variant="default" height={2} />
 
       {/* Values */}
       <section>
@@ -272,8 +281,11 @@ export default function AboutPage() {
         </div>
       </section>
 
+      <AsciiAccent variant="bright" height={3} />
+
       {/* CTA */}
-      <section className="border border-spice/50 p-6 text-center">
+      <section className="relative border border-spice/50 p-6 text-center overflow-hidden">
+        <RandomAsciiChars count={8} variant="spice" className="text-spice" minOpacity={0.05} maxOpacity={0.15} />
         <p className="text-sand-bright text-lg mb-2">ready to extend collab.land?</p>
         <p className="text-sand-dim text-sm mb-6">
           install from the collab.land marketplace. same trust, more intelligence.

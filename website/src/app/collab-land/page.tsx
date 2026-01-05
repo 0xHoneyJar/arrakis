@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AsciiAccent, AsciiDivider } from '@/components/AsciiAccent';
+import { RandomAsciiChars } from '@/components/RandomAsciiChars';
 
 export const metadata: Metadata = {
   title: 'Built on Collab.Land // ARRAKIS',
@@ -11,7 +13,8 @@ export default function CollabLandPage() {
   return (
     <div className="space-y-16">
       {/* Header */}
-      <section>
+      <section className="relative">
+        <RandomAsciiChars count={12} variant="mixed" className="text-sand-dim" />
         <div className="text-sand-dim text-xs mb-2">// collab-land</div>
         <h1 className="text-2xl text-sand-bright">
           built on collab.land. powered by engagement intelligence.
@@ -24,6 +27,8 @@ export default function CollabLandPage() {
           available through the collab.land marketplace
         </p>
       </section>
+
+      <AsciiAccent variant="bright" height={2} />
 
       {/* Trust Section */}
       <section>
@@ -86,6 +91,8 @@ export default function CollabLandPage() {
           </div>
         </div>
       </section>
+
+      <AsciiDivider />
 
       {/* Features */}
       <section>
@@ -193,6 +200,8 @@ export default function CollabLandPage() {
         </p>
       </section>
 
+      <AsciiAccent variant="subtle" height={2} />
+
       {/* FAQ */}
       <section>
         <div className="text-sand-dim text-xs mb-4">// faq</div>
@@ -239,8 +248,11 @@ export default function CollabLandPage() {
         </div>
       </section>
 
+      <AsciiAccent variant="bright" height={3} />
+
       {/* CTA */}
-      <section className="border border-spice/50 p-6 text-center">
+      <section className="relative border border-spice/50 p-6 text-center overflow-hidden">
+        <RandomAsciiChars count={10} variant="spice" className="text-spice" minOpacity={0.05} maxOpacity={0.2} />
         <p className="text-sand-bright text-lg mb-2">
           ready to add engagement intelligence?
         </p>

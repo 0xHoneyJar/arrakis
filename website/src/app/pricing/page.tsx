@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AsciiAccent, AsciiDivider } from '@/components/AsciiAccent';
+import { RandomAsciiChars } from '@/components/RandomAsciiChars';
 
 export const metadata: Metadata = {
   title: 'pricing // ARRAKIS',
@@ -11,7 +13,8 @@ export default function PricingPage() {
   return (
     <div className="space-y-16">
       {/* Header */}
-      <section>
+      <section className="relative">
+        <RandomAsciiChars count={10} variant="dune" className="text-sand-dim" />
         <div className="text-sand-dim text-xs mb-2">// pricing</div>
         <h1 className="text-2xl text-sand-bright">
           simple pricing for communities of all sizes
@@ -20,6 +23,8 @@ export default function PricingPage() {
           start free with basictheme. upgrade to premium for conviction scoring.
         </p>
       </section>
+
+      <AsciiAccent variant="subtle" />
 
       {/* Pricing Table */}
       <section>
@@ -136,6 +141,8 @@ export default function PricingPage() {
         </div>
       </section>
 
+      <AsciiDivider />
+
       {/* Add-ons */}
       <section>
         <div className="text-sand-dim text-xs mb-4">// add-ons</div>
@@ -158,6 +165,8 @@ export default function PricingPage() {
           </div>
         </div>
       </section>
+
+      <AsciiAccent variant="default" height={2} />
 
       {/* FAQ */}
       <section>
@@ -211,8 +220,11 @@ export default function PricingPage() {
         </div>
       </section>
 
+      <AsciiAccent variant="bright" height={3} />
+
       {/* CTA */}
-      <section className="border border-spice/50 p-6 text-center">
+      <section className="relative border border-spice/50 p-6 text-center overflow-hidden">
+        <RandomAsciiChars count={8} variant="spice" className="text-spice" minOpacity={0.05} maxOpacity={0.15} />
         <p className="text-sand-bright text-lg mb-2">ready to start?</p>
         <p className="text-sand-dim text-sm mb-6">
           free forever to get started. upgrade when conviction data proves value.
