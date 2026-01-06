@@ -1309,8 +1309,8 @@ See `.claude/protocols/trajectory-evaluation.md` for detailed protocol.
 ## Related Documentation
 
 - **[README.md](README.md)** - Quick start guide
-- **[INSTALLATION.md](INSTALLATION.md)** - Detailed installation and update guide
 - **[CLAUDE.md](CLAUDE.md)** - Guidance for Claude Code instances
+- **[sietch-service/README.md](sietch-service/README.md)** - Service development setup
 
 ### Protocol Files
 
