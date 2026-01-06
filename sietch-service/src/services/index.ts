@@ -117,5 +117,5 @@ export { analyticsService } from './AnalyticsService.js';
 export type { StoryFragment, FragmentCategory } from './StoryService.js';
 export type { CommunityAnalytics } from './AnalyticsService.js';
 
-// Sprint 23: Billing Services (v4.0)
-export { stripeService } from './billing/index.js';
+// Sprint 23: Billing Services (v5.0 - Paddle Migration)
+export { createBillingProvider, webhookService, gatekeeperService } from './billing/index.js';

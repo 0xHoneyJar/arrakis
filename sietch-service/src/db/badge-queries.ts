@@ -24,7 +24,7 @@ import type {
 interface BadgePurchaseRow {
   id: string;
   member_id: string;
-  stripe_payment_id: string | null;
+  payment_id: string | null;
   purchased_at: string;
   created_at: string;
 }
@@ -46,7 +46,7 @@ function rowToBadgePurchase(row: BadgePurchaseRow): BadgePurchase {
   return {
     id: row.id,
     memberId: row.member_id,
-    stripePaymentId: row.stripe_payment_id ?? undefined,
+    paymentId: row.payment_id ?? undefined,
     purchasedAt: new Date(row.purchased_at),
     createdAt: new Date(row.created_at),
   };
@@ -115,9 +115,9 @@ export function createBadgePurchase(params: CreateBadgePurchaseParams): string {
 
   db.prepare(`
     INSERT INTO badge_purchases (
-      id, member_id, stripe_payment_id
+      id, member_id, payment_id
     ) VALUES (?, ?, ?)
-  `).run(id, params.memberId, params.stripePaymentId ?? null);
+  `).run(id, params.memberId, params.paymentId ?? null);
 
   logger.info({ id, memberId: params.memberId }, 'Created badge purchase');
 

@@ -13,12 +13,12 @@
  * SQL for creating boost tables
  */
 export const BOOSTS_SCHEMA_SQL = `
--- Boost purchases (individual member boosts)
+-- Boost purchases (individual member boosts) - Sprint 1: Paddle Migration
 CREATE TABLE IF NOT EXISTS boost_purchases (
   id TEXT PRIMARY KEY,
   member_id TEXT NOT NULL,
   community_id TEXT NOT NULL,
-  stripe_payment_id TEXT,
+  payment_id TEXT,
   months_purchased INTEGER NOT NULL CHECK (months_purchased > 0),
   amount_paid_cents INTEGER NOT NULL CHECK (amount_paid_cents >= 0),
   purchased_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -39,9 +39,9 @@ CREATE INDEX IF NOT EXISTS idx_boost_purchases_community
 CREATE INDEX IF NOT EXISTS idx_boost_purchases_active
   ON boost_purchases(is_active, expires_at);
 
--- Index for Stripe payment lookups (webhook handling)
-CREATE INDEX IF NOT EXISTS idx_boost_purchases_stripe
-  ON boost_purchases(stripe_payment_id);
+-- Index for payment lookups (webhook handling)
+CREATE INDEX IF NOT EXISTS idx_boost_purchases_payment
+  ON boost_purchases(payment_id);
 
 -- Combined index for community active boost queries
 CREATE INDEX IF NOT EXISTS idx_boost_purchases_community_active

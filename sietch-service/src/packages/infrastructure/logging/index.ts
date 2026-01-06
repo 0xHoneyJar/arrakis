@@ -2,13 +2,19 @@
  * Logging Infrastructure
  *
  * Sprint 56: Shadow Mode Foundation
+ * Sprint 69: Trace Context Integration
  *
  * Simple logging interface for packages. Uses console with
  * structured logging format until a more sophisticated solution
  * is needed.
  *
+ * Now integrates with tracing infrastructure to automatically
+ * include trace/span IDs in log output.
+ *
  * @module packages/infrastructure/logging
  */
+
+import { getTraceLogFields } from '../tracing';
 
 /**
  * Log level types
@@ -17,12 +23,21 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 /**
  * Logger interface for dependency injection
+ *
+ * Supports two calling conventions (pino-style flexibility):
+ * - `logger.info('message')` - message only
+ * - `logger.info('message', { context })` - message with context
+ * - `logger.info({ context }, 'message')` - context first (pino-style)
  */
 export interface ILogger {
   debug(message: string, context?: Record<string, unknown>): void;
+  debug(context: Record<string, unknown>, message: string): void;
   info(message: string, context?: Record<string, unknown>): void;
+  info(context: Record<string, unknown>, message: string): void;
   warn(message: string, context?: Record<string, unknown>): void;
+  warn(context: Record<string, unknown>, message: string): void;
   error(message: string, context?: Record<string, unknown>): void;
+  error(context: Record<string, unknown>, message: string): void;
 }
 
 /**
@@ -35,6 +50,8 @@ export interface LoggerOptions {
   level?: LogLevel;
   /** Enable JSON output (default: false) */
   json?: boolean;
+  /** Include trace context in logs (default: true) */
+  includeTrace?: boolean;
 }
 
 /**
@@ -48,32 +65,62 @@ const LOG_PRIORITY: Record<LogLevel, number> = {
 };
 
 /**
- * Simple console-based logger
+ * Simple console-based logger with trace context integration
  */
 class ConsoleLogger implements ILogger {
   private readonly service: string;
   private readonly minLevel: number;
   private readonly json: boolean;
+  private readonly includeTrace: boolean;
 
   constructor(options: LoggerOptions) {
     this.service = options.service;
     this.minLevel = LOG_PRIORITY[options.level ?? 'info'];
     this.json = options.json ?? false;
+    this.includeTrace = options.includeTrace ?? true;
   }
 
-  debug(message: string, context?: Record<string, unknown>): void {
+  /**
+   * Parse arguments to support both calling conventions:
+   * - (message: string, context?: Record)
+   * - (context: Record, message: string)
+   */
+  private parseArgs(
+    arg1: string | Record<string, unknown>,
+    arg2?: string | Record<string, unknown>
+  ): { message: string; context?: Record<string, unknown> } {
+    if (typeof arg1 === 'string') {
+      // Standard: (message, context?)
+      return {
+        message: arg1,
+        context: arg2 as Record<string, unknown> | undefined,
+      };
+    } else {
+      // Pino-style: (context, message)
+      return {
+        message: arg2 as string,
+        context: arg1,
+      };
+    }
+  }
+
+  debug(arg1: string | Record<string, unknown>, arg2?: string | Record<string, unknown>): void {
+    const { message, context } = this.parseArgs(arg1, arg2);
     this.log('debug', message, context);
   }
 
-  info(message: string, context?: Record<string, unknown>): void {
+  info(arg1: string | Record<string, unknown>, arg2?: string | Record<string, unknown>): void {
+    const { message, context } = this.parseArgs(arg1, arg2);
     this.log('info', message, context);
   }
 
-  warn(message: string, context?: Record<string, unknown>): void {
+  warn(arg1: string | Record<string, unknown>, arg2?: string | Record<string, unknown>): void {
+    const { message, context } = this.parseArgs(arg1, arg2);
     this.log('warn', message, context);
   }
 
-  error(message: string, context?: Record<string, unknown>): void {
+  error(arg1: string | Record<string, unknown>, arg2?: string | Record<string, unknown>): void {
+    const { message, context } = this.parseArgs(arg1, arg2);
     this.log('error', message, context);
   }
 
@@ -88,20 +135,29 @@ class ConsoleLogger implements ILogger {
 
     const timestamp = new Date().toISOString();
 
+    // Get trace context if enabled
+    const traceFields = this.includeTrace ? getTraceLogFields() : {};
+
     if (this.json) {
       const logEntry = {
         timestamp,
         level,
         service: this.service,
         message,
+        ...traceFields,
         ...context,
       };
       console.log(JSON.stringify(logEntry));
     } else {
+      // Format trace ID for text output (shortened for readability)
+      const traceId = traceFields.traceId;
+      const tracePrefix = traceId && traceId !== 'no-trace'
+        ? ` [trace:${traceId.slice(0, 8)}]`
+        : '';
       const contextStr = context
         ? ` ${JSON.stringify(context)}`
         : '';
-      const prefix = `[${timestamp}] [${level.toUpperCase()}] [${this.service}]`;
+      const prefix = `[${timestamp}] [${level.toUpperCase()}] [${this.service}]${tracePrefix}`;
       console.log(`${prefix} ${message}${contextStr}`);
     }
   }

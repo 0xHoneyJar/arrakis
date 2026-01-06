@@ -198,13 +198,13 @@ describe('BadgeService', () => {
 
       const purchaseId = badgeService.recordBadgePurchase({
         memberId: 'test-member',
-        stripePaymentId: 'pi_123',
+        paymentId: 'pi_123',
       });
 
       expect(purchaseId).toBe('purchase-123');
       expect(badgeQueries.createBadgePurchase).toHaveBeenCalledWith({
         memberId: 'test-member',
-        stripePaymentId: 'pi_123',
+        paymentId: 'pi_123',
       });
     });
 
@@ -213,14 +213,14 @@ describe('BadgeService', () => {
       vi.spyOn(badgeQueries, 'getBadgePurchaseByMember').mockReturnValue({
         id: 'existing-purchase',
         memberId: 'test-member',
-        stripePaymentId: 'pi_123',
+        paymentId: 'pi_123',
         purchasedAt: new Date(),
         createdAt: new Date(),
       });
 
       const purchaseId = badgeService.recordBadgePurchase({
         memberId: 'test-member',
-        stripePaymentId: 'pi_456',
+        paymentId: 'pi_456',
       });
 
       expect(purchaseId).toBe('existing-purchase');

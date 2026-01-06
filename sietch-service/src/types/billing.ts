@@ -100,6 +100,15 @@ export interface AccessResult {
 }
 
 // =============================================================================
+// Payment Provider
+// =============================================================================
+
+/**
+ * Supported payment providers
+ */
+export type PaymentProvider = 'paddle' | 'stripe';
+
+// =============================================================================
 // Subscription
 // =============================================================================
 
@@ -111,10 +120,12 @@ export interface Subscription {
   id: string;
   /** Community identifier */
   communityId: string;
-  /** Stripe customer ID */
-  stripeCustomerId?: string;
-  /** Stripe subscription ID */
-  stripeSubscriptionId?: string;
+  /** Payment provider customer ID */
+  paymentCustomerId?: string;
+  /** Payment provider subscription ID */
+  paymentSubscriptionId?: string;
+  /** Payment provider (paddle or stripe) */
+  paymentProvider: PaymentProvider;
   /** Current subscription tier */
   tier: SubscriptionTier;
   /** Subscription status */
@@ -136,8 +147,9 @@ export interface Subscription {
  */
 export interface CreateSubscriptionParams {
   communityId: string;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
+  paymentCustomerId?: string;
+  paymentSubscriptionId?: string;
+  paymentProvider?: PaymentProvider;
   tier?: SubscriptionTier;
   status?: SubscriptionStatus;
 }
@@ -146,8 +158,9 @@ export interface CreateSubscriptionParams {
  * Subscription update parameters
  */
 export interface UpdateSubscriptionParams {
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
+  paymentCustomerId?: string;
+  paymentSubscriptionId?: string;
+  paymentProvider?: PaymentProvider;
   tier?: SubscriptionTier;
   status?: SubscriptionStatus;
   graceUntil?: Date | null;
@@ -269,9 +282,9 @@ export interface TierInfo {
 export interface WebhookEvent {
   /** Unique event ID (UUID) */
   id: string;
-  /** Stripe event ID */
-  stripeEventId: string;
-  /** Event type (e.g., 'checkout.session.completed') */
+  /** Provider event ID (Paddle or Stripe) */
+  providerEventId: string;
+  /** Event type (normalized) */
   eventType: string;
   /** Processing status */
   status: 'processing' | 'processed' | 'failed';
@@ -288,14 +301,15 @@ export interface WebhookEvent {
 }
 
 /**
- * Supported Stripe webhook event types
+ * Supported Paddle webhook event types (normalized)
  */
-export type StripeEventType =
-  | 'checkout.session.completed'
-  | 'invoice.paid'
-  | 'invoice.payment_failed'
-  | 'customer.subscription.updated'
-  | 'customer.subscription.deleted';
+export type PaddleEventType =
+  | 'subscription.created'
+  | 'subscription.activated'
+  | 'subscription.updated'
+  | 'subscription.canceled'
+  | 'transaction.completed'
+  | 'transaction.payment_failed';
 
 // =============================================================================
 // Billing Audit Log
@@ -324,8 +338,11 @@ export interface BillingAuditEntry {
  */
 export type BillingAuditEventType =
   | 'subscription_created'
+  | 'subscription_activated'
   | 'subscription_updated'
   | 'subscription_canceled'
+  | 'subscription_paused'
+  | 'subscription_resumed'
   | 'payment_succeeded'
   | 'payment_failed'
   | 'grace_period_started'
@@ -338,7 +355,7 @@ export type BillingAuditEventType =
   | 'webhook_failed';
 
 // =============================================================================
-// Stripe Service Types
+// Billing Service Types
 // =============================================================================
 
 /**
@@ -353,7 +370,7 @@ export interface CreateCheckoutParams {
   successUrl: string;
   /** URL to redirect if checkout is canceled */
   cancelUrl: string;
-  /** Stripe customer ID (optional, created if not provided) */
+  /** Payment provider customer ID (optional, created if not provided) */
   customerId?: string;
   /** Additional metadata */
   metadata?: Record<string, string>;
@@ -363,10 +380,12 @@ export interface CreateCheckoutParams {
  * Checkout session result
  */
 export interface CheckoutResult {
-  /** Stripe Checkout session ID */
+  /** Checkout session ID */
   sessionId: string;
   /** Checkout URL to redirect user to */
   url: string;
+  /** Client token for embedded checkout (Paddle.js) */
+  clientToken?: string;
 }
 
 /**
@@ -482,8 +501,8 @@ export interface BadgePurchase {
   id: string;
   /** Member who purchased the badge */
   memberId: string;
-  /** Stripe payment intent ID */
-  stripePaymentId?: string;
+  /** Payment provider transaction ID */
+  paymentId?: string;
   /** Purchase timestamp */
   purchasedAt: Date;
   /** Record creation timestamp */
@@ -513,7 +532,7 @@ export interface BadgeSettings {
  */
 export interface CreateBadgePurchaseParams {
   memberId: string;
-  stripePaymentId?: string;
+  paymentId?: string;
 }
 
 /**
@@ -537,8 +556,8 @@ export interface BadgeEntitlementResult {
   purchaseRequired: boolean;
   /** Purchase price in cents (if purchase required) */
   priceInCents?: number;
-  /** Stripe price ID (if purchase required) */
-  stripePriceId?: string;
+  /** Price ID (if purchase required) */
+  priceId?: string;
 }
 
 /**
@@ -629,8 +648,8 @@ export interface BoostPurchase {
   memberId: string;
   /** Community being boosted */
   communityId: string;
-  /** Stripe payment intent ID */
-  stripePaymentId?: string;
+  /** Payment provider transaction ID */
+  paymentId?: string;
   /** Number of months purchased */
   monthsPurchased: number;
   /** Amount paid in cents */
@@ -707,7 +726,7 @@ export interface Booster {
 export interface CreateBoostPurchaseParams {
   memberId: string;
   communityId: string;
-  stripePaymentId?: string;
+  paymentId?: string;
   monthsPurchased: number;
   amountPaidCents: number;
 }
@@ -732,8 +751,8 @@ export interface BoostBundle {
   priceCents: number;
   /** Discount percentage (0-100) */
   discountPercent: number;
-  /** Stripe price ID */
-  stripePriceId?: string;
+  /** Payment provider price ID */
+  priceId?: string;
 }
 
 /**

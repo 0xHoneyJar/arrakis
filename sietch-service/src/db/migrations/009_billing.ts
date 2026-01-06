@@ -12,9 +12,9 @@
 
 export const BILLING_SCHEMA_SQL = `
 -- =============================================================================
--- Subscriptions Table (Sprint 23: Billing Foundation)
+-- Subscriptions Table (Sprint 23: Billing Foundation, Sprint 1: Paddle Migration)
 -- =============================================================================
--- Tracks Stripe subscription state for each community.
+-- Tracks subscription state for each community (provider-agnostic).
 -- Single source of truth for billing status.
 
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -23,9 +23,13 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   -- Community identifier (for future multi-tenancy, defaults to 'default')
   community_id TEXT NOT NULL DEFAULT 'default',
 
-  -- Stripe identifiers
-  stripe_customer_id TEXT,
-  stripe_subscription_id TEXT UNIQUE,
+  -- Provider-agnostic payment identifiers
+  payment_customer_id TEXT,
+  payment_subscription_id TEXT UNIQUE,
+
+  -- Payment provider identifier
+  payment_provider TEXT NOT NULL DEFAULT 'paddle'
+    CHECK (payment_provider IN ('paddle', 'stripe')),
 
   -- Subscription tier (matches SubscriptionTier type)
   -- Valid: 'starter', 'basic', 'premium', 'exclusive', 'elite', 'enterprise'
@@ -61,13 +65,21 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 CREATE INDEX IF NOT EXISTS idx_subscriptions_community
   ON subscriptions(community_id);
 
--- Index for Stripe subscription lookups
-CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_sub
-  ON subscriptions(stripe_subscription_id);
+-- Index for payment subscription lookups
+CREATE INDEX IF NOT EXISTS idx_subscriptions_payment_sub
+  ON subscriptions(payment_subscription_id);
+
+-- Index for payment customer lookups
+CREATE INDEX IF NOT EXISTS idx_subscriptions_payment_customer
+  ON subscriptions(payment_customer_id);
 
 -- Index for status queries
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status
   ON subscriptions(status);
+
+-- Index for provider queries
+CREATE INDEX IF NOT EXISTS idx_subscriptions_provider
+  ON subscriptions(payment_provider);
 
 -- =============================================================================
 -- Fee Waivers Table (Sprint 23: Billing Foundation)
@@ -114,18 +126,18 @@ CREATE INDEX IF NOT EXISTS idx_fee_waivers_active
   ON fee_waivers(community_id, revoked_at, expires_at);
 
 -- =============================================================================
--- Webhook Events Table (Sprint 23: Billing Foundation)
+-- Webhook Events Table (Sprint 23: Billing Foundation, Sprint 1: Paddle Migration)
 -- =============================================================================
--- Tracks processed Stripe webhook events for idempotency.
+-- Tracks processed webhook events for idempotency (provider-agnostic).
 -- Prevents duplicate processing of the same event.
 
 CREATE TABLE IF NOT EXISTS webhook_events (
   id TEXT PRIMARY KEY,
 
-  -- Stripe event ID (e.g., evt_xxx)
-  stripe_event_id TEXT NOT NULL UNIQUE,
+  -- Provider event ID (provider-agnostic)
+  provider_event_id TEXT NOT NULL UNIQUE,
 
-  -- Event type (e.g., 'checkout.session.completed')
+  -- Event type (e.g., 'subscription.created')
   event_type TEXT NOT NULL,
 
   -- Processing status
@@ -146,9 +158,9 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   created_at TEXT DEFAULT (datetime('now')) NOT NULL
 );
 
--- Index for event ID lookups (idempotency check)
-CREATE INDEX IF NOT EXISTS idx_webhook_events_stripe_id
-  ON webhook_events(stripe_event_id);
+-- Index for provider event ID lookups (idempotency check)
+CREATE INDEX IF NOT EXISTS idx_webhook_events_provider_id
+  ON webhook_events(provider_event_id);
 
 -- Index for event type queries
 CREATE INDEX IF NOT EXISTS idx_webhook_events_type
@@ -209,11 +221,13 @@ DROP TABLE IF EXISTS subscriptions;
 
 -- Drop indexes (automatically dropped with tables, but explicit for clarity)
 DROP INDEX IF EXISTS idx_subscriptions_community;
-DROP INDEX IF EXISTS idx_subscriptions_stripe_sub;
+DROP INDEX IF EXISTS idx_subscriptions_payment_sub;
+DROP INDEX IF EXISTS idx_subscriptions_payment_customer;
 DROP INDEX IF EXISTS idx_subscriptions_status;
+DROP INDEX IF EXISTS idx_subscriptions_provider;
 DROP INDEX IF EXISTS idx_fee_waivers_community;
 DROP INDEX IF EXISTS idx_fee_waivers_active;
-DROP INDEX IF EXISTS idx_webhook_events_stripe_id;
+DROP INDEX IF EXISTS idx_webhook_events_provider_id;
 DROP INDEX IF EXISTS idx_webhook_events_type;
 DROP INDEX IF EXISTS idx_webhook_events_status;
 DROP INDEX IF EXISTS idx_billing_audit_log_type;

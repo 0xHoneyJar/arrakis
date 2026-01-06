@@ -34,7 +34,7 @@ vi.mock('../../../src/utils/logger.js', () => ({
 import {
   createSubscription,
   getSubscriptionByCommunityId,
-  getSubscriptionByStripeId,
+  getSubscriptionByPaymentId,
   updateSubscription,
   deleteSubscription,
   getSubscriptionsInGracePeriod,
@@ -73,8 +73,8 @@ describe('Billing Database Queries', () => {
       it('should create subscription with all fields', () => {
         const id = createSubscription({
           communityId: 'test-community',
-          stripeCustomerId: 'cus_123',
-          stripeSubscriptionId: 'sub_456',
+          paymentCustomerId: 'cus_123',
+          paymentSubscriptionId: 'sub_456',
           tier: 'premium',
           status: 'active',
         });
@@ -85,8 +85,8 @@ describe('Billing Database Queries', () => {
         const subscription = getSubscriptionByCommunityId('test-community');
         expect(subscription).not.toBeNull();
         expect(subscription?.communityId).toBe('test-community');
-        expect(subscription?.stripeCustomerId).toBe('cus_123');
-        expect(subscription?.stripeSubscriptionId).toBe('sub_456');
+        expect(subscription?.paymentCustomerId).toBe('cus_123');
+        expect(subscription?.paymentSubscriptionId).toBe('sub_456');
         expect(subscription?.tier).toBe('premium');
         expect(subscription?.status).toBe('active');
       });
@@ -130,22 +130,22 @@ describe('Billing Database Queries', () => {
       });
     });
 
-    describe('getSubscriptionByStripeId', () => {
-      it('should return subscription by Stripe subscription ID', () => {
+    describe('getSubscriptionByPaymentId', () => {
+      it('should return subscription by payment subscription ID', () => {
         createSubscription({
-          communityId: 'stripe-test',
-          stripeSubscriptionId: 'sub_unique_123',
+          communityId: 'payment-test',
+          paymentSubscriptionId: 'sub_unique_123',
           tier: 'elite',
         });
 
-        const subscription = getSubscriptionByStripeId('sub_unique_123');
+        const subscription = getSubscriptionByPaymentId('sub_unique_123');
         expect(subscription).not.toBeNull();
-        expect(subscription?.communityId).toBe('stripe-test');
+        expect(subscription?.communityId).toBe('payment-test');
         expect(subscription?.tier).toBe('elite');
       });
 
-      it('should return null for non-existent Stripe ID', () => {
-        const subscription = getSubscriptionByStripeId('sub_nonexistent');
+      it('should return null for non-existent payment ID', () => {
+        const subscription = getSubscriptionByPaymentId('sub_nonexistent');
         expect(subscription).toBeNull();
       });
     });
@@ -484,7 +484,7 @@ describe('Billing Database Queries', () => {
         updateWebhookEventStatus('evt_fail_update', 'failed', 'Database error');
 
         const events = getFailedWebhookEvents();
-        const event = events.find(e => e.stripeEventId === 'evt_fail_update');
+        const event = events.find(e => e.providerEventId === 'evt_fail_update');
         expect(event?.errorMessage).toBe('Database error');
       });
     });

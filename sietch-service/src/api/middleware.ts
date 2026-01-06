@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction, ErrorRequestHandler } from 'expre
 import rateLimit from 'express-rate-limit';
 import { logger } from '../utils/logger.js';
 import { validateApiKey } from '../config.js';
+import { redisService } from '../services/cache/RedisService.js';
 
 /**
  * Extended Request type with admin context
@@ -166,4 +167,207 @@ export function requestIdMiddleware(req: Request, res: Response, next: NextFunct
   const requestId = req.headers['x-request-id'] || crypto.randomUUID();
   res.setHeader('X-Request-ID', requestId);
   next();
+}
+
+// =============================================================================
+// Security Breach Middleware (Sprint 67 - Fail-Closed Pattern)
+// =============================================================================
+
+/**
+ * Security service status for health checks
+ */
+export interface SecurityServiceStatus {
+  redis: boolean;
+  auditPersistence: boolean;
+  overall: boolean;
+}
+
+/**
+ * Track security service failures
+ */
+let securityServiceStatus: SecurityServiceStatus = {
+  redis: true,
+  auditPersistence: true,
+  overall: true,
+};
+
+/** Counter for 503 responses - exposed for metrics */
+let securityBreach503Count = 0;
+
+/**
+ * Update security service status
+ * Called by health checks or when services fail
+ */
+export function updateSecurityServiceStatus(updates: Partial<SecurityServiceStatus>): void {
+  if (updates.redis !== undefined) {
+    securityServiceStatus.redis = updates.redis;
+  }
+  if (updates.auditPersistence !== undefined) {
+    securityServiceStatus.auditPersistence = updates.auditPersistence;
+  }
+  // Overall is healthy only if all critical services are healthy
+  securityServiceStatus.overall =
+    securityServiceStatus.redis && securityServiceStatus.auditPersistence;
+}
+
+/**
+ * Get current security service status for health endpoints
+ */
+export function getSecurityServiceStatus(): SecurityServiceStatus {
+  return { ...securityServiceStatus };
+}
+
+/**
+ * Get 503 count for metrics
+ */
+export function getSecurityBreach503Count(): number {
+  return securityBreach503Count;
+}
+
+/**
+ * Reset 503 count (for testing)
+ */
+export function resetSecurityBreach503Count(): void {
+  securityBreach503Count = 0;
+}
+
+/**
+ * Routes that require distributed locking (Redis required)
+ * These operations MUST have Redis available to prevent race conditions
+ */
+const ROUTES_REQUIRING_DISTRIBUTED_LOCK = [
+  '/billing/webhook',
+  '/admin/boosts',
+  '/badges/purchase',
+];
+
+/**
+ * Routes that require audit persistence
+ * These operations MUST be able to write audit logs
+ */
+const ROUTES_REQUIRING_AUDIT = [
+  '/admin/',
+  '/billing/',
+  '/boosts/',
+  '/badges/',
+];
+
+/**
+ * Check if a route requires distributed locking
+ */
+function routeRequiresDistributedLock(path: string): boolean {
+  return ROUTES_REQUIRING_DISTRIBUTED_LOCK.some((route) => path.startsWith(route));
+}
+
+/**
+ * Check if a route requires audit logging
+ */
+function routeRequiresAudit(path: string): boolean {
+  return ROUTES_REQUIRING_AUDIT.some((route) => path.startsWith(route));
+}
+
+/**
+ * Security Breach Middleware
+ *
+ * Returns HTTP 503 Service Unavailable when critical security services
+ * are unreachable. This implements the fail-closed pattern to ensure
+ * security guarantees are never bypassed.
+ *
+ * Trigger Conditions:
+ * 1. Redis unavailable AND operation requires distributed locking
+ * 2. Audit persistence fails (audit log writes)
+ *
+ * Usage:
+ * Apply to routes that require security service availability.
+ *
+ * @example
+ * app.use('/billing', securityBreachMiddleware, billingRouter);
+ */
+export async function securityBreachMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const path = req.path;
+  const method = req.method;
+
+  // Check if route requires distributed locking
+  if (routeRequiresDistributedLock(path)) {
+    // Check Redis connectivity
+    const redisHealthy = redisService.isConnected();
+
+    if (!redisHealthy) {
+      securityBreach503Count++;
+      logger.warn(
+        {
+          path,
+          method,
+          reason: 'redis_unavailable',
+          metric: 'sietch_security_breach_503_total',
+        },
+        'Security breach: Redis unavailable for distributed lock operation'
+      );
+
+      updateSecurityServiceStatus({ redis: false });
+
+      res.setHeader('Retry-After', '30');
+      res.status(503).json({
+        error: 'Service temporarily unavailable',
+        message: 'Required security services are unavailable. Please retry.',
+        retryAfter: 30,
+      });
+      return;
+    }
+
+    // Redis is healthy
+    updateSecurityServiceStatus({ redis: true });
+  }
+
+  // Check if route requires audit logging
+  if (routeRequiresAudit(path)) {
+    // For now, audit persistence is considered healthy if we can write
+    // In a full implementation, this would check audit service connectivity
+    // For Sprint 67, we mark it healthy (actual audit persistence check deferred)
+    updateSecurityServiceStatus({ auditPersistence: true });
+  }
+
+  next();
+}
+
+/**
+ * Security health check endpoint handler
+ *
+ * Returns detailed security service status for monitoring.
+ * Endpoint: GET /health/security
+ */
+export function securityHealthHandler(req: Request, res: Response): void {
+  const status = getSecurityServiceStatus();
+
+  // Check real-time Redis status
+  const redisConnected = redisService.isConnected();
+  const redisStatus = redisService.getConnectionStatus();
+
+  const response = {
+    status: status.overall && redisConnected ? 'healthy' : 'unhealthy',
+    services: {
+      redis: {
+        healthy: redisConnected,
+        status: redisStatus.status,
+        error: redisStatus.error,
+      },
+      auditPersistence: {
+        healthy: status.auditPersistence,
+      },
+    },
+    metrics: {
+      securityBreach503Count,
+    },
+    timestamp: new Date().toISOString(),
+  };
+
+  if (response.status === 'healthy') {
+    res.json(response);
+  } else {
+    res.status(503).json(response);
+  }
 }

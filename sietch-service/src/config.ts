@@ -45,9 +45,9 @@ const adminApiKeysSchema = z
   });
 
 /**
- * Stripe price IDs schema: "tier:priceId,tier:priceId"
+ * Price IDs schema: "tier:priceId,tier:priceId"
  */
-const stripePriceIdsSchema = z
+const priceIdsSchema = z
   .string()
   .transform((val) => {
     const prices = new Map<string, string>();
@@ -78,11 +78,29 @@ const configSchema = z.object({
     secretKey: z.string().min(1),
   }),
 
-  // Stripe Configuration (v4.0 - Sprint 23)
+  // Stripe Configuration (v4.0 - Sprint 23) - DEPRECATED, use Paddle
   stripe: z.object({
     secretKey: z.string().optional(),
     webhookSecret: z.string().optional(),
-    priceIds: stripePriceIdsSchema,
+    priceIds: priceIdsSchema,
+  }),
+
+  // Paddle Configuration (Paddle Migration - Sprint 2)
+  paddle: z.object({
+    apiKey: z.string().optional(),
+    webhookSecret: z.string().optional(),
+    clientToken: z.string().optional(),
+    environment: z.enum(['sandbox', 'production']).default('sandbox'),
+    priceIds: priceIdsSchema,
+    // One-time product price IDs (nested structure for cleaner access)
+    oneTimePriceIds: z.object({
+      badge: z.string().optional(),
+      boost: z.string().optional(),
+      boost1Month: z.string().optional(),
+      boost3Month: z.string().optional(),
+      boost6Month: z.string().optional(),
+      boost12Month: z.string().optional(),
+    }),
   }),
 
   // Redis Configuration (v4.0 - Sprint 23)
@@ -237,11 +255,27 @@ function parseConfig() {
       projectId: process.env.TRIGGER_PROJECT_ID ?? '',
       secretKey: process.env.TRIGGER_SECRET_KEY ?? '',
     },
-    // Stripe Configuration (v4.0 - Sprint 23)
+    // Stripe Configuration (v4.0 - Sprint 23) - DEPRECATED, use Paddle
     stripe: {
       secretKey: process.env.STRIPE_SECRET_KEY,
       webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
       priceIds: process.env.STRIPE_PRICE_IDS ?? '',
+    },
+    // Paddle Configuration (Paddle Migration - Sprint 2)
+    paddle: {
+      apiKey: process.env.PADDLE_API_KEY,
+      webhookSecret: process.env.PADDLE_WEBHOOK_SECRET,
+      clientToken: process.env.PADDLE_CLIENT_TOKEN,
+      environment: process.env.PADDLE_ENVIRONMENT ?? 'sandbox',
+      priceIds: process.env.PADDLE_PRICE_IDS ?? '',
+      oneTimePriceIds: {
+        badge: process.env.PADDLE_BADGE_PRICE_ID,
+        boost: process.env.PADDLE_BOOST_PRICE_ID,
+        boost1Month: process.env.PADDLE_BOOST_1_MONTH_PRICE_ID,
+        boost3Month: process.env.PADDLE_BOOST_3_MONTH_PRICE_ID,
+        boost6Month: process.env.PADDLE_BOOST_6_MONTH_PRICE_ID,
+        boost12Month: process.env.PADDLE_BOOST_12_MONTH_PRICE_ID,
+      },
     },
     // Redis Configuration (v4.0 - Sprint 23)
     redis: {
@@ -372,11 +406,27 @@ export interface Config {
     projectId: string;
     secretKey: string;
   };
-  // Stripe Configuration (v4.0 - Sprint 23)
+  // Stripe Configuration (v4.0 - Sprint 23) - DEPRECATED, use Paddle
   stripe: {
     secretKey?: string;
     webhookSecret?: string;
     priceIds: Map<string, string>;
+  };
+  // Paddle Configuration (Paddle Migration - Sprint 2)
+  paddle: {
+    apiKey?: string;
+    webhookSecret?: string;
+    clientToken?: string;
+    environment: 'sandbox' | 'production';
+    priceIds: Map<string, string>;
+    oneTimePriceIds: {
+      badge?: string;
+      boost?: string;
+      boost1Month?: string;
+      boost3Month?: string;
+      boost6Month?: string;
+      boost12Month?: string;
+    };
   };
   // Redis Configuration (v4.0 - Sprint 23)
   redis: {
@@ -486,6 +536,23 @@ export interface Config {
 const parsedConfig = parseConfig();
 
 /**
+ * Startup validation for critical configuration combinations
+ * Fails fast if billing is enabled without required secrets
+ */
+function validateStartupConfig(cfg: typeof parsedConfig): void {
+  // SECURITY: Require webhook secret when billing is enabled
+  if (cfg.features.billingEnabled && cfg.paddle.apiKey && !cfg.paddle.webhookSecret) {
+    logger.fatal('PADDLE_WEBHOOK_SECRET is required when billing is enabled');
+    throw new Error(
+      'Missing required configuration: PADDLE_WEBHOOK_SECRET must be set when FEATURE_BILLING_ENABLED=true and PADDLE_API_KEY is configured'
+    );
+  }
+}
+
+// Run startup validation
+validateStartupConfig(parsedConfig);
+
+/**
  * Validated and typed configuration
  */
 export const config: Config = {
@@ -496,6 +563,7 @@ export const config: Config = {
   },
   triggerDev: parsedConfig.triggerDev,
   stripe: parsedConfig.stripe,
+  paddle: parsedConfig.paddle,
   redis: parsedConfig.redis,
   features: parsedConfig.features,
   telegram: parsedConfig.telegram,
@@ -604,10 +672,17 @@ export function getOasisChannelId(): string | undefined {
 // =============================================================================
 
 /**
- * Check if Stripe billing is enabled and configured
+ * Check if billing is enabled (Paddle preferred, Stripe deprecated)
  */
 export function isBillingEnabled(): boolean {
-  return config.features.billingEnabled && !!config.stripe.secretKey;
+  return config.features.billingEnabled && (!!config.paddle.apiKey || !!config.stripe.secretKey);
+}
+
+/**
+ * Check if Paddle billing is enabled and configured
+ */
+export function isPaddleEnabled(): boolean {
+  return config.features.billingEnabled && !!config.paddle.apiKey;
 }
 
 /**
@@ -625,7 +700,15 @@ export function isRedisEnabled(): boolean {
 }
 
 /**
- * Get Stripe price ID for a subscription tier
+ * Get Paddle price ID for a subscription tier
+ * Returns undefined if not configured
+ */
+export function getPaddlePriceId(tier: string): string | undefined {
+  return config.paddle.priceIds.get(tier);
+}
+
+/**
+ * Get Stripe price ID for a subscription tier (DEPRECATED)
  * Returns undefined if not configured
  */
 export function getStripePriceId(tier: string): string | undefined {
@@ -633,7 +716,22 @@ export function getStripePriceId(tier: string): string | undefined {
 }
 
 /**
- * Check if all required Stripe configuration is present
+ * Check if all required Paddle configuration is present
+ * Returns list of missing configuration keys
+ */
+export function getMissingPaddleConfig(): string[] {
+  const missing: string[] = [];
+
+  if (!config.paddle.apiKey) missing.push('PADDLE_API_KEY');
+  if (!config.paddle.webhookSecret) missing.push('PADDLE_WEBHOOK_SECRET');
+  if (!config.paddle.clientToken) missing.push('PADDLE_CLIENT_TOKEN');
+  if (config.paddle.priceIds.size === 0) missing.push('PADDLE_PRICE_IDS');
+
+  return missing;
+}
+
+/**
+ * Check if all required Stripe configuration is present (DEPRECATED)
  * Returns list of missing configuration keys
  */
 export function getMissingStripeConfig(): string[] {

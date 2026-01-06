@@ -1,11 +1,11 @@
 /**
- * Boost Service (v4.0 - Sprint 28)
+ * Boost Service (v5.0 - Sprint 2 Paddle Migration)
  *
  * Core service for community boost management:
  * - Boost purchase processing
  * - Level calculation and threshold management
  * - Booster recognition and perks
- * - Stripe integration for payments
+ * - Provider-agnostic billing integration (Paddle)
  *
  * Boost Levels:
  * - Level 1: 2+ boosters - Basic perks
@@ -14,15 +14,17 @@
  */
 
 import { logger } from '../../utils/logger.js';
-import { stripeService } from '../billing/StripeService.js';
 import { gatekeeperService } from '../billing/GatekeeperService.js';
+import { createBillingProvider } from '../../packages/adapters/billing/index.js';
+import { config, isPaddleEnabled } from '../../config.js';
+import type { IBillingProvider } from '../../packages/core/ports/IBillingProvider.js';
 import {
   createBoostPurchase,
   extendMemberBoost,
   getMemberActiveBoost,
   getMemberBoosterInfo,
   getBoostPurchaseById,
-  getBoostPurchaseByStripeId,
+  getBoostPurchaseByPaymentId,
   getCommunityBoosters,
   getCommunityBoostStats,
   getCommunityBoostLevel,
@@ -145,8 +147,8 @@ export interface PurchaseBoostResult {
 }
 
 export interface ProcessBoostPaymentParams {
-  stripeSessionId?: string;
-  stripePaymentId: string;
+  sessionId?: string;
+  paymentId: string;
   memberId: string;
   communityId: string;
   months: number;
@@ -160,6 +162,7 @@ export interface ProcessBoostPaymentParams {
 class BoostService {
   private thresholds: BoostLevelThresholds;
   private pricing: BoostPricing;
+  private billingProvider: IBillingProvider | null = null;
 
   constructor() {
     // Initialize with defaults, can be overridden via config
@@ -175,6 +178,23 @@ class BoostService {
       ),
       bundles: this.loadBundlePricing(),
     };
+  }
+
+  /**
+   * Get or initialize the billing provider (lazy initialization)
+   */
+  private getBillingProvider(): IBillingProvider {
+    if (!this.billingProvider) {
+      if (!isPaddleEnabled()) {
+        throw new Error('Paddle billing is not configured');
+      }
+
+      this.billingProvider = createBillingProvider({
+        provider: 'paddle',
+        paddle: config.paddle,
+      });
+    }
+    return this.billingProvider;
   }
 
   /**
@@ -197,7 +217,7 @@ class BoostService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Initiate a boost purchase via Stripe Checkout
+   * Initiate a boost purchase via Paddle Checkout
    */
   async purchaseBoost(params: PurchaseBoostParams): Promise<PurchaseBoostResult> {
     const { memberId, communityId, months, successUrl, cancelUrl } = params;
@@ -211,21 +231,23 @@ class BoostService {
     const bundle = this.pricing.bundles.find((b) => b.months === months);
     const priceCents = bundle?.priceCents ?? this.pricing.pricePerMonthCents * months;
 
-    // Get or validate Stripe price ID
-    const stripePriceId = bundle?.stripePriceId ?? process.env.BOOST_DEFAULT_PRICE_ID;
-    if (!stripePriceId) {
-      logger.error({ months }, 'No Stripe price ID configured for boost purchase');
+    // Get or validate price ID from Paddle configuration
+    const priceId = bundle?.priceId ?? config.paddle?.oneTimePriceIds?.boost;
+    if (!priceId) {
+      logger.error({ months }, 'No price ID configured for boost purchase');
       return { success: false, error: 'Boost purchase not configured' };
     }
 
     try {
-      // Get customer ID for member
-      const customerId = await stripeService.getOrCreateCustomer(communityId, undefined, memberId);
+      const provider = this.getBillingProvider();
 
-      // Create Stripe Checkout session
-      const session = await stripeService.createOneTimeCheckoutSession({
+      // Get or create customer in Paddle
+      const customerId = await provider.getOrCreateCustomer(communityId, undefined, memberId);
+
+      // Create Paddle Checkout session for one-time purchase
+      const session = await provider.createOneTimeCheckoutSession({
         customerId,
-        priceId: stripePriceId,
+        priceId,
         successUrl,
         cancelUrl,
         metadata: {
@@ -256,12 +278,12 @@ class BoostService {
    * Process a successful boost payment (called from webhook)
    */
   async processBoostPayment(params: ProcessBoostPaymentParams): Promise<BoostPurchase> {
-    const { stripePaymentId, memberId, communityId, months, amountPaidCents } = params;
+    const { paymentId, memberId, communityId, months, amountPaidCents } = params;
 
     // Check for duplicate processing
-    const existing = getBoostPurchaseByStripeId(stripePaymentId);
+    const existing = getBoostPurchaseByPaymentId(paymentId);
     if (existing) {
-      logger.warn({ stripePaymentId }, 'Boost payment already processed');
+      logger.warn({ paymentId }, 'Boost payment already processed');
       return existing;
     }
 
@@ -276,7 +298,7 @@ class BoostService {
         communityId,
         months,
         amountPaidCents,
-        stripePaymentId
+        paymentId
       );
       logger.info(
         { memberId, communityId, months, extended: true },
@@ -287,7 +309,7 @@ class BoostService {
       purchaseId = createBoostPurchase({
         memberId,
         communityId,
-        stripePaymentId,
+        paymentId,
         monthsPurchased: months,
         amountPaidCents,
       });

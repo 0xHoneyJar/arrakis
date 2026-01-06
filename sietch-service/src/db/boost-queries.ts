@@ -27,7 +27,7 @@ interface BoostPurchaseRow {
   id: string;
   member_id: string;
   community_id: string;
-  stripe_payment_id: string | null;
+  payment_id: string | null;
   months_purchased: number;
   amount_paid_cents: number;
   purchased_at: string;
@@ -63,7 +63,7 @@ function rowToBoostPurchase(row: BoostPurchaseRow): BoostPurchase {
     id: row.id,
     memberId: row.member_id,
     communityId: row.community_id,
-    stripePaymentId: row.stripe_payment_id ?? undefined,
+    paymentId: row.payment_id ?? undefined,
     monthsPurchased: row.months_purchased,
     amountPaidCents: row.amount_paid_cents,
     purchasedAt: new Date(row.purchased_at),
@@ -101,14 +101,14 @@ export function createBoostPurchase(params: CreateBoostPurchaseParams): string {
 
   db.prepare(`
     INSERT INTO boost_purchases (
-      id, member_id, community_id, stripe_payment_id, months_purchased,
+      id, member_id, community_id, payment_id, months_purchased,
       amount_paid_cents, expires_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     params.memberId,
     params.communityId,
-    params.stripePaymentId ?? null,
+    params.paymentId ?? null,
     params.monthsPurchased,
     params.amountPaidCents,
     expiresAt.toISOString()
@@ -139,14 +139,14 @@ export function getBoostPurchaseById(id: string): BoostPurchase | null {
 }
 
 /**
- * Get boost purchase by Stripe payment ID
+ * Get boost purchase by payment ID
  */
-export function getBoostPurchaseByStripeId(stripePaymentId: string): BoostPurchase | null {
+export function getBoostPurchaseByPaymentId(paymentId: string): BoostPurchase | null {
   const db = getDatabase();
 
   const row = db
-    .prepare('SELECT * FROM boost_purchases WHERE stripe_payment_id = ?')
-    .get(stripePaymentId) as BoostPurchaseRow | undefined;
+    .prepare('SELECT * FROM boost_purchases WHERE payment_id = ?')
+    .get(paymentId) as BoostPurchaseRow | undefined;
 
   return row ? rowToBoostPurchase(row) : null;
 }
@@ -209,7 +209,7 @@ export function extendMemberBoost(
   communityId: string,
   additionalMonths: number,
   amountPaidCents: number,
-  stripePaymentId?: string
+  paymentId?: string
 ): string {
   const db = getDatabase();
   const id = randomUUID();
@@ -229,14 +229,14 @@ export function extendMemberBoost(
 
   db.prepare(`
     INSERT INTO boost_purchases (
-      id, member_id, community_id, stripe_payment_id, months_purchased,
+      id, member_id, community_id, payment_id, months_purchased,
       amount_paid_cents, expires_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     memberId,
     communityId,
-    stripePaymentId ?? null,
+    paymentId ?? null,
     additionalMonths,
     amountPaidCents,
     expiresAt.toISOString()

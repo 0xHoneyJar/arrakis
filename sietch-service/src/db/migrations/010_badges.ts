@@ -10,7 +10,7 @@
 
 export const BADGES_SCHEMA_SQL = `
 -- =============================================================================
--- Badge Purchases Table (Sprint 27: Score Badges)
+-- Badge Purchases Table (Sprint 27: Score Badges, Sprint 1: Paddle Migration)
 -- =============================================================================
 -- Tracks badge purchases for members on lower tiers (Basic and below).
 -- Premium+ tiers get badges for free via entitlement check.
@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS badge_purchases (
   -- Member who purchased the badge
   member_id TEXT NOT NULL,
 
-  -- Stripe payment intent ID (for tracking purposes)
-  stripe_payment_id TEXT,
+  -- Payment provider payment ID (provider-agnostic)
+  payment_id TEXT,
 
   -- Purchase timestamp
   purchased_at TEXT DEFAULT (datetime('now')) NOT NULL,
@@ -39,8 +39,8 @@ CREATE INDEX IF NOT EXISTS idx_badge_purchases_member
   ON badge_purchases(member_id);
 
 -- Index for payment tracking
-CREATE INDEX IF NOT EXISTS idx_badge_purchases_stripe
-  ON badge_purchases(stripe_payment_id);
+CREATE INDEX IF NOT EXISTS idx_badge_purchases_payment
+  ON badge_purchases(payment_id);
 
 -- =============================================================================
 -- Badge Settings Table (Sprint 27: Score Badges)

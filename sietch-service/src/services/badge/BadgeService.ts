@@ -1,5 +1,5 @@
 /**
- * Badge Service (v4.0 - Sprint 27)
+ * Badge Service (v5.0 - Sprint 2 Paddle Migration)
  *
  * Manages score badge entitlement, purchase, and display.
  * Score badges allow members to display their conviction score with customization.
@@ -10,7 +10,7 @@
  *
  * Features:
  * - Entitlement checking (tier-based or purchase-based)
- * - Badge purchase flow (Stripe integration)
+ * - Badge purchase flow (Paddle integration)
  * - Display formatting (default, minimal, detailed)
  * - Settings management (platform-specific display preferences)
  */
@@ -112,7 +112,7 @@ class BadgeService {
       reason: 'none',
       purchaseRequired: true,
       priceInCents: BADGE_PRICE_CENTS,
-      stripePriceId: config.stripe?.priceIds?.get('badge'),
+      priceId: config.paddle?.oneTimePriceIds?.badge,
     };
   }
 
@@ -135,7 +135,7 @@ class BadgeService {
   /**
    * Record a badge purchase
    *
-   * This is called after successful Stripe payment.
+   * This is called after successful payment (via Paddle webhook).
    * Creates a badge_purchases record for tracking.
    *
    * @param params - Purchase parameters
@@ -366,11 +366,11 @@ class BadgeService {
    *
    * @returns Price information
    */
-  getPriceInfo(): { cents: number; formatted: string; stripePriceId?: string } {
+  getPriceInfo(): { cents: number; formatted: string; priceId?: string } {
     return {
       cents: BADGE_PRICE_CENTS,
       formatted: `$${(BADGE_PRICE_CENTS / 100).toFixed(2)}`,
-      stripePriceId: config.stripe?.priceIds?.get('badge'),
+      priceId: config.paddle?.oneTimePriceIds?.badge,
     };
   }
 }
