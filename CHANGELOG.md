@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.1] - 2026-01-06
+
+### Changed
+- **Stripe Removal** - Completely removed Stripe SDK and all configuration
+  - Removed `stripe` package dependency
+  - Removed Stripe environment variables from config
+  - Made `TakeoverDiscountService` billing-provider agnostic (`IDiscountClient` interface)
+  - Updated `isBillingEnabled()` to check only Paddle configuration
+- **Provider-Agnostic Billing** - Renamed Stripe-specific parameters to generic names
+  - `stripeSubscriptionId` → `subscriptionId`
+  - `stripeInvoiceId` → `invoiceId`
+  - `stripeCouponId` → `couponId`
+
+### Removed
+- **Stripe SDK** - `stripe` package removed from dependencies
+- **Stripe Config** - All Stripe-related environment variables and schema
+- **Deprecated Functions** - `getStripePriceId()`, `getMissingStripeConfig()`
+- **Duplicate Documentation** - Removed `sietch-service/docs/a2a/` and `loa-grimoire/context/`
+- **Empty Directories** - Cleaned up unused directory structure
+- **Old Sprint Artifacts** - Archived sprints 23-66 (preserved in `sprints-archive-23-66.tar.gz`)
+
+### Fixed
+- **Gitignore Best Practices** - Added rules and removed tracked files that shouldn't be in version control
+  - `.next/` build artifacts (149 files removed)
+  - `*.tar.gz` and `*.zip` archive files
+  - `loa-grimoire/` generated files (prd.md, sdd.md, sprint.md, a2a/*, deployment/*, reality/*, artifacts/*)
+- **README Links** - Removed references to gitignored files, point to docs.arrakis.community
+
 ## [5.1.0] - 2026-01-06
 
 ### Added
@@ -489,6 +517,7 @@ Complete incumbent bot migration system enabling zero-downtime transitions from 
 
 | Version | Release Date | Codename | Key Features |
 |---------|--------------|----------|--------------|
+| 5.1.1 | 2026-01-06 | Housekeeping | Stripe removal, gitignore cleanup, provider-agnostic billing |
 | 5.1.0 | 2026-01-06 | The Merchant | Paddle billing, docs site, marketing website, infrastructure resilience |
 | 5.0.1 | 2025-12-30 | Coexistence & Security | Shadow mode, migration engine, incumbent monitoring, security hardening |
 | 5.0.0 | 2025-12-29 | The Transformation | Multi-tenant SaaS, hexagonal architecture, HITL approval |
@@ -499,7 +528,8 @@ Complete incumbent bot migration system enabling zero-downtime transitions from 
 | 2.0.0 | 2025-12-15 | Social Layer | Profiles, badges, directory, activity |
 | 1.0.0 | 2025-12-01 | MVP | Core eligibility, Discord bot, API |
 
-[Unreleased]: https://github.com/0xHoneyJar/arrakis/compare/v5.1.0...HEAD
+[Unreleased]: https://github.com/0xHoneyJar/arrakis/compare/v5.1.1...HEAD
+[5.1.1]: https://github.com/0xHoneyJar/arrakis/compare/v5.1.0...v5.1.1
 [5.1.0]: https://github.com/0xHoneyJar/arrakis/compare/v5.0.1...v5.1.0
 [5.0.1]: https://github.com/0xHoneyJar/arrakis/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/0xHoneyJar/arrakis/compare/v4.1.0...v5.0.0

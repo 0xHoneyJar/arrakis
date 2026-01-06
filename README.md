@@ -1,6 +1,6 @@
 # Arrakis
 
-[![Version](https://img.shields.io/badge/version-5.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.1.1-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE.md)
 [![Docs](https://img.shields.io/badge/docs-arrakis.community-orange.svg)](https://docs.arrakis.community)
 
