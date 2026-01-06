@@ -15,7 +15,7 @@ export default function TermsPage() {
         <div className="text-sand-dim text-xs mb-2">// legal / terms</div>
         <h1 className="text-2xl text-sand-bright">terms of service</h1>
         <p className="text-sand-dim text-sm mt-2">
-          effective: january 1, 2026 | updated: january 3, 2026
+          effective: january 1, 2026 | updated: january 6, 2026
         </p>
       </section>
 
@@ -26,10 +26,10 @@ export default function TermsPage() {
           <h2 className="text-sand-bright mb-3">1. introduction</h2>
           <div className="text-sand space-y-3">
             <p>
-              welcome to arrakis (&quot;company,&quot; &quot;we,&quot;
+              welcome to arrakis, a product of <span className="text-spice">The Honey Jar Corp</span> (&quot;company,&quot; &quot;we,&quot;
               &quot;us,&quot; or &quot;our&quot;). these terms of service
               (&quot;terms&quot;) govern your access to and use of the arrakis
-              platform, including our website at arrakis.xyz, discord bot,
+              platform, including our website at arrakis.community, discord bot,
               telegram bot, apis, and related services (collectively, the
               &quot;service&quot;).
             </p>
@@ -420,19 +420,28 @@ export default function TermsPage() {
 
             <div>
               <h3 className="text-sand mb-2">7.4 refunds</h3>
-              <div className="text-sand-dim pl-4 space-y-1">
+              <div className="text-sand-dim space-y-2">
                 <p>
-                  <span className="text-spice">monthly plans</span> — no refunds
-                  for partial months
+                  for complete details about our refund policy, please see our{' '}
+                  <Link href="/legal/refund" className="text-spice hover:text-spice-bright">
+                    [refund policy]
+                  </Link>
+                  . summary:
                 </p>
-                <p>
-                  <span className="text-spice">annual plans</span> — pro-rated
-                  refund available within 30 days of purchase
-                </p>
-                <p>
-                  <span className="text-spice">downgrades</span> — take effect
-                  at the next billing cycle
-                </p>
+                <div className="pl-4 space-y-1">
+                  <p>
+                    <span className="text-spice">monthly plans</span> — no refunds
+                    for partial months
+                  </p>
+                  <p>
+                    <span className="text-spice">annual plans</span> — pro-rated
+                    refund available within 30 days of purchase
+                  </p>
+                  <p>
+                    <span className="text-spice">downgrades</span> — take effect
+                    at the next billing cycle
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -913,7 +922,7 @@ export default function TermsPage() {
               <h3 className="text-sand mb-2">16.5 notices</h3>
               <p className="text-sand-dim">
                 we may provide notices through the service, email, or other
-                reasonable means. you may contact us at legal@arrakis.xyz.
+                reasonable means. you may contact us at legal@0xhoneyjar.xyz.
               </p>
             </div>
 
@@ -944,11 +953,13 @@ export default function TermsPage() {
           <div className="text-sand-dim space-y-1">
             <p>for questions about these terms, contact us at:</p>
             <p className="text-sand mt-2">
-              <span className="text-spice">arrakis</span>
+              <span className="text-spice">The Honey Jar Corp</span>
               <br />
-              email: legal@arrakis.xyz
+              d/b/a arrakis
               <br />
-              website: arrakis.xyz
+              email: legal@0xhoneyjar.xyz
+              <br />
+              website: arrakis.community
             </p>
           </div>
         </section>
@@ -956,9 +967,13 @@ export default function TermsPage() {
         {/* Footer */}
         <section className="border-t border-sand-dim/30 pt-6 mt-8">
           <p className="text-sand-dim text-xs">
-            last updated: january 3, 2026. see also:{' '}
+            last updated: january 6, 2026. see also:{' '}
             <Link href="/legal/privacy" className="text-spice hover:text-spice-bright">
               [privacy policy]
+            </Link>
+            {' | '}
+            <Link href="/legal/refund" className="text-spice hover:text-spice-bright">
+              [refund policy]
             </Link>
           </p>
         </section>

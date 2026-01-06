@@ -6,7 +6,7 @@ import { RandomAsciiChars } from '@/components/RandomAsciiChars';
 export const metadata: Metadata = {
   title: 'features // ARRAKIS',
   description:
-    'Dune Analytics power for your Discord — no SQL required. Conviction scoring, 9-tier progression, badge gamification. Built by the #1 Dune team.',
+    'Dune Analytics power for your Discord or Telegram — no SQL required. Conviction scoring, 9-tier progression, badge gamification. Built by the #1 Dune team.',
 };
 
 export default function FeaturesPage() {
@@ -20,7 +20,7 @@ export default function FeaturesPage() {
           dune analytics power. zero code required.
         </h1>
         <p className="text-sand mt-2">
-          the #1 dune team brings on-chain community intelligence to your discord —
+          the #1 dune team brings on-chain community intelligence to your discord & telegram —
           no SQL queries, no dashboard building, no data analysts needed.
         </p>
         <p className="text-spice text-sm mt-4">
@@ -65,11 +65,11 @@ export default function FeaturesPage() {
       <section id="dune">
         <div className="text-sand-dim text-xs mb-4">// dune_advantage</div>
         <div className="border border-spice/50 p-4">
-          <h2 className="text-spice text-lg mb-4">a dune wizard embedded in your discord</h2>
+          <h2 className="text-spice text-lg mb-4">a dune wizard embedded in your discord or telegram</h2>
           <p className="text-sand mb-4">
             think of it this way: dune analytics is the bloomberg terminal for crypto —
-            powerful, but requires expertise. arrakis is that bloomberg data delivered as
-            a simple app on your phone.
+            powerful, but requires expertise. arrakis is that bloomberg data delivered directly
+            to where your community is.
           </p>
           <div className="border border-sand-dim/30 p-4 mb-4">
             <div className="text-sand-dim text-xs mb-2">// traditional vs arrakis</div>
@@ -84,7 +84,7 @@ export default function FeaturesPage() {
               <div className="text-spice">
                 <p>zero code required</p>
                 <p>pre-built conviction scoring</p>
-                <p>real-time discord roles</p>
+                <p>real-time dynamic roles in discord, telegram or both</p>
                 <p>self-service wizard</p>
                 <p>dynamic 6-hour updates</p>
               </div>
@@ -105,7 +105,7 @@ export default function FeaturesPage() {
           <p className="text-sand mb-6">
             getting this data yourself would require writing dune queries, building dashboards,
             and analyzing CSVs. we&apos;ve done all that work — you just get the insights delivered
-            as discord roles.
+            as roles direct to where your community lives.
           </p>
 
           <div className="space-y-4 text-sm">
@@ -250,9 +250,9 @@ export default function FeaturesPage() {
 {`┌────────────────────────────────────────────────────────┐
 │                    ACTIVATION PATH                     │
 ├────────────────────────────────────────────────────────┤
-│  SHADOW   → observe only, see data      [zero risk]   │
-│  PARALLEL → namespaced roles alongside  [low risk]    │
-│  PRIMARY  → arrakis manages roles       [full value]  │
+│  SHADOW   → observe only, see data      [zero risk]     │
+│  PARALLEL → namespaced roles alongside  [low risk]      │
+│  PRIMARY  → arrakis manages roles       [full value]    │
 └────────────────────────────────────────────────────────┘`}
           </pre>
 
@@ -272,7 +272,7 @@ export default function FeaturesPage() {
           <h2 className="text-spice text-lg mb-4">one community, many chains</h2>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mb-4">
-            {['ethereum', 'polygon', 'arbitrum', 'optimism', 'base', 'avalanche', 'bnb'].map(
+            {['berachain', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'base', 'avalanche', 'bnb'].map(
               (chain) => (
                 <div key={chain} className="text-sand">
                   <span className="text-spice">+</span> {chain}
@@ -300,7 +300,7 @@ export default function FeaturesPage() {
             <p><span className="text-sand-dim">[1]</span> install from the collab.land marketplace</p>
             <p><span className="text-sand-dim">[2]</span> connect your token (we handle the queries)</p>
             <p><span className="text-sand-dim">[3]</span> configure tiers and thresholds</p>
-            <p><span className="text-sand-dim">[4]</span> map discord roles to conviction tiers</p>
+            <p><span className="text-sand-dim">[4]</span> map discord & telegram roles to conviction tiers</p>
             <p><span className="text-sand-dim">[5]</span> done — insights update every 6 hours automatically</p>
           </div>
 

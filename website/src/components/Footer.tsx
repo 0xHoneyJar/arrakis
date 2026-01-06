@@ -1,4 +1,6 @@
-import Link from 'next/link';
+'use client';
+
+import { ScrambleLink } from './TextScramble';
 
 export function Footer() {
   return (
@@ -11,75 +13,72 @@ export function Footer() {
         <div>
           <div className="text-sand-dim mb-3">// product</div>
           <div className="space-y-2">
-            <Link href="/features" className="block text-sand hover:text-sand-bright">
+            <ScrambleLink href="/features" className="block text-sand hover:text-sand-bright">
               features
-            </Link>
-            <Link href="/pricing" className="block text-sand hover:text-sand-bright">
+            </ScrambleLink>
+            <ScrambleLink href="/pricing" className="block text-sand hover:text-sand-bright">
               pricing
-            </Link>
-            <Link href="https://docs.arrakis.gg" className="block text-sand hover:text-sand-bright">
+            </ScrambleLink>
+            <ScrambleLink href="https://docs.arrakis.gg" className="block text-sand hover:text-sand-bright" external>
               docs
-            </Link>
+            </ScrambleLink>
           </div>
         </div>
 
         <div>
           <div className="text-sand-dim mb-3">// use-cases</div>
           <div className="space-y-2">
-            <Link href="/use-cases/daos" className="block text-sand hover:text-sand-bright">
+            <ScrambleLink href="/use-cases/daos" className="block text-sand hover:text-sand-bright">
               daos
-            </Link>
-            <Link href="/use-cases/nft-projects" className="block text-sand hover:text-sand-bright">
+            </ScrambleLink>
+            <ScrambleLink href="/use-cases/nft-projects" className="block text-sand hover:text-sand-bright">
               nft-projects
-            </Link>
-            <Link href="/use-cases/defi-protocols" className="block text-sand hover:text-sand-bright">
+            </ScrambleLink>
+            <ScrambleLink href="/use-cases/defi-protocols" className="block text-sand hover:text-sand-bright">
               defi-protocols
-            </Link>
+            </ScrambleLink>
           </div>
         </div>
 
         <div>
           <div className="text-sand-dim mb-3">// compare</div>
           <div className="space-y-2">
-            <Link href="/compare/vs-collabland" className="block text-sand hover:text-sand-bright">
+            <ScrambleLink href="/compare/vs-collabland" className="block text-sand hover:text-sand-bright">
               vs-collabland
-            </Link>
-            <Link href="/compare/vs-guild" className="block text-sand hover:text-sand-bright">
+            </ScrambleLink>
+            <ScrambleLink href="/compare/vs-guild" className="block text-sand hover:text-sand-bright">
               vs-guild
-            </Link>
-            <Link href="/compare/vs-matrica" className="block text-sand hover:text-sand-bright">
+            </ScrambleLink>
+            <ScrambleLink href="/compare/vs-matrica" className="block text-sand hover:text-sand-bright">
               vs-matrica
-            </Link>
+            </ScrambleLink>
           </div>
         </div>
 
         <div>
           <div className="text-sand-dim mb-3">// links</div>
           <div className="space-y-2">
-            <a
-              href="https://dune.com/thj"
-              target="_blank"
-              rel="noopener noreferrer"
+            <ScrambleLink
+              href="https://dune.com/discover/creators/top-teams"
               className="block text-sand hover:text-sand-bright"
+              external
             >
               dune
-            </a>
-            <a
+            </ScrambleLink>
+            <ScrambleLink
               href="https://github.com/0xHoneyJar/arrakis"
-              target="_blank"
-              rel="noopener noreferrer"
               className="block text-sand hover:text-sand-bright"
+              external
             >
               github
-            </a>
-            <a
+            </ScrambleLink>
+            <ScrambleLink
               href="https://discord.gg/thehoneyjar"
-              target="_blank"
-              rel="noopener noreferrer"
               className="block text-sand hover:text-sand-bright"
+              external
             >
               discord
-            </a>
+            </ScrambleLink>
           </div>
         </div>
       </div>
@@ -89,12 +88,15 @@ export function Footer() {
           <span className="text-spice">&gt;</span> ARRAKIS // engagement intelligence for web3
         </div>
         <div className="flex gap-6 text-sand-dim">
-          <Link href="/legal/terms" className="hover:text-sand">
+          <ScrambleLink href="/legal/terms" className="hover:text-sand">
             terms
-          </Link>
-          <Link href="/legal/privacy" className="hover:text-sand">
+          </ScrambleLink>
+          <ScrambleLink href="/legal/privacy" className="hover:text-sand">
             privacy
-          </Link>
+          </ScrambleLink>
+          <ScrambleLink href="/legal/refund" className="hover:text-sand">
+            refunds
+          </ScrambleLink>
           <span>&copy; {new Date().getFullYear()}</span>
         </div>
       </div>
@@ -103,41 +105,38 @@ export function Footer() {
         <div>{`/* the spice must flow */`}</div>
         <div>
           built with{' '}
-          <a
+          <ScrambleLink
             href="https://github.com/0xHoneyJar/loa"
-            target="_blank"
-            rel="noopener noreferrer"
             className="text-sand-dim/70 hover:text-sand-dim underline"
+            external
           >
             loa
-          </a>
+          </ScrambleLink>
           {' '}by{' '}
-          <a
+          <ScrambleLink
             href="https://0xHoneyJar.xyz"
-            target="_blank"
-            rel="noopener noreferrer"
             className="text-sand-dim/70 hover:text-sand-dim underline"
+            external
           >
             thj
-          </a>
+          </ScrambleLink>
           {' '}• design inspired by{' '}
-          <a
+          <ScrambleLink
             href="https://github.com/ertdfgcvb/play.core"
-            target="_blank"
-            rel="noopener noreferrer"
             className="text-sand-dim/70 hover:text-sand-dim underline"
+            external
           >
             play.core
-          </a>
+          </ScrambleLink>
         </div>
         <div>
           contact:{' '}
-          <a
+          <ScrambleLink
             href="mailto:henlo@0xhoneyjar.xyz"
             className="text-sand-dim/70 hover:text-sand-dim underline"
           >
             henlo@0xhoneyjar.xyz
-          </a>
+          </ScrambleLink>
         </div>
       </div>
     </footer>

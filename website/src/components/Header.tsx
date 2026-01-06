@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { AsciiLogoCompact } from './AsciiLogo';
+import { ScrambleLink } from './TextScramble';
 
 const navLinks = [
   { href: '/features', label: 'features' },
@@ -25,22 +26,22 @@ export function Header() {
         {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-6">
           {navLinks.map((link) => (
-            <Link
+            <ScrambleLink
               key={link.href}
               href={link.href}
               className="text-sand-dim hover:text-sand-bright text-sm"
             >
               {link.label}
-            </Link>
+            </ScrambleLink>
           ))}
           <span className="text-sand-dim">|</span>
-          <Link
+          <ScrambleLink
             href="https://discord.gg/thehoneyjar"
-            target="_blank"
             className="text-spice hover:text-spice-bright text-sm"
+            external
           >
             discord
-          </Link>
+          </ScrambleLink>
         </div>
 
         {/* Mobile toggle */}

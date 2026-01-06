@@ -15,7 +15,7 @@ export default function PrivacyPage() {
         <div className="text-sand-dim text-xs mb-2">// legal / privacy</div>
         <h1 className="text-2xl text-sand-bright">privacy policy</h1>
         <p className="text-sand-dim text-sm mt-2">
-          effective: january 1, 2026 | updated: january 3, 2026
+          effective: january 1, 2026 | updated: january 6, 2026
         </p>
       </section>
 
@@ -26,11 +26,11 @@ export default function PrivacyPage() {
           <h2 className="text-sand-bright mb-3">1. introduction</h2>
           <div className="text-sand space-y-3">
             <p>
-              arrakis (&quot;company,&quot; &quot;we,&quot; &quot;us,&quot; or
+              arrakis, a product of <span className="text-spice">The Honey Jar Corp</span> (&quot;company,&quot; &quot;we,&quot; &quot;us,&quot; or
               &quot;our&quot;) respects your privacy and is committed to
               protecting your personal data. this privacy policy explains how we
               collect, use, disclose, and safeguard your information when you
-              use our platform, including our website at arrakis.xyz, discord
+              use our platform, including our website at arrakis.community, discord
               bot, telegram bot, apis, and related services (collectively, the
               &quot;service&quot;).
             </p>
@@ -780,7 +780,7 @@ export default function PrivacyPage() {
               <h3 className="text-sand mb-2">8.4 exercising your rights</h3>
               <div className="text-sand-dim space-y-2">
                 <p>
-                  to exercise your rights, contact us at privacy@arrakis.xyz. we
+                  to exercise your rights, contact us at privacy@0xhoneyjar.xyz. we
                   will respond within the timeframes required by applicable law
                   (typically 30 days).
                 </p>
@@ -1089,11 +1089,13 @@ export default function PrivacyPage() {
               rights, contact us at:
             </p>
             <p className="text-sand mt-2">
-              <span className="text-spice">arrakis</span>
+              <span className="text-spice">The Honey Jar Corp</span>
               <br />
-              email: privacy@arrakis.xyz
+              d/b/a arrakis
               <br />
-              website: arrakis.xyz
+              email: privacy@0xhoneyjar.xyz
+              <br />
+              website: arrakis.community
             </p>
           </div>
         </section>
@@ -1101,7 +1103,7 @@ export default function PrivacyPage() {
         {/* Footer */}
         <section className="border-t border-sand-dim/30 pt-6 mt-8">
           <p className="text-sand-dim text-xs">
-            last updated: january 3, 2026. see also:{' '}
+            last updated: january 6, 2026. see also:{' '}
             <Link
               href="/legal/terms"
               className="text-spice hover:text-spice-bright"

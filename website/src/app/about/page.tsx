@@ -251,7 +251,7 @@ export default function AboutPage() {
             <div className="space-y-2 text-sm">
               <div>
                 <a
-                  href="https://dune.com/thj"
+                  href="https://dune.com/discover/creators/top-teams"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sand hover:text-sand-bright"

@@ -68,7 +68,7 @@ export default function PricingPage() {
             [upgrade to growth]
           </Link>
           <Link
-            href="mailto:hello@thehoneyjar.xyz"
+            href="mailto:henlo@0xhoneyjar.xyz"
             className="text-sand hover:text-sand-bright"
           >
             [contact sales]
@@ -237,7 +237,7 @@ export default function PricingPage() {
             [start free - no credit card]
           </Link>
           <Link
-            href="mailto:hello@thehoneyjar.xyz"
+            href="mailto:henlo@0xhoneyjar.xyz"
             className="text-sand hover:text-sand-bright"
           >
             [contact sales]
