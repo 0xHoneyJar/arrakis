@@ -67,14 +67,14 @@ class BillingAuditService {
   logSubscriptionCreated(data: {
     communityId: string;
     tier: string;
-    stripeSubscriptionId?: string;
+    subscriptionId?: string;
     actor?: string;
   }): number {
     return logAuditEvent(
       'subscription_created',
       {
         tier: data.tier,
-        stripeSubscriptionId: data.stripeSubscriptionId,
+        subscriptionId: data.subscriptionId,
       },
       data.communityId,
       data.actor
@@ -129,14 +129,14 @@ class BillingAuditService {
   logPaymentSucceeded(data: {
     communityId: string;
     amount: number;
-    stripeInvoiceId?: string;
+    invoiceId?: string;
     tier: string;
   }): number {
     return logAuditEvent(
       'payment_succeeded',
       {
         amount: data.amount,
-        stripeInvoiceId: data.stripeInvoiceId,
+        invoiceId: data.invoiceId,
         tier: data.tier,
       },
       data.communityId
@@ -149,7 +149,7 @@ class BillingAuditService {
   logPaymentFailed(data: {
     communityId: string;
     amount?: number;
-    stripeInvoiceId?: string;
+    invoiceId?: string;
     error?: string;
     graceUntil?: Date;
   }): number {
@@ -157,7 +157,7 @@ class BillingAuditService {
       'payment_failed',
       {
         amount: data.amount,
-        stripeInvoiceId: data.stripeInvoiceId,
+        invoiceId: data.invoiceId,
         error: data.error,
         graceUntil: data.graceUntil?.toISOString(),
       },

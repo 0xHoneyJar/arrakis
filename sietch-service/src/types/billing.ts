@@ -3,7 +3,7 @@
  *
  * Type definitions for the billing system including:
  * - Subscription tiers and features
- * - Stripe integration types
+ * - Paddle integration types
  * - Entitlement system types
  * - Fee waiver types
  */
@@ -813,7 +813,7 @@ export interface BoosterListResponse {
 export interface BoostPurchaseResponse {
   /** Purchase ID */
   purchaseId: string;
-  /** Stripe checkout URL (if not already purchased) */
+  /** Checkout URL (if not already purchased) */
   checkoutUrl?: string;
   /** Success indicator */
   success: boolean;

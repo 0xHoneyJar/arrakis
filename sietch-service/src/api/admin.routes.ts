@@ -656,7 +656,7 @@ adminRouter.get(
         status: {
           billing_enabled: billingEnabled,
           active_waivers: activeWaiverCount,
-          stripe_configured: !!config.stripe?.secretKey,
+          paddle_configured: !!config.paddle?.apiKey,
           redis_configured: !!config.redis?.url,
         },
       });

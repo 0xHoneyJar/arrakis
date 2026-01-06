@@ -14,7 +14,7 @@ export interface AuthenticatedRequest extends Request {
 
 /**
  * Extended Request type with raw body for webhook signature verification
- * Used by routes that need to verify signatures (e.g., Stripe webhooks)
+ * Used by routes that need to verify signatures (e.g., Paddle webhooks)
  */
 export interface RawBodyRequest extends Request {
   rawBody: Buffer;

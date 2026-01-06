@@ -78,13 +78,6 @@ const configSchema = z.object({
     secretKey: z.string().min(1),
   }),
 
-  // Stripe Configuration (v4.0 - Sprint 23) - DEPRECATED, use Paddle
-  stripe: z.object({
-    secretKey: z.string().optional(),
-    webhookSecret: z.string().optional(),
-    priceIds: priceIdsSchema,
-  }),
-
   // Paddle Configuration (Paddle Migration - Sprint 2)
   paddle: z.object({
     apiKey: z.string().optional(),
@@ -114,7 +107,7 @@ const configSchema = z.object({
 
   // Feature Flags (v4.0 - Sprint 23)
   features: z.object({
-    // Enable Stripe billing integration
+    // Enable Paddle billing integration
     billingEnabled: z.coerce.boolean().default(false),
     // Enable Gatekeeper feature gating
     gatekeeperEnabled: z.coerce.boolean().default(false),
@@ -254,12 +247,6 @@ function parseConfig() {
     triggerDev: {
       projectId: process.env.TRIGGER_PROJECT_ID ?? '',
       secretKey: process.env.TRIGGER_SECRET_KEY ?? '',
-    },
-    // Stripe Configuration (v4.0 - Sprint 23) - DEPRECATED, use Paddle
-    stripe: {
-      secretKey: process.env.STRIPE_SECRET_KEY,
-      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-      priceIds: process.env.STRIPE_PRICE_IDS ?? '',
     },
     // Paddle Configuration (Paddle Migration - Sprint 2)
     paddle: {
@@ -405,12 +392,6 @@ export interface Config {
   triggerDev: {
     projectId: string;
     secretKey: string;
-  };
-  // Stripe Configuration (v4.0 - Sprint 23) - DEPRECATED, use Paddle
-  stripe: {
-    secretKey?: string;
-    webhookSecret?: string;
-    priceIds: Map<string, string>;
   };
   // Paddle Configuration (Paddle Migration - Sprint 2)
   paddle: {
@@ -562,7 +543,6 @@ export const config: Config = {
     rewardVaultAddresses: parsedConfig.chain.rewardVaultAddresses as Address[],
   },
   triggerDev: parsedConfig.triggerDev,
-  stripe: parsedConfig.stripe,
   paddle: parsedConfig.paddle,
   redis: parsedConfig.redis,
   features: parsedConfig.features,
@@ -672,10 +652,10 @@ export function getOasisChannelId(): string | undefined {
 // =============================================================================
 
 /**
- * Check if billing is enabled (Paddle preferred, Stripe deprecated)
+ * Check if billing is enabled
  */
 export function isBillingEnabled(): boolean {
-  return config.features.billingEnabled && (!!config.paddle.apiKey || !!config.stripe.secretKey);
+  return config.features.billingEnabled && !!config.paddle.apiKey;
 }
 
 /**
@@ -708,14 +688,6 @@ export function getPaddlePriceId(tier: string): string | undefined {
 }
 
 /**
- * Get Stripe price ID for a subscription tier (DEPRECATED)
- * Returns undefined if not configured
- */
-export function getStripePriceId(tier: string): string | undefined {
-  return config.stripe.priceIds.get(tier);
-}
-
-/**
  * Check if all required Paddle configuration is present
  * Returns list of missing configuration keys
  */
@@ -726,20 +698,6 @@ export function getMissingPaddleConfig(): string[] {
   if (!config.paddle.webhookSecret) missing.push('PADDLE_WEBHOOK_SECRET');
   if (!config.paddle.clientToken) missing.push('PADDLE_CLIENT_TOKEN');
   if (config.paddle.priceIds.size === 0) missing.push('PADDLE_PRICE_IDS');
-
-  return missing;
-}
-
-/**
- * Check if all required Stripe configuration is present (DEPRECATED)
- * Returns list of missing configuration keys
- */
-export function getMissingStripeConfig(): string[] {
-  const missing: string[] = [];
-
-  if (!config.stripe.secretKey) missing.push('STRIPE_SECRET_KEY');
-  if (!config.stripe.webhookSecret) missing.push('STRIPE_WEBHOOK_SECRET');
-  if (config.stripe.priceIds.size === 0) missing.push('STRIPE_PRICE_IDS');
 
   return missing;
 }

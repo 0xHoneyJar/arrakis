@@ -12,7 +12,7 @@
  *
  * The discount:
  * - 20% off first year of subscription
- * - Applied via Stripe coupon code
+ * - Applied via billing provider coupon code
  * - One-time use per community
  * - Expires after 30 days if not redeemed
  *
@@ -46,8 +46,8 @@ export interface TakeoverDiscount {
   guildId: string;
   /** Discount status */
   status: DiscountStatus;
-  /** Stripe coupon ID (if generated) */
-  stripeCouponId?: string;
+  /** Billing provider coupon ID (if generated) */
+  couponId?: string;
   /** Promotion code (user-facing code) */
   promotionCode?: string;
   /** Discount percentage */
@@ -99,9 +99,9 @@ export interface DiscountEligibilityResult {
 }
 
 /**
- * Stripe integration interface (for dependency injection)
+ * Billing provider interface for discounts (for dependency injection)
  */
-export interface IStripeDiscountClient {
+export interface IDiscountClient {
   /** Create a coupon for takeover discount */
   createTakeoverCoupon(
     communityId: string,
@@ -157,7 +157,7 @@ export class TakeoverDiscountService {
 
   constructor(
     private readonly storage: ICoexistenceStorage,
-    private readonly stripeClient?: IStripeDiscountClient,
+    private readonly discountClient?: IDiscountClient,
     logger?: ILogger
   ) {
     this.logger = logger ?? createLogger({ service: 'TakeoverDiscountService' });
@@ -292,20 +292,20 @@ export class TakeoverDiscountService {
     const expiresAt = new Date(now.getTime() + DISCOUNT_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
     let promotionCode: string;
-    let stripeCouponId: string | undefined;
+    let couponId: string | undefined;
 
-    // Generate via Stripe if client is available
-    if (this.stripeClient) {
+    // Generate via billing provider if client is available
+    if (this.discountClient) {
       try {
-        const result = await this.stripeClient.createTakeoverCoupon(
+        const result = await this.discountClient.createTakeoverCoupon(
           communityId,
           TAKEOVER_DISCOUNT_PERCENT,
           TAKEOVER_DISCOUNT_DURATION_MONTHS
         );
-        stripeCouponId = result.couponId;
+        couponId = result.couponId;
         promotionCode = result.promotionCode;
       } catch (error) {
-        this.logger.error('Failed to create Stripe coupon', { error, communityId });
+        this.logger.error('Failed to create coupon', { error, communityId });
         return {
           success: false,
           error: 'Failed to generate discount code. Please contact support.',
@@ -321,7 +321,7 @@ export class TakeoverDiscountService {
       communityId,
       guildId,
       status: 'generated',
-      stripeCouponId,
+      couponId,
       promotionCode,
       discountPercent: TAKEOVER_DISCOUNT_PERCENT,
       durationMonths: TAKEOVER_DISCOUNT_DURATION_MONTHS,
@@ -352,7 +352,7 @@ export class TakeoverDiscountService {
   /**
    * Mark discount as redeemed
    *
-   * Called when the promotion code is used in Stripe checkout
+   * Called when the promotion code is used in checkout
    *
    * @param communityId - Community UUID
    * @returns Whether marking succeeded
@@ -433,12 +433,12 @@ export class TakeoverDiscountService {
         discountStore.set(communityId, discount);
         expiredCount++;
 
-        // Expire in Stripe if client available
-        if (this.stripeClient && discount.promotionCode) {
+        // Expire in billing provider if client available
+        if (this.discountClient && discount.promotionCode) {
           try {
-            await this.stripeClient.expirePromotionCode(discount.promotionCode);
+            await this.discountClient.expirePromotionCode(discount.promotionCode);
           } catch (error) {
-            this.logger.warn('Failed to expire promotion code in Stripe', {
+            this.logger.warn('Failed to expire promotion code', {
               error,
               communityId,
               promotionCode: discount.promotionCode,
@@ -466,8 +466,8 @@ export class TakeoverDiscountService {
  */
 export function createTakeoverDiscountService(
   storage: ICoexistenceStorage,
-  stripeClient?: IStripeDiscountClient,
+  discountClient?: IDiscountClient,
   logger?: ILogger
 ): TakeoverDiscountService {
-  return new TakeoverDiscountService(storage, stripeClient, logger);
+  return new TakeoverDiscountService(storage, discountClient, logger);
 }

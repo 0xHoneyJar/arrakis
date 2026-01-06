@@ -366,7 +366,7 @@ class GatekeeperService {
     communityId: string,
     requiredTier: SubscriptionTier
   ): string {
-    // In production, this would link to Stripe Checkout with pre-selected tier
+    // In production, this would link to Paddle Checkout with pre-selected tier
     const baseUrl = process.env.UPGRADE_URL || 'https://sietch.io/upgrade';
     return `${baseUrl}?tier=${requiredTier}&community=${communityId}`;
   }

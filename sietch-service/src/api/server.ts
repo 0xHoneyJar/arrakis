@@ -74,8 +74,8 @@ function createApp(): Application {
     next();
   });
 
-  // Raw body parser for Stripe webhook (must be before JSON parsing)
-  // Stripe requires raw body for signature verification
+  // Raw body parser for billing webhook (must be before JSON parsing)
+  // Paddle requires raw body for signature verification
   // We use a custom verify function to attach the raw body to the request
   expressApp.use('/api/billing/webhook', express.raw({
     type: 'application/json',
