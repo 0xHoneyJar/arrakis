@@ -120,14 +120,6 @@ export function Footer() {
           >
             thj
           </ScrambleLink>
-          {' '}• design inspired by{' '}
-          <ScrambleLink
-            href="https://github.com/ertdfgcvb/play.core"
-            className="text-sand-dim/70 hover:text-sand-dim underline"
-            external
-          >
-            play.core
-          </ScrambleLink>
         </div>
         <div>
           contact:{' '}
