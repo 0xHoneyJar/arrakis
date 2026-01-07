@@ -175,9 +175,12 @@ const configSchema = z.object({
     adminApiKeys: adminApiKeysSchema,
   }),
 
-  // Database Configuration
+  // Database Configuration (Sprint 70: PostgreSQL + RLS Migration)
   database: z.object({
-    path: z.string().min(1),
+    // PostgreSQL connection URL (required for production)
+    url: z.string().url().optional(),
+    // SQLite path (deprecated - for migration only)
+    path: z.string().optional(),
   }),
 
   // Logging Configuration
@@ -330,7 +333,8 @@ function parseConfig() {
       adminApiKeys: process.env.ADMIN_API_KEYS ?? '',
     },
     database: {
-      path: process.env.DATABASE_PATH ?? './data/sietch.db',
+      url: process.env.DATABASE_URL,
+      path: process.env.DATABASE_PATH, // Deprecated - for migration only
     },
     logging: {
       level: process.env.LOG_LEVEL ?? 'info',
@@ -476,7 +480,10 @@ export interface Config {
     adminApiKeys: Map<string, string>;
   };
   database: {
-    path: string;
+    // PostgreSQL connection URL (required for production)
+    url?: string;
+    // SQLite path (deprecated - for migration only)
+    path?: string;
   };
   logging: {
     level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
@@ -526,6 +533,32 @@ function validateStartupConfig(cfg: typeof parsedConfig): void {
     logger.fatal('PADDLE_WEBHOOK_SECRET is required when billing is enabled');
     throw new Error(
       'Missing required configuration: PADDLE_WEBHOOK_SECRET must be set when FEATURE_BILLING_ENABLED=true and PADDLE_API_KEY is configured'
+    );
+  }
+
+  // Sprint 70: Warn if using SQLite path instead of PostgreSQL URL
+  if (cfg.database.path && !cfg.database.url) {
+    logger.warn(
+      { path: cfg.database.path },
+      'DATABASE_PATH is deprecated. Use DATABASE_URL for PostgreSQL in production. SQLite is only supported for migration.'
+    );
+  }
+
+  // Sprint 70: Validate DATABASE_URL is set in production (when not in test mode)
+  const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction && !cfg.database.url) {
+    logger.fatal('DATABASE_URL is required in production for PostgreSQL with RLS');
+    throw new Error(
+      'Missing required configuration: DATABASE_URL must be set in production. PostgreSQL with Row-Level Security is required for multi-tenant isolation.'
+    );
+  }
+
+  // Sprint 70: Validate one database config is present (except in test mode)
+  if (!isTest && !cfg.database.url && !cfg.database.path) {
+    logger.fatal('No database configuration provided');
+    throw new Error(
+      'Missing required configuration: Either DATABASE_URL (PostgreSQL) or DATABASE_PATH (SQLite - deprecated) must be set.'
     );
   }
 }
@@ -751,4 +784,75 @@ export function getMissingTelegramConfig(): string[] {
  */
 export function isTelegramWebhookMode(): boolean {
   return !!config.telegram.webhookUrl;
+}
+
+// =============================================================================
+// Database Configuration Helpers (Sprint 70: PostgreSQL + RLS Migration)
+// =============================================================================
+
+/**
+ * Check if PostgreSQL is configured
+ */
+export function isPostgreSQLEnabled(): boolean {
+  return !!config.database.url;
+}
+
+/**
+ * Get database URL for PostgreSQL connections
+ * Returns undefined if only SQLite path is configured
+ */
+export function getDatabaseUrl(): string | undefined {
+  return config.database.url;
+}
+
+/**
+ * Get database path for SQLite (deprecated)
+ * Returns undefined if PostgreSQL URL is configured
+ */
+export function getDatabasePath(): string | undefined {
+  return config.database.path;
+}
+
+/**
+ * Get database connection string with fallback
+ * Prioritizes PostgreSQL URL over SQLite path
+ * Returns default SQLite path for tests if nothing configured
+ */
+export function getDatabaseConnection(): { type: 'postgresql' | 'sqlite'; connectionString: string } {
+  if (config.database.url) {
+    return { type: 'postgresql', connectionString: config.database.url };
+  }
+  if (config.database.path) {
+    return { type: 'sqlite', connectionString: config.database.path };
+  }
+  // Default for tests
+  return { type: 'sqlite', connectionString: './data/sietch.db' };
+}
+
+/**
+ * Check if multi-tenant RLS is available
+ * RLS requires PostgreSQL - SQLite does not support row-level security
+ */
+export function isRLSAvailable(): boolean {
+  return isPostgreSQLEnabled();
+}
+
+/**
+ * Get missing database configuration
+ * Returns list of missing configuration keys
+ */
+export function getMissingDatabaseConfig(): string[] {
+  const missing: string[] = [];
+
+  // In production, only PostgreSQL is supported
+  if (process.env.NODE_ENV === 'production') {
+    if (!config.database.url) missing.push('DATABASE_URL');
+  } else {
+    // In development, either is acceptable
+    if (!config.database.url && !config.database.path) {
+      missing.push('DATABASE_URL or DATABASE_PATH');
+    }
+  }
+
+  return missing;
 }

@@ -124,7 +124,15 @@ export function initDatabase(): Database.Database {
   }
 
   // Ensure data directory exists
+  // Sprint 70: database.path is now optional (PostgreSQL is preferred)
+  // SQLite should only be used for legacy/migration scenarios
   const dbPath = config.database.path;
+  if (!dbPath) {
+    throw new Error(
+      'DATABASE_PATH is not configured. SQLite is deprecated in favor of PostgreSQL (DATABASE_URL). ' +
+      'Use DrizzleStorageAdapter with PostgreSQL for production.'
+    );
+  }
   const dbDir = dirname(dbPath);
   if (!existsSync(dbDir)) {
     mkdirSync(dbDir, { recursive: true });
