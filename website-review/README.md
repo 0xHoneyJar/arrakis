@@ -8,7 +8,8 @@ This folder contains **complete extracted content** from all website versions fo
 |--------|--------|-------------|
 | `production-website/` | arrakis.community | Current live production website (ALL pages) |
 | `docs-site/` | docs.arrakis.community | Documentation site (ALL pages) |
-| `preview-collab-land/` | Vercel preview o5qxsr6j0 | Preview with Collab.Land messaging |
+| `preview-generic/` | Vercel preview 6g5j6fss2 | Preview with generic "engagement intelligence" messaging |
+| `preview-collab-land/` | Vercel preview o5qxsr6j0 | Preview with Collab.Land marketplace messaging |
 
 ## Pages Included
 
@@ -32,18 +33,24 @@ This folder contains **complete extracted content** from all website versions fo
 - Analytics
 - FAQ
 
-### Preview (Collab.Land Focus)
-- Full homepage with Collab.Land positioning
+### Preview - Generic (6g5j6fss2)
+- Full homepage with generic "engagement intelligence" messaging
 
-## Key Messaging Differences
+### Preview - Collab.Land Focus (o5qxsr6j0)
+- Full homepage with Collab.Land marketplace positioning
 
-| Element | Production | Preview |
-|---------|------------|---------|
-| **Main Tagline** | "dune analytics power. zero code required." | "the engagement layer for collab.land" |
-| **Positioning** | Standalone Dune-powered platform | Collab.Land marketplace integration |
-| **Trust Message** | "the #1 dune team" | "you trust collab.land - we just make it smarter" |
-| **First Feature** | dune-powered | trust-inheritance |
-| **Docs URL** | docs.arrakis.community | docs.arrakis.gg |
+## Key Messaging Differences (3-Way Comparison)
+
+| Element | Production | Preview Generic | Preview Collab.Land |
+|---------|------------|-----------------|---------------------|
+| **Main Tagline** | "dune analytics power. zero code required." | "engagement intelligence for web3 communities" | "the engagement layer for collab.land" |
+| **Positioning** | Standalone Dune-powered platform | Generic engagement tool | Collab.Land marketplace extension |
+| **Trust Message** | "the #1 dune team" | N/A | "you trust collab.land - we just make it smarter" |
+| **First Feature** | dune-powered | conviction-scoring | trust-inheritance |
+| **Docs URL** | docs.arrakis.community | docs.arrakis.gg | docs.arrakis.gg |
+| **Contact Email** | henlo@0xhoneyjar.xyz | hello@0xhoneyjar.xyz | hello@0xhoneyjar.xyz |
+| **Refunds Link** | Yes | No | No |
+| **Dune Section** | Yes | No | No |
 
 ## How to Review
 
