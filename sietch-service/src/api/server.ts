@@ -1,5 +1,6 @@
 import express, { type Application, type Request, type Response, type NextFunction } from 'express';
 import { pinoHttp } from 'pino-http';
+import helmet from 'helmet';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
@@ -35,6 +36,61 @@ function createApp(): Application {
 
   // Request ID middleware
   expressApp.use(requestIdMiddleware);
+
+  // ==========================================================================
+  // Security Headers (Sprint 74 - MED-3)
+  // ==========================================================================
+  // Helmet provides essential HTTP security headers:
+  // - Content-Security-Policy: Prevents XSS by restricting resource loading
+  // - X-Frame-Options: Prevents clickjacking
+  // - X-Content-Type-Options: Prevents MIME-type sniffing
+  // - Strict-Transport-Security (HSTS): Enforces HTTPS
+  // - X-XSS-Protection: Legacy XSS filter (modern browsers use CSP)
+  // - Referrer-Policy: Controls referrer information
+  //
+  // @see https://helmetjs.github.io/
+  // @security MED-3: Implements missing security headers
+  expressApp.use(
+    helmet({
+      // Content Security Policy - strict by default
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"], // Allow inline styles for API docs
+          imgSrc: ["'self'", 'data:', 'https://cdn.discordapp.com', 'https://media.discordapp.net'],
+          fontSrc: ["'self'"],
+          connectSrc: ["'self'"],
+          frameSrc: ["'none'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"], // Prevents clickjacking
+          upgradeInsecureRequests: [], // Upgrade HTTP to HTTPS
+        },
+      },
+      // HSTS - enforce HTTPS for 1 year
+      strictTransportSecurity: {
+        maxAge: 31536000, // 1 year in seconds
+        includeSubDomains: true,
+        preload: true,
+      },
+      // Prevent clickjacking
+      frameguard: { action: 'deny' },
+      // Prevent MIME-type sniffing
+      noSniff: true,
+      // Referrer policy - don't leak referrer to third parties
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      // Hide X-Powered-By header
+      hidePoweredBy: true,
+      // XSS filter - legacy but still useful for older browsers
+      xssFilter: true,
+      // Don't set cross-origin policies that might break CORS
+      crossOriginEmbedderPolicy: false, // API needs to be embeddable by clients
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: false,
+    })
+  );
 
   // Request logging via pino-http
   const httpLogger = pinoHttp({
