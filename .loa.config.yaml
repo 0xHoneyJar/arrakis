@@ -314,6 +314,29 @@ trajectory:
     archive: true
 
 # =============================================================================
+# Tool Search (Claude Platform Integration)
+# =============================================================================
+# Dynamic tool discovery for MCP servers and Loa Constructs
+tool_search:
+  # Master toggle for tool search features
+  enabled: true
+  # Auto-discover available tools on startup
+  auto_discover: true
+  # Cache TTL in hours (0 = no caching)
+  cache_ttl_hours: 24
+  # Cache directory (default: ~/.loa/cache/tool-search)
+  # cache_dir: ~/.loa/cache/tool-search
+  # Include Loa Constructs in search results
+  include_constructs: true
+  # Default result limit for searches
+  default_limit: 10
+  # Search ranking weights (name match > description > scope)
+  ranking:
+    name_weight: 100
+    description_weight: 50
+    scope_weight: 30
+
+# =============================================================================
 # Behavior Preferences
 # =============================================================================
 preferences:
