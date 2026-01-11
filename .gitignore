@@ -113,8 +113,8 @@ grimoires/loa/research/*
 !grimoires/loa/research/README.md
 
 # Artifacts (grounded docs, handoffs, audits - generated per-project)
-loa-grimoire/artifacts/*
-!loa-grimoire/artifacts/README.md
+grimoires/loa/artifacts/*
+!grimoires/loa/artifacts/README.md
 
 # =============================================================================
 # LOA CONSTRUCTS (licensed skills, user-specific)
@@ -163,6 +163,9 @@ gtm-grimoire/
 .claude/commands/sync-from-gtm.md
 
 # Reap migration artifacts (abandoned in favor of Paddle)
-loa-grimoire/prd-reap-migration.md
-loa-grimoire/sdd-reap-migration.md
-loa-grimoire/sprint-reap-migration.md
+grimoires/loa/prd-reap-migration.md
+grimoires/loa/sdd-reap-migration.md
+grimoires/loa/sprint-reap-migration.md
+
+# Legacy grimoire directory (migrated to grimoires/loa/)
+loa-grimoire/
