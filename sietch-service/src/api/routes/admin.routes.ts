@@ -9,7 +9,7 @@ import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../middleware.js';
 import {
   adminRateLimiter,
-  requireApiKey,
+  requireApiKeyAsync,
   ValidationError,
   NotFoundError,
 } from '../middleware.js';
@@ -34,8 +34,9 @@ import type { AlertStatsResponse } from '../../types/index.js';
 export const adminRouter = Router();
 
 // Apply admin rate limiting and authentication
+// Sprint 73 (HIGH-1): Use async API key validation with bcrypt
 adminRouter.use(adminRateLimiter);
-adminRouter.use(requireApiKey);
+adminRouter.use(requireApiKeyAsync);
 
 /**
  * Zod schema for admin override request

@@ -701,6 +701,162 @@ describe('WebhookService', () => {
   });
 
   // ===========================================================================
+  // Replay Attack Prevention Tests (Sprint 72 - CRIT-4)
+  // ===========================================================================
+
+  describe('Replay Attack Prevention (CRIT-4)', () => {
+    const createEventWithTimestamp = (timestamp: Date): ProviderWebhookEvent => ({
+      id: 'evt_replay_test',
+      type: 'subscription.created',
+      rawType: 'subscription.created',
+      data: {
+        id: 'sub_123',
+        customerId: 'cus_123',
+        status: 'active',
+        customData: {
+          community_id: 'community-123',
+          tier: 'premium',
+        },
+      },
+      timestamp,
+    });
+
+    it('should accept events within 5-minute window', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+      mockBillingQueries.getSubscriptionByCommunityId.mockReturnValue(null);
+
+      // Event from 2 minutes ago - should be accepted
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+      const event = createEventWithTimestamp(twoMinutesAgo);
+
+      const result = await webhookService.processEvent(event);
+
+      expect(result.status).toBe('processed');
+    });
+
+    it('should accept events from current time', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+      mockBillingQueries.getSubscriptionByCommunityId.mockReturnValue(null);
+
+      const event = createEventWithTimestamp(new Date());
+
+      const result = await webhookService.processEvent(event);
+
+      expect(result.status).toBe('processed');
+    });
+
+    it('should reject events older than 5 minutes (replay attack)', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+
+      // Event from 6 minutes ago - should be rejected
+      const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
+      const event = createEventWithTimestamp(sixMinutesAgo);
+
+      const result = await webhookService.processEvent(event);
+
+      expect(result.status).toBe('failed');
+      expect(result.error).toContain('replay attack');
+    });
+
+    it('should reject events from 10 minutes ago', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const event = createEventWithTimestamp(tenMinutesAgo);
+
+      const result = await webhookService.processEvent(event);
+
+      expect(result.status).toBe('failed');
+      expect(result.error).toContain('replay attack');
+    });
+
+    it('should reject events from 1 hour ago', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const event = createEventWithTimestamp(oneHourAgo);
+
+      const result = await webhookService.processEvent(event);
+
+      expect(result.status).toBe('failed');
+      expect(result.error).toContain('replay attack');
+    });
+
+    it('should still release lock when rejecting stale event', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+
+      const oldEvent = new Date(Date.now() - 10 * 60 * 1000);
+      const event = createEventWithTimestamp(oldEvent);
+
+      await webhookService.processEvent(event);
+
+      // Lock should be released even for stale events
+      expect(mockRedisService.releaseEventLock).toHaveBeenCalledWith('evt_replay_test');
+    });
+
+    it('should check timestamp BEFORE duplicate checks (fail fast)', async () => {
+      const callOrder: string[] = [];
+
+      mockRedisService.acquireEventLock.mockImplementation(async () => {
+        callOrder.push('acquireEventLock');
+        return true;
+      });
+      mockRedisService.isEventProcessed.mockImplementation(async () => {
+        callOrder.push('isEventProcessed');
+        return false;
+      });
+      mockBillingQueries.isWebhookEventProcessed.mockImplementation(() => {
+        callOrder.push('isWebhookEventProcessed');
+        return false;
+      });
+      mockRedisService.releaseEventLock.mockImplementation(async () => {
+        callOrder.push('releaseEventLock');
+      });
+
+      // Old event should be rejected before duplicate checks
+      const oldEvent = new Date(Date.now() - 10 * 60 * 1000);
+      const event = createEventWithTimestamp(oldEvent);
+
+      await webhookService.processEvent(event);
+
+      // Lock acquired, then timestamp check should fail before Redis/DB checks
+      // The order should show lock first, then rejection (no isEventProcessed check)
+      expect(callOrder[0]).toBe('acquireEventLock');
+      // isEventProcessed should NOT be called for stale events
+      expect(callOrder).not.toContain('isEventProcessed');
+      expect(callOrder).not.toContain('isWebhookEventProcessed');
+    });
+
+    it('should accept event exactly at 5-minute boundary', async () => {
+      mockRedisService.acquireEventLock.mockResolvedValue(true);
+      mockRedisService.isEventProcessed.mockResolvedValue(false);
+      mockBillingQueries.isWebhookEventProcessed.mockReturnValue(false);
+      mockBillingQueries.getSubscriptionByCommunityId.mockReturnValue(null);
+
+      // Event exactly 5 minutes ago (minus small buffer for test timing)
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000 + 100);
+      const event = createEventWithTimestamp(fiveMinutesAgo);
+
+      const result = await webhookService.processEvent(event);
+
+      // Should just barely pass (within the 5 minute window)
+      expect(result.status).toBe('processed');
+    });
+  });
+
+  // ===========================================================================
   // Extended Lock TTL Tests (Sprint 67 - Task 67.4)
   // ===========================================================================
 

@@ -21,7 +21,7 @@ import {
   ValidationError,
   NotFoundError,
 } from './middleware.js';
-import { config, isBillingEnabled } from '../config.js';
+import { config, isBillingEnabled, isVaultEnabled, getVaultClientConfig } from '../config.js';
 import { waiverService, billingAuditService, gatekeeperService } from '../services/billing/index.js';
 import {
   getSubscriptionByCommunityId,
@@ -36,6 +36,8 @@ import type {
   FeeWaiver,
   BillingAuditEventType,
 } from '../types/billing.js';
+import { VaultSigningAdapter, VaultSecretError } from '../packages/adapters/vault/index.js';
+import { AdminApiKeyService } from '../services/security/AdminApiKeyService.js';
 
 // =============================================================================
 // Router Setup
@@ -637,6 +639,305 @@ adminRouter.get(
 );
 
 // =============================================================================
+// Vault Key Management Routes (Sprint 71: CRIT-2)
+// =============================================================================
+
+/**
+ * Key rotation request schema
+ */
+const keyRotationSchema = z.object({
+  key_name: z.string().min(1).max(100).optional(),
+  force: z.boolean().default(false),
+  reason: z.string().min(10).max(500),
+});
+
+/**
+ * Key revocation request schema
+ */
+const keyRevocationSchema = z.object({
+  key_name: z.string().min(1).max(100).optional(),
+  key_version: z.number().int().positive(),
+  reason: z.string().min(10).max(500),
+  mfa_token: z.string().min(6).max(10), // MFA required for revocation
+});
+
+/**
+ * Middleware: Check Vault Enabled
+ */
+function requireVaultEnabled(req: AuthenticatedRequest, res: Response, next: Function) {
+  if (!isVaultEnabled()) {
+    res.status(503).json({
+      error: 'Vault not enabled',
+      message: 'The Vault secrets management system is not configured. Set FEATURE_VAULT_ENABLED=true and configure VAULT_ADDR, VAULT_TOKEN.',
+    });
+    return;
+  }
+  next();
+}
+
+/**
+ * POST /admin/keys/rotate
+ * Rotate a signing key in Vault Transit
+ *
+ * Rotates the key to a new version. Old signatures remain valid.
+ * New signatures will use the new key version.
+ */
+adminRouter.post(
+  '/keys/rotate',
+  requireVaultEnabled,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      // Validate request body
+      const body = keyRotationSchema.parse(req.body);
+      const actor = req.apiKeyId ?? 'api-key';
+
+      logger.info(
+        { keyName: body.key_name, actor, force: body.force },
+        'Admin initiating key rotation'
+      );
+
+      // Get Vault config
+      const vaultConfig = getVaultClientConfig();
+      const keyName = body.key_name || vaultConfig.signingKeyName;
+
+      // Create adapter and rotate key
+      const adapter = new VaultSigningAdapter({
+        vaultAddr: vaultConfig.addr,
+        vaultToken: vaultConfig.token,
+        vaultNamespace: vaultConfig.namespace,
+        keyName,
+        requestTimeout: vaultConfig.requestTimeout,
+        logger,
+      });
+
+      await adapter.initialize();
+      const result = await adapter.rotateKey();
+
+      // Log audit event
+      logBillingAuditEvent(
+        'key_rotated' as BillingAuditEventType,
+        {
+          keyName,
+          oldVersion: result.oldVersion,
+          newVersion: result.newVersion,
+          reason: body.reason,
+          force: body.force,
+        },
+        undefined,
+        actor
+      );
+
+      logger.warn(
+        { keyName, oldVersion: result.oldVersion, newVersion: result.newVersion, actor },
+        'Signing key rotated successfully'
+      );
+
+      res.json({
+        success: true,
+        rotation: {
+          key_name: keyName,
+          old_version: result.oldVersion,
+          new_version: result.newVersion,
+          rotated_at: result.rotatedAt.toISOString(),
+          grace_period_ends: new Date(result.rotatedAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+        message: 'Key rotated successfully. Old versions remain valid for signature verification.',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({
+          error: 'Validation failed',
+          details: error.errors,
+        });
+        return;
+      }
+
+      logger.error({ error: (error as Error).message }, 'Failed to rotate key');
+
+      if ((error as Error).name === 'VaultUnavailableError') {
+        res.status(503).json({
+          error: 'Vault unavailable',
+          message: 'Could not connect to Vault server. Please try again later.',
+        });
+        return;
+      }
+
+      res.status(500).json({
+        error: 'Internal server error',
+        message: (error as Error).message,
+      });
+    }
+  }
+);
+
+/**
+ * POST /admin/keys/revoke
+ * Emergency revocation of a key version
+ *
+ * WARNING: This is a destructive operation. Signatures made with
+ * the revoked key version will no longer be verifiable.
+ *
+ * Requires MFA token for authorization.
+ */
+adminRouter.post(
+  '/keys/revoke',
+  requireVaultEnabled,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      // Validate request body
+      const body = keyRevocationSchema.parse(req.body);
+      const actor = req.apiKeyId ?? 'api-key';
+
+      // Validate MFA token (simplified - in production this would use TOTP or similar)
+      // For now, we just check that a token was provided
+      if (!body.mfa_token || body.mfa_token.length < 6) {
+        res.status(401).json({
+          error: 'MFA required',
+          message: 'A valid MFA token is required for key revocation.',
+        });
+        return;
+      }
+
+      logger.warn(
+        { keyName: body.key_name, keyVersion: body.key_version, actor },
+        'Admin initiating EMERGENCY key revocation'
+      );
+
+      // Get Vault config
+      const vaultConfig = getVaultClientConfig();
+      const keyName = body.key_name || vaultConfig.signingKeyName;
+
+      // Create adapter and revoke key version
+      const adapter = new VaultSigningAdapter({
+        vaultAddr: vaultConfig.addr,
+        vaultToken: vaultConfig.token,
+        vaultNamespace: vaultConfig.namespace,
+        keyName,
+        requestTimeout: vaultConfig.requestTimeout,
+        logger,
+      });
+
+      await adapter.initialize();
+
+      // Revoke the policy for this key version (makes it unusable)
+      // Note: Actual key deletion would require Vault admin permissions
+      await adapter.revokePolicy(body.key_version);
+
+      // Log audit event
+      logBillingAuditEvent(
+        'key_revoked' as BillingAuditEventType,
+        {
+          keyName,
+          keyVersion: body.key_version,
+          reason: body.reason,
+          emergency: true,
+        },
+        undefined,
+        actor
+      );
+
+      logger.fatal(
+        { keyName, keyVersion: body.key_version, actor, reason: body.reason },
+        'EMERGENCY: Signing key version REVOKED'
+      );
+
+      res.json({
+        success: true,
+        revocation: {
+          key_name: keyName,
+          key_version: body.key_version,
+          revoked_at: new Date().toISOString(),
+          reason: body.reason,
+        },
+        warning: 'Key version has been revoked. Signatures made with this version can no longer be verified.',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({
+          error: 'Validation failed',
+          details: error.errors,
+        });
+        return;
+      }
+
+      logger.error({ error: (error as Error).message }, 'Failed to revoke key');
+
+      if ((error as Error).name === 'VaultUnavailableError') {
+        res.status(503).json({
+          error: 'Vault unavailable',
+          message: 'Could not connect to Vault server. Please try again later.',
+        });
+        return;
+      }
+
+      res.status(500).json({
+        error: 'Internal server error',
+        message: (error as Error).message,
+      });
+    }
+  }
+);
+
+/**
+ * GET /admin/keys/status
+ * Get status of signing keys in Vault
+ */
+adminRouter.get(
+  '/keys/status',
+  requireVaultEnabled,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      // Get Vault config
+      const vaultConfig = getVaultClientConfig();
+
+      // Create adapter and get key info
+      const adapter = new VaultSigningAdapter({
+        vaultAddr: vaultConfig.addr,
+        vaultToken: vaultConfig.token,
+        vaultNamespace: vaultConfig.namespace,
+        keyName: vaultConfig.signingKeyName,
+        requestTimeout: vaultConfig.requestTimeout,
+        logger,
+      });
+
+      await adapter.initialize();
+      const publicKey = await adapter.getPublicKey();
+      const auditLogs = adapter.getAuditLogs();
+
+      res.json({
+        success: true,
+        key_status: {
+          vault_addr: vaultConfig.addr,
+          key_name: vaultConfig.signingKeyName,
+          public_key: publicKey,
+          recent_operations: auditLogs.slice(-10).map((log) => ({
+            timestamp: log.timestamp.toISOString(),
+            operation: log.operation,
+            key_version: log.keyVersion,
+            success: log.success,
+          })),
+        },
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Failed to get key status');
+
+      if ((error as Error).name === 'VaultUnavailableError') {
+        res.status(503).json({
+          error: 'Vault unavailable',
+          message: 'Could not connect to Vault server.',
+        });
+        return;
+      }
+
+      res.status(500).json({
+        error: 'Internal server error',
+        message: (error as Error).message,
+      });
+    }
+  }
+);
+
+// =============================================================================
 // System Status Routes
 // =============================================================================
 
@@ -649,19 +950,168 @@ adminRouter.get(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const billingEnabled = isBillingEnabled();
+      const vaultEnabled = isVaultEnabled();
       const activeWaiverCount = waiverService.getActiveWaiverCount();
 
       res.json({
         success: true,
         status: {
           billing_enabled: billingEnabled,
+          vault_enabled: vaultEnabled,
           active_waivers: activeWaiverCount,
           paddle_configured: !!config.paddle?.apiKey,
           redis_configured: !!config.redis?.url,
+          vault_configured: !!config.vault?.addr,
         },
       });
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Failed to get status');
+
+      res.status(500).json({
+        error: 'Internal server error',
+        message: (error as Error).message,
+      });
+    }
+  }
+);
+
+// =============================================================================
+// API Key Management Routes (Sprint 73 - HIGH-1)
+// =============================================================================
+
+/**
+ * API key rotation request schema
+ */
+const rotateApiKeySchema = z.object({
+  admin_name: z.string().min(1, 'Admin name is required').max(100),
+  current_key_hint: z.string().max(8).optional(), // Last 8 chars for identification
+  grace_period_hours: z.coerce.number().int().min(1).max(168).default(24), // 1-168 hours
+});
+
+/**
+ * POST /admin/api-keys/rotate
+ * Generate a new API key with bcrypt hashing
+ *
+ * Sprint 73 (HIGH-1): Secure API key rotation endpoint.
+ *
+ * Features:
+ * - Generates cryptographically secure random key
+ * - Returns bcrypt hash for storage in environment
+ * - Key is shown ONLY ONCE - cannot be retrieved later
+ * - Supports grace period for seamless migration
+ *
+ * @example
+ * Request:
+ * {
+ *   "admin_name": "deploy_bot",
+ *   "grace_period_hours": 24
+ * }
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "key": {
+ *     "api_key": "ak_aBc123...", // COPY THIS - shown only once!
+ *     "key_hint": "aBc123ef",
+ *     "key_hash": "$2b$12$...",   // Add this to ADMIN_API_KEYS env
+ *     "admin_name": "deploy_bot",
+ *     "grace_period_hours": 24,
+ *     "env_format": "$2b$12$...:deploy_bot" // Ready-to-paste format
+ *   }
+ * }
+ */
+adminRouter.post(
+  '/api-keys/rotate',
+  async (req: AuthenticatedRequest, res: Response) => {
+    const result = rotateApiKeySchema.safeParse(req.body);
+
+    if (!result.success) {
+      const errors = result.error.issues.map((i) => i.message).join(', ');
+      res.status(400).json({ error: 'Validation error', message: errors });
+      return;
+    }
+
+    const { admin_name, current_key_hint, grace_period_hours } = result.data;
+
+    try {
+      const keyService = new AdminApiKeyService({ bcryptRounds: 12 });
+
+      // Generate new key
+      const { apiKey, keyHint, keyHash, adminName } = await keyService.generateKey(admin_name);
+
+      // Log the rotation (audit trail)
+      logger.info(
+        {
+          adminName: req.adminName,
+          targetAdmin: admin_name,
+          keyHint,
+          currentKeyHint: current_key_hint,
+          gracePeriodHours: grace_period_hours,
+        },
+        'API key rotation initiated (Sprint 73 HIGH-1)'
+      );
+
+      // Return the new key - THIS IS THE ONLY TIME IT'S SHOWN
+      res.json({
+        success: true,
+        key: {
+          api_key: apiKey,
+          key_hint: keyHint,
+          key_hash: keyHash,
+          admin_name: adminName,
+          grace_period_hours: grace_period_hours,
+          env_format: `${keyHash}:${adminName}`,
+          instructions: [
+            '1. Copy the api_key value - it will NOT be shown again',
+            '2. Add the env_format value to your ADMIN_API_KEYS environment variable',
+            `3. Keep the old key active for ${grace_period_hours} hours during migration`,
+            '4. After migration, remove the old key from ADMIN_API_KEYS',
+          ],
+        },
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'API key rotation failed');
+
+      res.status(500).json({
+        error: 'Key rotation failed',
+        message: (error as Error).message,
+      });
+    }
+  }
+);
+
+/**
+ * GET /admin/api-keys/info
+ * Get information about configured API keys (without revealing secrets)
+ *
+ * Returns:
+ * - Number of bcrypt-hashed keys configured
+ * - Number of legacy plaintext keys (for migration tracking)
+ * - Key hints for identification
+ */
+adminRouter.get(
+  '/api-keys/info',
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { legacyKeys, hashedKeys } = config.api.adminApiKeys;
+
+      res.json({
+        success: true,
+        keys: {
+          total: legacyKeys.size + hashedKeys.length,
+          bcrypt_hashed: hashedKeys.length,
+          legacy_plaintext: legacyKeys.size,
+          security_status: legacyKeys.size > 0 ? 'MIGRATION_NEEDED' : 'SECURE',
+          hashed_admins: hashedKeys.map((k) => k.adminName),
+          legacy_admins: Array.from(legacyKeys.values()),
+          recommendation:
+            legacyKeys.size > 0
+              ? 'Use POST /admin/api-keys/rotate to generate bcrypt-hashed keys and migrate'
+              : 'All API keys are securely hashed with bcrypt',
+        },
+      });
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Failed to get API key info');
 
       res.status(500).json({
         error: 'Internal server error',

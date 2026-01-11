@@ -58,6 +58,19 @@ const DEFAULT_LOCK_TTL = 30;
 /** Extended lock TTL for boost/badge operations (60 seconds) */
 const EXTENDED_LOCK_TTL = 60;
 
+/**
+ * Maximum event age in milliseconds (5 minutes)
+ *
+ * CRIT-4 FIX: Replay attack prevention
+ * Events older than this threshold are rejected to prevent replay attacks.
+ * This ensures that even if an attacker captures a webhook payload,
+ * they cannot replay it after this window expires.
+ *
+ * 5 minutes allows for reasonable clock drift and network latency
+ * while maintaining security against replay attacks.
+ */
+const MAX_EVENT_AGE_MS = 5 * 60 * 1000;
+
 /** Supported webhook event types (normalized) */
 const SUPPORTED_EVENTS: NormalizedEventType[] = [
   'subscription.created',
@@ -187,6 +200,29 @@ class WebhookService {
     }
 
     try {
+      // ========================================================================
+      // STEP 1.5 - TIMESTAMP CHECK: Reject stale events (CRIT-4 replay prevention)
+      // ========================================================================
+      const eventAge = Date.now() - event.timestamp.getTime();
+      if (eventAge > MAX_EVENT_AGE_MS) {
+        logger.warn(
+          {
+            eventId,
+            eventType,
+            eventTimestamp: event.timestamp.toISOString(),
+            ageMs: eventAge,
+            maxAgeMs: MAX_EVENT_AGE_MS,
+          },
+          'Rejecting stale webhook event (potential replay attack)'
+        );
+        return {
+          status: 'failed',
+          eventId,
+          eventType,
+          error: 'Event timestamp too old - possible replay attack',
+        };
+      }
+
       // ========================================================================
       // STEP 2 - VERIFY: Check Redis for duplicate (fast path, UNDER LOCK)
       // ========================================================================

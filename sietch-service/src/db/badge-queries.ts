@@ -9,6 +9,10 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from './connection.js';
 import { logger } from '../utils/logger.js';
+import {
+  getPlatformDisplayColumn,
+  validateBadgeSettingsColumn,
+} from '../utils/sql-safety.js';
 import type {
   BadgePurchase,
   BadgeSettings,
@@ -199,29 +203,37 @@ export function upsertBadgeSettings(
     .get(memberId);
 
   if (existing) {
-    // Update existing settings
-    const sets: string[] = ['updated_at = datetime(\'now\')'];
+    // Update existing settings using column whitelist (CRIT-3 fix)
+    const sets: string[] = ["updated_at = datetime('now')"];
     const values: (string | number)[] = [];
 
     if (params.displayOnDiscord !== undefined) {
-      sets.push('display_on_discord = ?');
+      // Validate column name through whitelist
+      const col = validateBadgeSettingsColumn('display_on_discord');
+      sets.push(`${col} = ?`);
       values.push(params.displayOnDiscord ? 1 : 0);
     }
 
     if (params.displayOnTelegram !== undefined) {
-      sets.push('display_on_telegram = ?');
+      // Validate column name through whitelist
+      const col = validateBadgeSettingsColumn('display_on_telegram');
+      sets.push(`${col} = ?`);
       values.push(params.displayOnTelegram ? 1 : 0);
     }
 
     if (params.badgeStyle !== undefined) {
-      sets.push('badge_style = ?');
+      // Validate column name through whitelist
+      const col = validateBadgeSettingsColumn('badge_style');
+      sets.push(`${col} = ?`);
       values.push(params.badgeStyle);
     }
 
     values.push(memberId);
 
-    db.prepare(`UPDATE badge_settings SET ${sets.join(', ')} WHERE member_id = ?`)
-      .run(...values);
+    // Safe: all column names are validated through whitelist
+    db.prepare(`UPDATE badge_settings SET ${sets.join(', ')} WHERE member_id = ?`).run(
+      ...values
+    );
 
     logger.debug({ memberId, params }, 'Updated badge settings');
   } else {
@@ -261,12 +273,17 @@ export function deleteBadgeSettings(memberId: string): boolean {
 
 /**
  * Get all members with badges enabled for a platform
+ *
+ * Uses column whitelist to prevent SQL injection (CRIT-3 fix)
  */
 export function getMembersWithBadgesEnabled(
   platform: 'discord' | 'telegram'
 ): string[] {
   const db = getDatabase();
-  const column = platform === 'discord' ? 'display_on_discord' : 'display_on_telegram';
+
+  // CRIT-3 FIX: Use validated column name from whitelist
+  // This prevents SQL injection if platform value is somehow manipulated
+  const column = getPlatformDisplayColumn(platform);
 
   const rows = db
     .prepare(`SELECT member_id FROM badge_settings WHERE ${column} = 1`)

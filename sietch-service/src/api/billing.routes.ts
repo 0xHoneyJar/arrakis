@@ -19,6 +19,7 @@ import type { Response, Request } from 'express';
 import type { AuthenticatedRequest, RawBodyRequest } from './middleware.js';
 import {
   memberRateLimiter,
+  webhookRateLimiter,
   requireApiKey,
   ValidationError,
   NotFoundError,
@@ -430,10 +431,11 @@ billingRouter.post(
  * 1. Raw body middleware MUST be configured in server.ts for this route
  * 2. Signature verification uses HMAC-SHA256 via Paddle SDK
  * 3. Content-Type must be application/json
+ * 4. Rate limited to 1000 req/min per IP (Sprint 73 - HIGH-2)
  *
  * Configure Express with: express.raw({ type: 'application/json' }) for /billing/webhook
  */
-billingRouter.post('/webhook', async (req: Request, res: Response) => {
+billingRouter.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => {
   // Webhook doesn't require billing to be fully enabled
   // (we want to process events even if feature flags are off)
 

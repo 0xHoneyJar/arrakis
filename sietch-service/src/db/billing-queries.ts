@@ -11,6 +11,7 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from './connection.js';
 import { logger } from '../utils/logger.js';
+import { validateSubscriptionColumn } from '../utils/sql-safety.js';
 import type {
   Subscription,
   CreateSubscriptionParams,
@@ -222,6 +223,8 @@ export function createSubscription(params: CreateSubscriptionParams): string {
 
 /**
  * Update an existing subscription
+ *
+ * Uses column whitelist to prevent SQL injection (CRIT-3 fix)
  */
 export function updateSubscription(
   communityId: string,
@@ -229,51 +232,65 @@ export function updateSubscription(
 ): boolean {
   const db = getDatabase();
 
-  const sets: string[] = ['updated_at = datetime(\'now\')'];
+  // CRIT-3 FIX: All column names validated through whitelist
+  const sets: string[] = ["updated_at = datetime('now')"];
   const values: (string | number | null)[] = [];
 
   if (params.paymentCustomerId !== undefined) {
-    sets.push('payment_customer_id = ?');
+    const col = validateSubscriptionColumn('payment_customer_id');
+    sets.push(`${col} = ?`);
     values.push(params.paymentCustomerId ?? null);
   }
 
   if (params.paymentSubscriptionId !== undefined) {
-    sets.push('payment_subscription_id = ?');
+    const col = validateSubscriptionColumn('payment_subscription_id');
+    sets.push(`${col} = ?`);
     values.push(params.paymentSubscriptionId ?? null);
   }
 
   if (params.paymentProvider !== undefined) {
-    sets.push('payment_provider = ?');
+    const col = validateSubscriptionColumn('payment_provider');
+    sets.push(`${col} = ?`);
     values.push(params.paymentProvider);
   }
 
   if (params.tier !== undefined) {
-    sets.push('tier = ?');
+    const col = validateSubscriptionColumn('tier');
+    sets.push(`${col} = ?`);
     values.push(params.tier);
   }
 
   if (params.status !== undefined) {
-    sets.push('status = ?');
+    const col = validateSubscriptionColumn('status');
+    sets.push(`${col} = ?`);
     values.push(params.status);
   }
 
   if (params.graceUntil !== undefined) {
-    sets.push('grace_until = ?');
+    const col = validateSubscriptionColumn('grace_until');
+    sets.push(`${col} = ?`);
     values.push(params.graceUntil ? Math.floor(params.graceUntil.getTime() / 1000) : null);
   }
 
   if (params.currentPeriodStart !== undefined) {
-    sets.push('current_period_start = ?');
-    values.push(params.currentPeriodStart ? Math.floor(params.currentPeriodStart.getTime() / 1000) : null);
+    const col = validateSubscriptionColumn('current_period_start');
+    sets.push(`${col} = ?`);
+    values.push(
+      params.currentPeriodStart ? Math.floor(params.currentPeriodStart.getTime() / 1000) : null
+    );
   }
 
   if (params.currentPeriodEnd !== undefined) {
-    sets.push('current_period_end = ?');
-    values.push(params.currentPeriodEnd ? Math.floor(params.currentPeriodEnd.getTime() / 1000) : null);
+    const col = validateSubscriptionColumn('current_period_end');
+    sets.push(`${col} = ?`);
+    values.push(
+      params.currentPeriodEnd ? Math.floor(params.currentPeriodEnd.getTime() / 1000) : null
+    );
   }
 
   values.push(communityId);
 
+  // Safe: all column names are validated through whitelist
   const result = db
     .prepare(`UPDATE subscriptions SET ${sets.join(', ')} WHERE community_id = ?`)
     .run(...values);

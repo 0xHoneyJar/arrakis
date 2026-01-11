@@ -1,8 +1,9 @@
 import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { logger } from '../utils/logger.js';
-import { validateApiKey } from '../config.js';
+import { validateApiKey, validateApiKeyAsync } from '../config.js';
 import { redisService } from '../services/cache/RedisService.js';
+import { getApiKeyAuditLogger } from '../services/security/AdminApiKeyService.js';
 
 /**
  * Extended Request type with admin context
@@ -81,7 +82,56 @@ export const memberRateLimiter = rateLimit({
 });
 
 /**
- * API key authentication middleware for admin endpoints
+ * Rate limiter for webhook endpoints (Sprint 73 - HIGH-2)
+ *
+ * Security Features:
+ * - 1000 requests per minute per IP (matches Paddle/Stripe burst capacity)
+ * - Prevents DoS attacks on webhook endpoint
+ * - Prevents brute-force signature guessing attempts
+ * - Returns standard headers for client visibility
+ *
+ * @see https://developer.paddle.com/webhooks
+ */
+export const webhookRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 1000, // 1000 requests per minute per IP
+  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+  legacyHeaders: false, // Disable `X-RateLimit-*` headers
+  message: {
+    error: 'Too many webhook requests',
+    retryAfter: 60,
+  },
+  keyGenerator: (req) => {
+    // Use X-Forwarded-For for proxied requests
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string') {
+      return `webhook:${forwarded.split(',')[0]?.trim() ?? 'unknown'}`;
+    }
+    return `webhook:${req.ip ?? 'unknown'}`;
+  },
+  handler: (req, res, _next, options) => {
+    // Log rate limit violations for monitoring
+    const ip = req.ip ?? 'unknown';
+    logger.warn(
+      {
+        ip,
+        path: req.path,
+        limit: options.max,
+        windowMs: options.windowMs,
+      },
+      'Webhook rate limit exceeded (HIGH-2 security)'
+    );
+    res.status(429).json(options.message);
+  },
+});
+
+/**
+ * API key authentication middleware for admin endpoints (LEGACY - SYNC)
+ *
+ * DEPRECATED: Use requireApiKeyAsync for bcrypt-hashed key validation.
+ *
+ * This middleware only validates legacy plaintext keys synchronously.
+ * For full security, migrate to requireApiKeyAsync.
  */
 export function requireApiKey(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   const apiKey = req.headers['x-api-key'];
@@ -101,6 +151,81 @@ export function requireApiKey(req: AuthenticatedRequest, res: Response, next: Ne
   // Attach admin name to request for audit logging
   req.adminName = adminName;
   next();
+}
+
+/**
+ * API key authentication middleware for admin endpoints (ASYNC - RECOMMENDED)
+ *
+ * Sprint 73 (HIGH-1): Secure API key validation with bcrypt.
+ *
+ * Features:
+ * - Bcrypt-based validation with constant-time comparison
+ * - Supports both legacy plaintext and bcrypt-hashed keys
+ * - Async to prevent blocking the event loop during bcrypt operations
+ * - Audit logging of all validation attempts (TASK-73.4)
+ *
+ * @example
+ * ```typescript
+ * router.use('/admin', requireApiKeyAsync);
+ * router.get('/admin/stats', (req, res) => { ... });
+ * ```
+ */
+export async function requireApiKeyAsync(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const apiKey = req.headers['x-api-key'];
+  const auditLogger = getApiKeyAuditLogger();
+
+  // Extract request context for audit
+  const ipAddress = getClientIp(req);
+  const userAgent = req.headers['user-agent'];
+  const endpoint = req.path;
+  const method = req.method;
+
+  if (!apiKey || typeof apiKey !== 'string') {
+    // Log failure for missing key
+    auditLogger.logFailure('missing', endpoint, method, ipAddress, 'API key required', userAgent).catch(() => {});
+    res.status(401).json({ error: 'API key required' });
+    return;
+  }
+
+  const keyHint = apiKey.substring(0, 8);
+
+  try {
+    const adminName = await validateApiKeyAsync(apiKey);
+    if (!adminName) {
+      // Log failure for invalid key
+      auditLogger.logFailure(keyHint, endpoint, method, ipAddress, 'Invalid API key', userAgent).catch(() => {});
+      logger.warn({ apiKeyPrefix: keyHint + '...' }, 'Invalid API key attempt');
+      res.status(403).json({ error: 'Invalid API key' });
+      return;
+    }
+
+    // Log success
+    auditLogger.logSuccess(keyHint, adminName, endpoint, method, ipAddress, userAgent).catch(() => {});
+
+    // Attach admin name to request for audit logging
+    req.adminName = adminName;
+    next();
+  } catch (error) {
+    // Log failure for error
+    auditLogger.logFailure(keyHint, endpoint, method, ipAddress, 'Validation error', userAgent).catch(() => {});
+    logger.error({ error }, 'API key validation error');
+    res.status(500).json({ error: 'Authentication error' });
+  }
+}
+
+/**
+ * Extract client IP from request (supports proxies)
+ */
+function getClientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0]?.trim() ?? 'unknown';
+  }
+  return req.ip ?? 'unknown';
 }
 
 /**
