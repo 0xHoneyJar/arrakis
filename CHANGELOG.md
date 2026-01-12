@@ -5,6 +5,78 @@ All notable changes to Loa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-01-12
+
+### Why This Release
+
+This release introduces the **Anthropic Oracle** - an automated system for monitoring Anthropic's official sources for updates relevant to Loa. Also includes research-driven improvements from Continuous-Claude-v3 and Kiro analysis, plus cross-platform compatibility fixes.
+
+### Added
+
+- **Anthropic Oracle** (`.claude/scripts/anthropic-oracle.sh`)
+  ```bash
+  anthropic-oracle.sh check      # Fetch latest Anthropic sources
+  anthropic-oracle.sh sources    # List monitored URLs
+  anthropic-oracle.sh history    # View check history
+  anthropic-oracle.sh template   # Generate research template
+  ```
+  - Monitors 6 Anthropic sources: docs, changelog, API reference, blog, GitHub repos
+  - 24-hour cache TTL (configurable via `ANTHROPIC_ORACLE_TTL`)
+  - Interest areas: hooks, tools, context, agents, mcp, memory, skills, commands
+
+- **Oracle Commands**
+  - `/oracle` - Quick access to oracle script with workflow documentation
+  - `/oracle-analyze` - Claude-assisted analysis of fetched content
+
+- **GitHub Actions Workflow** (`.github/workflows/oracle.yml`)
+  - Weekly automated checks (Mondays 9:00 UTC)
+  - Creates analysis issues with structured prompts
+  - Duplicate issue detection (7-day window)
+  - Manual dispatch support
+
+- **Risk Analysis Protocol** (`.claude/protocols/risk-analysis.md`)
+  - Pre-mortem framework from Continuous-Claude-v3
+  - Tiger/Paper Tiger/Elephant categorization
+  - Two-pass verification methodology
+  - Automation hooks for risk detection
+
+- **Recommended Hooks Protocol** (`.claude/protocols/recommended-hooks.md`)
+  - Claude Code hooks documentation
+  - 6 recommended hook patterns (session continuity, grounding check, git safety, sprint completion, auto-test, drift detection)
+  - Example scripts clearly marked as templates
+  - Integration with Kiro and Continuous-Claude patterns
+
+- **EARS Requirements Template** (`.claude/skills/discovering-requirements/resources/templates/ears-requirements.md`)
+  - Easy Approach to Requirements Syntax
+  - 6 patterns: Ubiquitous, Event-Driven, State-Driven, Conditional, Optional, Complex
+  - PRD integration section
+  - Referenced in `discovering-requirements` skill
+
+### Changed
+
+- **Oracle Script Cross-Platform Support**
+  - Added bash 4+ version check with macOS upgrade instructions
+  - Added `jq` and `curl` dependency validation
+  - Follows `mcp-registry.sh` pattern for consistency
+
+- **Documentation Updates**
+  - CLAUDE.md now includes Anthropic Oracle section under Helper Scripts
+  - Protocol index updated with new protocols
+
+### Fixed
+
+- Example hook scripts now clearly marked as "Example Only" to prevent confusion
+- `.gitignore` updated to exclude `grimoires/pub/` content (except README.md)
+
+### Security
+
+- Oracle script uses `set -euo pipefail` for safe execution
+- GitHub Actions workflow uses minimal permissions (`contents: read`, `issues: write`)
+- No secrets or credentials in automated workflows
+- Sprint 1 security audit: **APPROVED**
+
+---
+
 ## [0.12.0] - 2026-01-12
 
 ### Why This Release
