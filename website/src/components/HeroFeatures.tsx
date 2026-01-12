@@ -24,7 +24,7 @@ export function HeroFeatures() {
         animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
         transition={{
           duration: 0.7,
-          ease: [0.16, 1, 0.3, 1],
+          ease: [0.16, 1, 0.3, 1] as const,
           delay: 0.5,
         }}
         style={{
@@ -42,7 +42,7 @@ export function HeroFeatures() {
         animate={{ opacity: 1 }}
         transition={{
           duration: 0.5,
-          ease: [0.16, 1, 0.3, 1],
+          ease: [0.16, 1, 0.3, 1] as const,
           delay: 0.6,
         }}
         style={{
