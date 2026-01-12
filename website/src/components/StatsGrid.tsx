@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 
 const stats = [
   { value: '0', label: 'queries to write' },
@@ -9,56 +9,48 @@ const stats = [
   { value: '#1', label: 'dune team' },
 ];
 
+const container = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.06,
+      delayChildren: 0.15,
+    },
+  },
+};
+
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.4,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+};
+
 export function StatsGrid() {
-  const [isVisible, setIsVisible] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      {
-        threshold: 0.3,
-        rootMargin: '0px 0px -50px 0px',
-      }
-    );
-
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <div
-      ref={containerRef}
+    <motion.div
       className="mt-12 border border-sand-dim/30 p-8 lg:p-12"
-      style={{
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? 'translateY(0)' : 'translateY(12px)',
-        transition: 'opacity 500ms cubic-bezier(0.16, 1, 0.3, 1), transform 500ms cubic-bezier(0.16, 1, 0.3, 1)',
-      }}
+      variants={container}
+      initial="hidden"
+      whileInView="show"
+      viewport={{ once: true, margin: '-80px' }}
     >
       <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-        {stats.map((stat, index) => (
-          <div
-            key={stat.label}
-            style={{
-              opacity: isVisible ? 1 : 0,
-              transform: isVisible ? 'translateY(0)' : 'translateY(8px)',
-              transition: `opacity 400ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 60 + 100}ms, transform 400ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 60 + 100}ms`,
-            }}
-          >
-            <div className="font-display text-4xl lg:text-5xl text-spice mb-2">{stat.value}</div>
+        {stats.map((stat) => (
+          <motion.div key={stat.label} variants={item}>
+            <div className="font-display text-4xl lg:text-5xl text-spice mb-2">
+              {stat.value}
+            </div>
             <div className="text-sand-dim text-xs font-mono">{stat.label}</div>
-          </div>
+          </motion.div>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }

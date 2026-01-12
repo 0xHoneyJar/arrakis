@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Crown, Sword, Users, UserCircle } from '@phosphor-icons/react';
 
 const tiers = [
@@ -34,63 +34,61 @@ const tiers = [
   },
 ];
 
+const container = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.06,
+      delayChildren: 0.1,
+    },
+  },
+};
+
+const card = {
+  hidden: { opacity: 0, y: 16 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.5,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+};
+
 export function TierCards() {
-  const [isVisible, setIsVisible] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        // Only trigger once when entering view
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      {
-        threshold: 0.2, // Trigger when 20% visible
-        rootMargin: '0px 0px -50px 0px', // Slight offset from bottom
-      }
-    );
-
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <div
-      ref={containerRef}
+    <motion.div
       className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-4"
+      variants={container}
+      initial="hidden"
+      whileInView="show"
+      viewport={{ once: true, margin: '-80px' }}
     >
       {tiers.map((tier, index) => {
         const Icon = tier.icon;
         return (
-          <div
+          <motion.div
             key={tier.name}
             className="border border-sand-dim/30 p-6"
-            style={{
-              opacity: isVisible ? 1 : 0,
-              transform: isVisible
-                ? 'translateY(0)'
-                : 'translateY(16px)',
-              transition: `opacity 500ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80}ms, transform 500ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80}ms`,
-            }}
+            variants={card}
           >
             {/* Icon with colored background */}
-            <div
+            <motion.div
               className="w-10 h-10 flex items-center justify-center mb-4"
-              style={{
-                backgroundColor: tier.color,
-                opacity: isVisible ? 1 : 0,
-                transform: isVisible ? 'scale(1)' : 'scale(0.8)',
-                transition: `opacity 400ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80 + 150}ms, transform 400ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80 + 150}ms`,
+              style={{ backgroundColor: tier.color }}
+              initial={{ scale: 0.8, opacity: 0 }}
+              whileInView={{ scale: 1, opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{
+                duration: 0.4,
+                ease: [0.16, 1, 0.3, 1],
+                delay: index * 0.06 + 0.15,
               }}
             >
               <Icon weight="fill" className="w-5 h-5 text-black" />
-            </div>
+            </motion.div>
             {/* Tier name */}
             <div
               className={`text-sm font-mono mb-1 ${tier.highlight ? 'text-sand-bright' : 'text-sand'}`}
@@ -99,9 +97,9 @@ export function TierCards() {
             </div>
             {/* Score requirement */}
             <div className="text-sand-dim text-xs">Score {tier.score}</div>
-          </div>
+          </motion.div>
         );
       })}
-    </div>
+    </motion.div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 
 const users = [
   { name: '@diamond_hands', score: 95, highlight: true },
@@ -15,79 +15,81 @@ function getBarColor(score: number): string {
   return '#6b6245'; // sand-dim
 }
 
+const container = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.08,
+      delayChildren: 0.1,
+    },
+  },
+};
+
+const row = {
+  hidden: { opacity: 0, x: -12 },
+  show: {
+    opacity: 1,
+    x: 0,
+    transition: {
+      duration: 0.4,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+};
+
 export function ConvictionBoard() {
-  const [isVisible, setIsVisible] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      {
-        threshold: 0.3,
-        rootMargin: '0px 0px -50px 0px',
-      }
-    );
-
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <div
-      ref={containerRef}
+    <motion.div
       className="mt-12 border border-sand-dim/30 p-8 lg:p-12"
-      style={{
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? 'translateY(0)' : 'translateY(12px)',
-        transition: 'opacity 500ms cubic-bezier(0.16, 1, 0.3, 1), transform 500ms cubic-bezier(0.16, 1, 0.3, 1)',
-      }}
+      variants={container}
+      initial="hidden"
+      whileInView="show"
+      viewport={{ once: true, margin: '-80px' }}
     >
       <div className="space-y-4">
         {users.map((user, index) => (
-          <div
+          <motion.div
             key={user.name}
             className="flex items-center justify-between"
-            style={{
-              opacity: isVisible ? 1 : 0,
-              transform: isVisible ? 'translateX(0)' : 'translateX(-8px)',
-              transition: `opacity 400ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80 + 100}ms, transform 400ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80 + 100}ms`,
-            }}
+            variants={row}
           >
-            <span className={`text-sm ${user.highlight ? 'text-sand' : 'text-sand-dim'}`}>
+            <span
+              className={`text-sm ${user.highlight ? 'text-sand' : 'text-sand-dim'}`}
+            >
               {user.name}
             </span>
             <div className="flex items-center gap-3">
               <div className="w-32 lg:w-48 h-2 bg-sand-dim/20 overflow-hidden">
-                <div
+                <motion.div
                   className="h-full"
-                  style={{
-                    backgroundColor: getBarColor(user.score),
-                    width: isVisible ? `${user.score}%` : '0%',
-                    transition: `width 600ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80 + 200}ms`,
+                  style={{ backgroundColor: getBarColor(user.score) }}
+                  initial={{ width: 0 }}
+                  whileInView={{ width: `${user.score}%` }}
+                  viewport={{ once: true }}
+                  transition={{
+                    duration: 0.6,
+                    ease: [0.16, 1, 0.3, 1],
+                    delay: index * 0.08 + 0.2,
                   }}
                 />
               </div>
-              <span
+              <motion.span
                 className={`text-sm font-mono w-8 ${user.highlight ? 'text-sand-bright' : 'text-sand-dim'}`}
-                style={{
-                  opacity: isVisible ? 1 : 0,
-                  transition: `opacity 300ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80 + 400}ms`,
+                initial={{ opacity: 0 }}
+                whileInView={{ opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{
+                  duration: 0.3,
+                  delay: index * 0.08 + 0.4,
                 }}
               >
                 {user.score}
-              </span>
+              </motion.span>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }
