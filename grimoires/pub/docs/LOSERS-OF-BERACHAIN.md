@@ -10,16 +10,93 @@ A viral GTM campaign that calculates users' USD losses on Berachain and converts
 
 ---
 
-## Campaign Flow
+## Entry Point Options (NEEDS DECISION)
+
+### Option A: Landing Page First (Recommended)
 
 ```
-1. Connect wallet
-2. Calculate losses (spent vs current value)
-3. Generate shareable "loser card" with graffiti'd Milady art
-4. Mint NFT (1 BERA) to claim
-5. Share to socials (required)
-6. Receive SPICE credits = $USD lost
+arrakis.community/losers
+    ↓
+Connect Wallet (see loss amount + tier preview)
+    ↓
+"Login with Discord to claim SPICE"
+    ↓
+Discord OAuth → auto-join THJ Discord
+    ↓
+Roles assigned based on tier
+    ↓
+Generate full card → share to Twitter
 ```
+
+**Pros:**
+- Public landing page = SEO, shareable link
+- Wallet captured before Discord join (data)
+- Can show "X people lost $Y" social proof on page
+- Twitter share can link back to landing page (viral loop)
+
+**Cons:**
+- Two-step friction (wallet + Discord OAuth)
+- Need to build landing page claim UI
+
+---
+
+### Option B: Discord First
+
+```
+arrakis.community/losers → redirects to Discord invite
+    ↓
+Join THJ Discord
+    ↓
+/losers command (or dedicated channel)
+    ↓
+Arrakis bot prompts wallet connect
+    ↓
+Bot generates card, posts in channel/DM
+    ↓
+User downloads → shares to Twitter manually
+```
+
+**Pros:**
+- All in Discord (home turf)
+- Lower dev lift if bot infra exists
+- Direct Discord member growth
+
+**Cons:**
+- No public preview (must join to see anything)
+- Harder viral loop (no shareable landing page)
+- Manual screenshot/download for Twitter sharing
+
+---
+
+### Key Decision Points
+
+| Question | Option A | Option B |
+|----------|----------|----------|
+| Where does wallet connect happen? | Landing page | Discord bot |
+| Where does card generate? | Backend → served on landing page | Bot → posted in Discord |
+| How does Twitter share work? | One-click share button on landing page | Manual download from Discord |
+| Where does SPICE credit? | After Discord OAuth completes | After bot wallet verify |
+| Where does mint happen? | Landing page (web3 modal) | Bot command triggers tx |
+
+---
+
+### Hybrid Consideration
+
+Could do landing page for **discovery + wallet** but Discord for **claim + share**:
+
+```
+Landing page: wallet connect → see losses → blurred card preview
+    ↓
+CTA: "Join Discord to unlock full card + claim SPICE"
+    ↓
+Discord: /claim-loser → full card + SPICE + shareable image
+```
+
+This captures wallet data early but keeps the "reward" in Discord.
+
+---
+
+## Campaign Flow (Once Entry Point Decided)
 
 ---
 
@@ -257,8 +334,62 @@ GROUP BY wallet_address
 
 ---
 
+## Technical Dependencies
+
+### What We Need to Build/Verify
+
+| Component | Option A (Landing Page) | Option B (Discord) | Status |
+|-----------|------------------------|--------------------| -------|
+| Wallet connect | Web3 modal on landing page | Arrakis bot verify | ? |
+| Loss calculation | Dune API call | Dune API call | Need query |
+| Card generation | Server-side (Sharp/Canvas) | Bot-side or shared API | TBD |
+| Card storage | S3/Cloudflare R2 | Same | TBD |
+| Discord OAuth | NextAuth or similar | N/A (already in Discord) | - |
+| SPICE ledger | Drizzle (Arrakis DB) | Same | Exists? |
+| Mint contract | Web3 modal trigger | Bot command trigger | Need contract |
+| Twitter share | Intent URL with card link | Manual download | - |
+
+### Arrakis Bot - What Exists (sietch-service)
+
+**Wallet Verification:** YES - via Collab.Land
+- `IdentityService` handles verification sessions
+- `wallet-queries.ts` stores Discord ↔ wallet mappings
+- Flow: Create session → Collab.Land verify URL → callback confirms
+
+**Existing Commands:**
+- `/profile`, `/stats`, `/leaderboard`, `/position`
+- `/badges`, `/alerts`, `/threshold`
+- `/naib` (admin), `/onboard`
+
+**Can post images:** Yes (Discord embeds support image URLs)
+
+**DB:** SQLite via Drizzle - has `wallet_mappings` table
+
+**What we'd add:**
+- `/losers` command (or integrate into existing flow)
+- SPICE ledger table
+- Card generation service
+- Loss calculation via Dune API
+
+### Image Serving for Shareables
+
+**Size:** 1200 x 675 (works on both Twitter + Discord)
+
+**Flow:**
+```
+Generate card (server-side)
+    → Store in R2/S3
+    → Return public URL
+    → Use in Discord embed / Twitter card meta
+```
+
+Discord can display images via URL embed. Twitter needs `og:image` meta tag on a public URL.
+
+---
+
 ## Open Questions
 
+- [ ] **Entry point:** Option A (landing page) or Option B (Discord)?
 - [ ] Final art direction for graffiti'd Miladies?
 - [ ] Exact SCORE threshold for marketplace access?
 - [ ] SPICE sink mechanics beyond marketplace?
