@@ -64,7 +64,7 @@ export function HeroSection() {
             className="font-display text-4xl lg:text-5xl text-sand-bright mb-6"
             variants={item}
           >
-            You can't tell who believes.
+            Token gates don't show conviction.
           </motion.h1>
 
           <motion.p
