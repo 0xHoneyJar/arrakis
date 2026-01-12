@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 
 // Simplex noise implementation for organic movement
 function createNoise(seed: number) {
@@ -109,8 +109,17 @@ function createNoise(seed: number) {
   return { noise3D };
 }
 
-// Characters for noise fill - simplified for readability
-const NOISE_CHARS = '.·:;+=';
+// Characters for noise fill
+const NOISE_CHARS = '.·:;+=xX#@';
+
+// Brand colors for gems
+const GEM_RUBY = '#c45c4a';
+const GEM_BLUE = '#5b8fb9';
+
+interface CharData {
+  char: string;
+  color?: string;
+}
 
 interface AsciiBackgroundProps {
   className?: string;
@@ -121,24 +130,27 @@ interface AsciiBackgroundProps {
 
 export function AsciiBackground({
   className = '',
-  opacity = 0.12,
-  speed = 0.0003, // Slower, more subtle movement
-  stripWidth = 280,
+  opacity = 0.28,
+  speed = 0.0004,
+  stripWidth = 360,
 }: AsciiBackgroundProps) {
-  const [leftOutput, setLeftOutput] = useState<string>('');
-  const [rightOutput, setRightOutput] = useState<string>('');
-  const [dimensions, setDimensions] = useState({ cols: 40, rows: 60 });
+  const [leftGrid, setLeftGrid] = useState<CharData[][]>([]);
+  const [rightGrid, setRightGrid] = useState<CharData[][]>([]);
+  const [dimensions, setDimensions] = useState({ cols: 52, rows: 70 });
   const noiseRef = useRef<ReturnType<typeof createNoise> | null>(null);
+  const gemNoiseRef = useRef<ReturnType<typeof createNoise> | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const timeRef = useRef<number>(0);
 
   // Handle sizing
   useEffect(() => {
     const updateSize = () => {
-      const charWidth = 6;
-      const charHeight = 14;
+      const charWidth = 7;
+      const charHeight = 15;
       const viewportHeight = window.innerHeight;
       const cols = Math.ceil(stripWidth / charWidth) + 5;
       const rows = Math.ceil(viewportHeight / charHeight) + 5;
-      setDimensions({ cols: Math.max(40, cols), rows: Math.max(60, rows) });
+      setDimensions({ cols: Math.max(52, cols), rows: Math.max(70, rows) });
     };
 
     updateSize();
@@ -146,49 +158,96 @@ export function AsciiBackground({
     return () => window.removeEventListener('resize', updateSize);
   }, [stripWidth]);
 
-  // Static noise pattern - no animation, just render once
-  useEffect(() => {
-    noiseRef.current = createNoise(42); // Fixed seed for consistent pattern
+  // Render function
+  const renderStrip = useCallback((
+    cols: number,
+    rows: number,
+    offsetX: number,
+    time: number
+  ): CharData[][] => {
+    if (!noiseRef.current || !gemNoiseRef.current) return [];
 
-    function renderStrip(
-      cols: number,
-      rows: number,
-      offsetX: number
-    ): string {
-      if (!noiseRef.current) return '';
+    const grid: CharData[][] = [];
+    for (let y = 0; y < rows; y++) {
+      grid[y] = [];
+      for (let x = 0; x < cols; x++) {
+        const nx = (x + offsetX) * 0.04;
+        const ny = y * 0.025;
+        const nz = time;
+        const value = noiseRef.current.noise3D(nx, ny, nz);
+        const normalized = value * 0.5 + 0.5;
 
-      const grid: string[][] = [];
-      for (let y = 0; y < rows; y++) {
-        grid[y] = [];
-        for (let x = 0; x < cols; x++) {
-          const nx = (x + offsetX) * 0.05;
-          const ny = y * 0.03;
-          const value = noiseRef.current.noise3D(nx, ny, 0);
-          const normalized = value * 0.5 + 0.5;
+        // Secondary noise for gem placement (different frequency)
+        const gemValue = gemNoiseRef.current.noise3D(nx * 2, ny * 2, nz * 0.5);
+        const gemNormalized = gemValue * 0.5 + 0.5;
 
-          if (normalized > 0.55) {
-            const index = Math.floor((normalized - 0.55) / 0.45 * NOISE_CHARS.length);
-            grid[y][x] = NOISE_CHARS[Math.min(index, NOISE_CHARS.length - 1)];
+        if (normalized > 0.5) {
+          const index = Math.floor((normalized - 0.5) / 0.5 * NOISE_CHARS.length);
+          const char = NOISE_CHARS[Math.min(index, NOISE_CHARS.length - 1)];
+
+          // Scatter gems in denser areas
+          if (normalized > 0.75 && gemNormalized > 0.85) {
+            // Use gem noise to determine color
+            const isRuby = gemNoiseRef.current.noise3D(x * 0.1, y * 0.1, 0) > 0;
+            grid[y][x] = {
+              char: '●',
+              color: isRuby ? GEM_RUBY : GEM_BLUE,
+            };
           } else {
-            grid[y][x] = ' ';
+            grid[y][x] = { char };
           }
+        } else {
+          grid[y][x] = { char: ' ' };
         }
       }
-
-      return grid.map(row => row.join('')).join('\n');
     }
 
-    const { cols, rows } = dimensions;
-    setLeftOutput(renderStrip(cols, rows, 0));
-    setRightOutput(renderStrip(cols, rows, 100));
-  }, [dimensions.cols, dimensions.rows]);
+    return grid;
+  }, []);
+
+  // Animation loop
+  useEffect(() => {
+    noiseRef.current = createNoise(42);
+    gemNoiseRef.current = createNoise(123); // Different seed for gems
+
+    const animate = () => {
+      timeRef.current += speed;
+      const { cols, rows } = dimensions;
+      setLeftGrid(renderStrip(cols, rows, 0, timeRef.current));
+      setRightGrid(renderStrip(cols, rows, 100, timeRef.current));
+      animationRef.current = requestAnimationFrame(animate);
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [dimensions, speed, renderStrip]);
 
   const preStyle = {
     fontFamily: 'var(--font-geist-mono), monospace',
-    fontSize: '10px',
-    lineHeight: '14px',
+    fontSize: '11px',
+    lineHeight: '15px',
     margin: 0,
     padding: 0,
+  };
+
+  // Render grid with colored gems
+  const renderGridContent = (grid: CharData[][]) => {
+    return grid.map((row, y) => (
+      <div key={y} style={{ height: '15px' }}>
+        {row.map((cell, x) => (
+          cell.color ? (
+            <span key={x} style={{ color: cell.color }}>{cell.char}</span>
+          ) : (
+            <span key={x}>{cell.char}</span>
+          )
+        ))}
+      </div>
+    ));
   };
 
   return (
@@ -198,14 +257,14 @@ export function AsciiBackground({
         className="absolute top-0 left-0 h-full overflow-hidden"
         style={{ width: stripWidth, opacity }}
       >
-        <pre className="font-mono text-spice whitespace-pre select-none" style={preStyle}>
-          {leftOutput}
-        </pre>
+        <div className="font-mono text-spice whitespace-pre select-none" style={preStyle}>
+          {renderGridContent(leftGrid)}
+        </div>
         {/* Fade to black on the right edge */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            background: 'linear-gradient(to right, transparent 0%, transparent 30%, #0a0a0a 100%)',
+            background: 'linear-gradient(to right, transparent 0%, transparent 20%, #0a0a0a 100%)',
           }}
         />
       </div>
@@ -215,14 +274,14 @@ export function AsciiBackground({
         className="absolute top-0 right-0 h-full overflow-hidden"
         style={{ width: stripWidth, opacity }}
       >
-        <pre className="font-mono text-spice whitespace-pre select-none" style={preStyle}>
-          {rightOutput}
-        </pre>
+        <div className="font-mono text-spice whitespace-pre select-none" style={preStyle}>
+          {renderGridContent(rightGrid)}
+        </div>
         {/* Fade to black on the left edge */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            background: 'linear-gradient(to left, transparent 0%, transparent 30%, #0a0a0a 100%)',
+            background: 'linear-gradient(to left, transparent 0%, transparent 20%, #0a0a0a 100%)',
           }}
         />
       </div>
