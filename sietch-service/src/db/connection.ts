@@ -67,11 +67,26 @@ A new Naib takes their seat among the watermasters.`,
 };
 
 /**
- * Seed default story fragments if table is empty
+ * Seed default story fragments if table exists and is empty
  * This is called automatically during database initialization
- * Idempotent - only seeds if table is empty
+ * Idempotent - only seeds if table exists and is empty
+ *
+ * NOTE: The story_fragments table is defined in 006_tier_system migration
+ * which may not be applied in all contexts (e.g., in-memory SQLite for
+ * PostgreSQL-primary deployments). We gracefully skip seeding if the table
+ * doesn't exist.
  */
 function seedDefaultStoryFragments(database: Database.Database): void {
+  // Check if story_fragments table exists
+  const tableExists = database
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='story_fragments'")
+    .get();
+
+  if (!tableExists) {
+    logger.debug('story_fragments table does not exist, skipping seed');
+    return;
+  }
+
   // Check if fragments already exist
   const existingCount = database
     .prepare('SELECT COUNT(*) as count FROM story_fragments')
