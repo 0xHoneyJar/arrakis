@@ -110,6 +110,29 @@ export class MessageBuilder {
   }
 
   /**
+   * Build a minimal message from nonce and discord username only.
+   * Used for signature verification when the original message parameters
+   * are not stored (wallet address is unknown until signature is submitted).
+   *
+   * Note: This builds a simpler message format for backward compatibility
+   * with sessions that don't store full message context.
+   *
+   * @param nonce - Session nonce
+   * @param discordUsername - Discord username
+   * @returns Formatted signing message
+   */
+  buildFromNonce(nonce: string, discordUsername: string): string {
+    // Build a simplified message that matches what we can reconstruct
+    // from stored session data. The wallet address will be verified
+    // against the signature's recovered address.
+    return `Verify wallet ownership for Discord user: ${this.sanitize(discordUsername)}
+
+This signature does NOT authorize any blockchain transactions.
+
+Nonce: ${this.sanitize(nonce)}`;
+  }
+
+  /**
    * Extract nonce from a formatted message
    *
    * @param message - The formatted message

@@ -337,6 +337,8 @@ export const communitiesRelations = relations(communities, ({ one, many }) => ({
   // Coexistence relations (Sprint 56)
   incumbentConfig: one(incumbentConfigs),
   migrationState: one(migrationStates),
+  // Wallet verification (Sprint 78)
+  walletVerificationSessions: many(walletVerificationSessions),
 }));
 
 /**
@@ -1485,3 +1487,96 @@ export const apiKeyUsage = pgTable(
 
 export type ApiKeyUsage = typeof apiKeyUsage.$inferSelect;
 export type NewApiKeyUsage = typeof apiKeyUsage.$inferInsert;
+
+// =============================================================================
+// Wallet Verification Sessions Table (Sprint 78 - Native Wallet Verification)
+// =============================================================================
+
+/**
+ * Wallet Verification Sessions - Tracks wallet verification flow state
+ *
+ * Sprint 78: Native Wallet Verification
+ *
+ * Stores verification sessions for the native wallet verification flow,
+ * enabling Arrakis to verify wallet ownership without Collab.Land dependency.
+ *
+ * Session flow:
+ * 1. User runs /verify -> session created with status='pending'
+ * 2. User signs message with wallet -> session updated to status='completed'
+ * 3. Session expires after TTL -> status='expired'
+ * 4. Too many failed attempts -> status='failed'
+ *
+ * RLS Policy: community_id = current_setting('app.current_tenant')::UUID
+ */
+export const walletVerificationSessions = pgTable(
+  'wallet_verification_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'cascade' }),
+
+    // Discord context
+    discordUserId: text('discord_user_id').notNull(),
+    discordGuildId: text('discord_guild_id').notNull(),
+    discordUsername: text('discord_username').notNull(),
+
+    // Verification nonce (cryptographic challenge)
+    nonce: text('nonce').notNull().unique(),
+
+    // Result (populated on successful verification)
+    walletAddress: text('wallet_address'),
+
+    // Session state
+    status: text('status').notNull().default('pending'), // 'pending' | 'completed' | 'expired' | 'failed'
+
+    // Timestamps
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+
+    // Security tracking
+    attempts: integer('attempts').notNull().default(0),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+
+    // Error tracking
+    errorMessage: text('error_message'),
+  },
+  (table) => ({
+    // Primary lookup by community
+    communityIdx: index('idx_wallet_verification_sessions_community').on(table.communityId),
+    // User lookup (find pending session for user)
+    discordUserIdx: index('idx_wallet_verification_sessions_discord_user').on(
+      table.communityId,
+      table.discordUserId
+    ),
+    // Status queries (find expired sessions to clean up)
+    statusIdx: index('idx_wallet_verification_sessions_status').on(table.status),
+    // Expiry queries (batch expiration job)
+    expiresAtIdx: index('idx_wallet_verification_sessions_expires').on(table.expiresAt),
+    // Nonce lookup (verification submission)
+    nonceIdx: index('idx_wallet_verification_sessions_nonce').on(table.nonce),
+  })
+);
+
+/**
+ * Valid verification session statuses
+ */
+export type VerificationSessionStatus = 'pending' | 'completed' | 'expired' | 'failed';
+
+/**
+ * Wallet verification session relations
+ */
+export const walletVerificationSessionsRelations = relations(
+  walletVerificationSessions,
+  ({ one }) => ({
+    community: one(communities, {
+      fields: [walletVerificationSessions.communityId],
+      references: [communities.id],
+    }),
+  })
+);
+
+export type WalletVerificationSession = typeof walletVerificationSessions.$inferSelect;
+export type NewWalletVerificationSession = typeof walletVerificationSessions.$inferInsert;
