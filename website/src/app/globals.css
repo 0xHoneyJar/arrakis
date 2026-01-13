@@ -40,7 +40,8 @@
   }
 
   /* Links: ease-out for responsive feel */
-  a {
+  /* Exclude buttons and nav links from default link styling */
+  a:not([class*="bg-spice"]):not([class*="border-sand"]):not([class*="text-sand"]):not([data-nav-link]) {
     @apply text-sand-bright hover:text-spice;
     text-decoration: none;
     transition: color 150ms var(--ease-out);

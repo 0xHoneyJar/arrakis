@@ -116,8 +116,8 @@ const NOISE_CHARS = '.·:;+=xX#@';
 const GEM_RUBY = '#e07060';
 const GEM_BLUE = '#70a8d0';
 
-// Sand color - subtle so gems stand out
-const SAND_COLOR = 'rgba(244, 164, 96, 0.28)';
+// Sand color - subtle background texture
+const SAND_COLOR = 'rgba(244, 164, 96, 0.15)';
 
 interface CharData {
   char: string;
@@ -183,16 +183,8 @@ export function AsciiBackground({
         const value = noiseRef.current.noise3D(nx, ny, localTime);
         const normalized = value * 0.5 + 0.5;
 
-        // Check for rare gem placement - use high frequency noise for scatter
-        // Higher frequency = more chaotic, less clustering
-        const gemValue = gemNoiseRef.current.noise3D(nx * 2.5, ny * 2.5, time * 0.03);
-        const gemNormalized = gemValue * 0.5 + 0.5;
-
-        // Very rare - only sharp peaks get gems (scattered singles)
-        if (gemNormalized > 0.96) {
-          const isRuby = gemNoiseRef.current.noise3D(x * 0.1, y * 0.1, 0) > 0;
-          grid[y][x] = { char: '◆', isGem: true, isRuby };
-        } else if (normalized > 0.5) {
+        // ASCII sand characters only (no gems)
+        if (normalized > 0.5) {
           // ASCII sand characters
           const index = Math.floor((normalized - 0.5) / 0.5 * NOISE_CHARS.length);
           const char = NOISE_CHARS[Math.min(index, NOISE_CHARS.length - 1)];

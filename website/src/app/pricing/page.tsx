@@ -1,7 +1,31 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { Medal, ChartLineUp, Users, Gear, Clock, ShieldCheck, Diamond } from '@phosphor-icons/react/dist/ssr';
+import { Medal, ChartLineUp, Users, Gear, Clock, ShieldCheck, Diamond, Check as CheckIcon, Minus, Cube, Graph, Buildings, Lock, Info } from '@phosphor-icons/react/dist/ssr';
 import { FAQAccordion } from '@/components/FAQAccordion';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+// Table icons
+const Check = () => (
+  <CheckIcon weight="bold" className="w-4 h-4 text-spice mx-auto" />
+);
+
+const Dash = () => (
+  <Minus weight="bold" className="w-4 h-4 text-sand-dim/50 mx-auto" />
+);
+
+// Info tooltip component
+const InfoTooltip = ({ children }: { children: React.ReactNode }) => (
+  <TooltipProvider delayDuration={0}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Info weight="fill" className="w-3.5 h-3.5 text-sand-dim hover:text-sand-bright cursor-help inline-block ml-1.5" />
+      </TooltipTrigger>
+      <TooltipContent className="bg-black border border-sand-dim/30 text-sand text-xs max-w-xs">
+        {children}
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
 
 export const metadata: Metadata = {
   title: 'Pricing // ARRAKIS',
@@ -46,7 +70,7 @@ export default function PricingPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Clock weight="fill" className="w-4 h-4 text-sand-dim shrink-0" />
-                <span className="text-sand">24h data refresh</span>
+                <span className="text-sand">24 hour refresh</span>
               </div>
               <div className="flex items-center gap-3">
                 <ShieldCheck weight="fill" className="w-4 h-4 text-sand-dim shrink-0" />
@@ -93,7 +117,7 @@ export default function PricingPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Clock weight="fill" className="w-4 h-4 text-sand-dim shrink-0" />
-                <span className="text-sand-bright">6h data refresh</span>
+                <span className="text-sand-bright">6 hour refresh</span>
               </div>
               <div className="flex items-center gap-3">
                 <ChartLineUp weight="fill" className="w-4 h-4 text-sand-dim shrink-0" />
@@ -107,7 +131,7 @@ export default function PricingPage() {
 
             <Link
               href="https://discord.gg/thehoneyjar"
-              className="block w-full text-center px-4 py-3 bg-spice text-black font-mono text-sm uppercase tracking-wider hover:bg-spice-bright transition-colors duration-150 mt-8"
+              className="block w-full text-center px-4 py-3 bg-spice text-black font-mono text-sm uppercase tracking-wider transition-colors duration-150 mt-8"
             >
               Get Started
             </Link>
@@ -143,7 +167,7 @@ export default function PricingPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Clock weight="fill" className="w-4 h-4 text-sand-dim shrink-0" />
-                <span className="text-sand-bright">1h data refresh</span>
+                <span className="text-sand-bright">1 hour refresh</span>
               </div>
               <div className="flex items-center gap-3">
                 <Gear weight="fill" className="w-4 h-4 text-sand-dim shrink-0" />
@@ -171,6 +195,186 @@ export default function PricingPage() {
             <span className="text-sand-bright text-xs font-semibold">Conviction Scoring</span>
           </div>
         </div>
+        </div>
+      </div>
+
+      {/* Feature Comparison Table */}
+      <div className="mb-20">
+        <h2 className="font-display text-2xl text-sand-bright mb-8">
+          Compare features
+        </h2>
+        <div className="border border-sand-dim/30 overflow-hidden">
+          {/* Table Header */}
+          <div className="grid grid-cols-4 border-b border-sand-dim/30 bg-sand-dim/5">
+            <div className="p-4 text-sand-dim text-sm">Features</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/30">Starter</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/30">Growth</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/30">Enterprise</div>
+          </div>
+
+          {/* Section: Token Gating */}
+          <div className="border-b border-sand-dim/30 bg-sand-dim/10">
+            <div className="p-4 flex items-center gap-2">
+              <Lock weight="fill" className="w-4 h-4 text-spice" />
+              <span className="text-sand-bright text-xs font-mono uppercase tracking-wider">Token Gating</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">ERC20 gating</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">NFT gating</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Multi-chain</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm flex items-center">
+              Shadow mode
+              <InfoTooltip>
+                Run Arrakis alongside Collab.Land or Guild.xyz. See conviction data without switching. Zero risk adoption.
+              </InfoTooltip>
+            </div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          {/* Section: Progression */}
+          <div className="border-b border-sand-dim/30 bg-sand-dim/10">
+            <div className="p-4 flex items-center gap-2">
+              <Medal weight="fill" className="w-4 h-4 text-spice" />
+              <span className="text-sand-bright text-xs font-mono uppercase tracking-wider">Progression</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Tier system</div>
+            <div className="p-4 text-sand-dim text-sm text-center border-l border-sand-dim/20">3</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">9</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">Custom</div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Badges</div>
+            <div className="p-4 text-sand-dim text-sm text-center border-l border-sand-dim/20">5</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">10+</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">Unlimited</div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Badge lineage</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          {/* Section: Intelligence */}
+          <div className="border-b border-sand-dim/30 bg-sand-dim/10">
+            <div className="p-4 flex items-center gap-2">
+              <Graph weight="fill" className="w-4 h-4 text-spice" />
+              <span className="text-sand-bright text-xs font-mono uppercase tracking-wider">Intelligence</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Conviction score</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Analytics</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Holder insights</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          {/* Section: Platform */}
+          <div className="border-b border-sand-dim/30 bg-sand-dim/10">
+            <div className="p-4 flex items-center gap-2">
+              <Cube weight="fill" className="w-4 h-4 text-spice" />
+              <span className="text-sand-bright text-xs font-mono uppercase tracking-wider">Platform</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Discord servers</div>
+            <div className="p-4 text-sand-dim text-sm text-center border-l border-sand-dim/20">1</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">3</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">Unlimited</div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Telegram groups</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">1</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">Unlimited</div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Refresh interval</div>
+            <div className="p-4 text-sand-dim text-sm text-center border-l border-sand-dim/20">24 hours</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">6 hours</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">1 hour</div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">API access</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-sand-dim text-sm text-center border-l border-sand-dim/20">Read</div>
+            <div className="p-4 text-sand-bright text-sm text-center border-l border-sand-dim/20">Full</div>
+          </div>
+
+          {/* Section: Security */}
+          <div className="border-b border-sand-dim/30 bg-sand-dim/10">
+            <div className="p-4 flex items-center gap-2">
+              <ShieldCheck weight="fill" className="w-4 h-4 text-spice" />
+              <span className="text-sand-bright text-xs font-mono uppercase tracking-wider">Security</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Row-level security</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center border-b border-sand-dim/20">
+            <div className="p-4 text-sand text-sm">Audit trail</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
+
+          <div className="grid grid-cols-4 items-center">
+            <div className="p-4 text-sand text-sm">White-label</div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Dash /></div>
+            <div className="p-4 text-center border-l border-sand-dim/20"><Check /></div>
+          </div>
         </div>
       </div>
 

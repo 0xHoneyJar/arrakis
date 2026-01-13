@@ -12,13 +12,13 @@ export function Footer() {
           <div className="flex items-center gap-3">
             <Link
               href="https://discord.gg/thehoneyjar"
-              className="px-5 py-2.5 bg-spice text-black font-mono text-sm uppercase tracking-wider hover:bg-spice-bright transition-colors duration-150 whitespace-nowrap"
+              className="px-5 py-2.5 bg-spice text-black font-mono text-sm uppercase tracking-wider transition-colors duration-150 whitespace-nowrap"
             >
               Get Started
             </Link>
             <Link
               href="/demo"
-              className="px-5 py-2.5 border border-sand-dim text-sand font-mono text-sm uppercase tracking-wider hover:border-sand-bright hover:text-sand-bright transition-colors duration-150 whitespace-nowrap"
+              className="px-5 py-2.5 border border-sand-dim/40 text-sand font-mono text-sm uppercase tracking-wider hover:border-sand hover:text-sand-bright transition-colors duration-150 whitespace-nowrap"
             >
               View Demo
             </Link>

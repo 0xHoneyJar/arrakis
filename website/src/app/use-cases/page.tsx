@@ -139,7 +139,7 @@ export default function UseCasesPage() {
         <div className="flex items-center justify-center gap-4">
           <Link
             href="https://discord.gg/thehoneyjar"
-            className="px-5 py-2.5 bg-spice text-black font-mono text-sm uppercase tracking-wider hover:bg-spice-bright transition-colors duration-150"
+            className="px-5 py-2.5 bg-spice text-black font-mono text-sm uppercase tracking-wider transition-colors duration-150"
           >
             Get Started
           </Link>

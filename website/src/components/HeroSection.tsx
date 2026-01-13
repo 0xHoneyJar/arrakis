@@ -80,7 +80,7 @@ export function HeroSection() {
           >
             <Link
               href="https://discord.gg/thehoneyjar"
-              className="px-5 py-2.5 bg-spice text-black font-mono text-sm uppercase tracking-wider hover:bg-spice-bright transition-colors duration-150 flex items-center gap-2"
+              className="px-5 py-2.5 bg-spice text-black font-mono text-sm uppercase tracking-wider transition-colors duration-150 flex items-center gap-2"
             >
               Add to Discord
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">

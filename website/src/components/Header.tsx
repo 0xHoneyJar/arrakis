@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { ChartLineUp, Diamond, Medal, CaretDown } from '@phosphor-icons/react';
 import {
   NavigationMenu,
@@ -39,6 +40,11 @@ const productItems = [
 
 export function Header() {
   const [isOpen, setIsOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Check if a path is active
+  const isActive = (path: string) => pathname === path;
+  const isProductActive = pathname === '/' || pathname.startsWith('/#');
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-black">
@@ -54,7 +60,10 @@ export function Header() {
             <NavigationMenu>
               <NavigationMenuList className="gap-1">
                 <NavigationMenuItem>
-                  <NavigationMenuTrigger className="bg-transparent text-sand-dim hover:text-sand-bright hover:bg-transparent data-[state=open]:bg-transparent data-[state=open]:text-sand-bright font-mono text-sm">
+                  <NavigationMenuTrigger className={cn(
+                    "bg-transparent hover:text-sand-bright hover:bg-transparent data-[state=open]:bg-transparent data-[state=open]:text-sand-bright font-mono text-sm",
+                    isProductActive ? "text-sand-bright" : "text-sand-dim"
+                  )}>
                     Product
                   </NavigationMenuTrigger>
                   <NavigationMenuContent>
@@ -91,7 +100,10 @@ export function Header() {
 
                 <NavigationMenuItem>
                   <Link href="/use-cases" legacyBehavior passHref>
-                    <NavigationMenuLink className="bg-transparent text-sand-dim hover:text-sand-bright font-mono text-sm px-4 py-2 transition-colors duration-150">
+                    <NavigationMenuLink className={cn(
+                      "bg-transparent hover:text-sand-bright font-mono text-sm px-4 py-2 transition-colors duration-150",
+                      isActive('/use-cases') ? "text-sand-bright" : "text-sand-dim"
+                    )}>
                       Use Cases
                     </NavigationMenuLink>
                   </Link>
@@ -99,7 +111,10 @@ export function Header() {
 
                 <NavigationMenuItem>
                   <Link href="/pricing" legacyBehavior passHref>
-                    <NavigationMenuLink className="bg-transparent text-sand-dim hover:text-sand-bright font-mono text-sm px-4 py-2 transition-colors duration-150">
+                    <NavigationMenuLink className={cn(
+                      "bg-transparent hover:text-sand-bright font-mono text-sm px-4 py-2 transition-colors duration-150",
+                      isActive('/pricing') ? "text-sand-bright" : "text-sand-dim"
+                    )}>
                       Pricing
                     </NavigationMenuLink>
                   </Link>
@@ -113,7 +128,7 @@ export function Header() {
             <Link
               href="https://discord.gg/thehoneyjar"
               target="_blank"
-              className="px-4 py-2 bg-spice text-black font-mono text-sm uppercase tracking-wider hover:bg-spice-bright transition-colors duration-150 ease-out flex items-center gap-2"
+              className="px-4 py-2 bg-spice text-black font-mono text-sm uppercase tracking-wider transition-colors duration-150 ease-out flex items-center gap-2"
             >
               Discord
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
