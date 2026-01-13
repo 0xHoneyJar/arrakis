@@ -8,6 +8,13 @@
  * - GET /verify/:sessionId/status - Poll verification status
  *
  * All endpoints require a valid session ID (UUID format).
+ *
+ * @security Sprint 79 Security Hardening:
+ * - CRIT-1: Origin validation on POST (CSRF protection)
+ * - CRIT-2: Rate limiting per session and IP
+ * - CRIT-3: Discord username sanitization
+ * - HIGH-1: IP-based rate limiting
+ * - HIGH-2: Constant-time responses (timing attack mitigation)
  */
 
 import { Router } from 'express';
@@ -16,9 +23,26 @@ import { z } from 'zod';
 import type { Address, Hex } from 'viem';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 
 import { logger } from '../../utils/logger.js';
 import { ValidationError, NotFoundError } from '../middleware.js';
+
+// =============================================================================
+// Security Constants
+// =============================================================================
+
+/**
+ * Minimum response time in ms for constant-time responses (timing attack mitigation)
+ */
+const MIN_RESPONSE_TIME_MS = 100;
+
+/**
+ * Safe Discord username regex - allows alphanumeric, spaces, dashes, underscores, dots
+ * Max 32 characters per Discord's limit
+ */
+const SAFE_USERNAME_REGEX = /^[\w\s\-_.]{1,32}$/;
 
 // =============================================================================
 // Types
@@ -73,6 +97,160 @@ const submitSignatureSchema = z.object({
 });
 
 // =============================================================================
+// Security Helpers
+// =============================================================================
+
+/**
+ * Parse hostname from URL safely
+ *
+ * @param urlString - URL string to parse
+ * @returns hostname or null if invalid
+ */
+function parseHostname(urlString: string): string | null {
+  try {
+    const url = new URL(urlString);
+    return url.hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate origin for CSRF protection (CRIT-1)
+ *
+ * Checks that the Origin or Referer header matches the expected base URL.
+ * Uses proper URL parsing to prevent subdomain attacks (e.g., evil.com pretending
+ * to be api.arrakis.community.evil.com).
+ *
+ * @param req - Express request
+ * @param hostname - Request hostname for fallback
+ * @returns true if origin is valid, false otherwise
+ */
+function validateOrigin(req: Request, hostname: string): boolean {
+  const origin = req.get('origin') || req.get('referer');
+
+  // Require origin header for POST requests
+  if (!origin) {
+    return false;
+  }
+
+  // Parse the origin hostname
+  const originHostname = parseHostname(origin);
+  if (!originHostname) {
+    return false;
+  }
+
+  // Build list of expected hostnames
+  const expectedHostnames: string[] = [];
+
+  // Get expected origin from environment
+  const verifyBaseUrl = process.env.VERIFY_BASE_URL;
+  if (verifyBaseUrl) {
+    const baseHostname = parseHostname(verifyBaseUrl);
+    if (baseHostname) {
+      expectedHostnames.push(baseHostname);
+    }
+  }
+
+  // Add request hostname (for same-origin requests)
+  expectedHostnames.push(hostname.toLowerCase());
+
+  // Check if origin hostname exactly matches any expected hostname
+  // This prevents subdomain attacks like api.arrakis.community.evil.com
+  return expectedHostnames.some((expected) => originHostname === expected);
+}
+
+/**
+ * Sanitize Discord username for safe display (CRIT-3)
+ *
+ * Validates that the username only contains safe characters.
+ * Returns a sanitized version or a fallback.
+ *
+ * @param username - Raw Discord username
+ * @returns Sanitized username
+ */
+function sanitizeUsername(username: string): string {
+  if (!username || typeof username !== 'string') {
+    return 'Unknown User';
+  }
+
+  // Check against safe pattern
+  if (SAFE_USERNAME_REGEX.test(username)) {
+    return username;
+  }
+
+  // Strip potentially dangerous characters
+  const sanitized = username.replace(/[^\w\s\-_.]/g, '').slice(0, 32);
+  return sanitized || 'Unknown User';
+}
+
+/**
+ * Hash IP address for privacy-compliant logging (LOW-1)
+ *
+ * @param ip - Raw IP address
+ * @returns Hashed IP (first 16 chars of SHA-256)
+ */
+function hashIp(ip: string | undefined): string {
+  if (!ip) return 'unknown';
+  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 16);
+}
+
+/**
+ * Ensure constant-time response to prevent timing attacks (HIGH-2)
+ *
+ * Pads the response time to a minimum threshold to prevent
+ * attackers from inferring valid session IDs via timing.
+ *
+ * @param startTime - Timestamp when processing started
+ */
+async function ensureConstantTime(startTime: number): Promise<void> {
+  const elapsed = Date.now() - startTime;
+  if (elapsed < MIN_RESPONSE_TIME_MS) {
+    await new Promise((resolve) => setTimeout(resolve, MIN_RESPONSE_TIME_MS - elapsed));
+  }
+}
+
+/**
+ * Create rate limiters for verification endpoints (HIGH-1, CRIT-2)
+ */
+function createRateLimiters() {
+  // Per-IP rate limiter: 100 requests per 15 minutes
+  const ipRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    message: { error: 'Too many requests, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.ip || 'unknown',
+    skip: () => process.env.NODE_ENV === 'test', // Skip in tests
+  });
+
+  // Per-session rate limiter: 10 requests per 5 minutes per session
+  const sessionRateLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 10,
+    message: { error: 'Too many requests for this session' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.params.sessionId || 'unknown',
+    skip: () => process.env.NODE_ENV === 'test', // Skip in tests
+  });
+
+  // Strict rate limiter for POST (signature submission): 3 per minute per IP
+  const postRateLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 3,
+    message: { error: 'Too many verification attempts, please wait' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.ip || 'unknown',
+    skip: () => process.env.NODE_ENV === 'test', // Skip in tests
+  });
+
+  return { ipRateLimiter, sessionRateLimiter, postRateLimiter };
+}
+
+// =============================================================================
 // Router Factory
 // =============================================================================
 
@@ -117,6 +295,12 @@ export function createVerifyRouter(deps: {
   const router = Router();
   const MAX_ATTEMPTS = deps.maxAttempts ?? 3;
 
+  // Create rate limiters (HIGH-1, CRIT-2)
+  const { ipRateLimiter, sessionRateLimiter, postRateLimiter } = createRateLimiters();
+
+  // Apply IP-based rate limiting to all routes
+  router.use(ipRateLimiter);
+
   // Get __dirname equivalent for ESM
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
@@ -128,12 +312,20 @@ export function createVerifyRouter(deps: {
    * Query params:
    * - format=json - Force JSON response
    * - format=html - Force HTML response (default for browsers)
+   *
+   * @security
+   * - Rate limited per session (CRIT-2)
+   * - Constant-time responses (HIGH-2)
+   * - Username sanitization (CRIT-3)
    */
-  router.get('/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
+  router.get('/:sessionId', sessionRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+    const startTime = Date.now();
+
     try {
       // Validate session ID
       const parseResult = sessionIdSchema.safeParse(req.params.sessionId);
       if (!parseResult.success) {
+        await ensureConstantTime(startTime);
         throw new ValidationError('Invalid session ID format');
       }
       const sessionId = parseResult.data;
@@ -141,6 +333,7 @@ export function createVerifyRouter(deps: {
       // Get community ID for this session
       const communityId = await deps.getCommunityIdForSession(sessionId);
       if (!communityId) {
+        await ensureConstantTime(startTime);
         throw new NotFoundError('Session not found');
       }
 
@@ -149,6 +342,7 @@ export function createVerifyRouter(deps: {
       const session = await service.getSession(sessionId);
 
       if (!session) {
+        await ensureConstantTime(startTime);
         throw new NotFoundError('Session not found');
       }
 
@@ -158,13 +352,13 @@ export function createVerifyRouter(deps: {
       const wantsJson = format === 'json' || (!format && !acceptsHtml);
 
       if (wantsJson) {
-        // Return JSON response
+        // Return JSON response with sanitized username (CRIT-3)
         const response: VerificationSessionResponse = {
           sessionId: session.id,
           status: session.status as VerificationSessionResponse['status'],
           expiresAt: session.expiresAt.toISOString(),
           attemptsRemaining: Math.max(0, MAX_ATTEMPTS - session.attempts),
-          discordUsername: session.discordUsername,
+          discordUsername: sanitizeUsername(session.discordUsername),
           walletAddress: session.walletAddress,
           completedAt: session.completedAt?.toISOString(),
         };
@@ -177,14 +371,17 @@ export function createVerifyRouter(deps: {
           }
         }
 
+        await ensureConstantTime(startTime);
         res.json(response);
       } else {
         // Serve HTML verification page
         // The page will fetch session data via API
         const staticPath = path.resolve(__dirname, '../../static/verify.html');
+        await ensureConstantTime(startTime);
         res.sendFile(staticPath);
       }
     } catch (error) {
+      await ensureConstantTime(startTime);
       next(error);
     }
   });
@@ -192,12 +389,32 @@ export function createVerifyRouter(deps: {
   /**
    * POST /verify/:sessionId
    * Submit a signature for verification
+   *
+   * @security
+   * - Origin validation for CSRF protection (CRIT-1)
+   * - Rate limited per IP (postRateLimiter)
+   * - Constant-time responses (HIGH-2)
+   * - IP hashing for privacy (LOW-1)
+   * - Generic error messages (LOW-2)
    */
-  router.post('/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
+  router.post('/:sessionId', postRateLimiter, sessionRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+    const startTime = Date.now();
+
     try {
+      // CRIT-1: Validate origin for CSRF protection
+      if (!validateOrigin(req, req.hostname)) {
+        logger.warn(
+          { origin: req.get('origin'), referer: req.get('referer'), ipHash: hashIp(req.ip) },
+          'CSRF protection: Invalid request origin'
+        );
+        await ensureConstantTime(startTime);
+        throw new ValidationError('Invalid request origin');
+      }
+
       // Validate session ID
       const sessionParseResult = sessionIdSchema.safeParse(req.params.sessionId);
       if (!sessionParseResult.success) {
+        await ensureConstantTime(startTime);
         throw new ValidationError('Invalid session ID format');
       }
       const sessionId = sessionParseResult.data;
@@ -206,6 +423,7 @@ export function createVerifyRouter(deps: {
       const bodyParseResult = submitSignatureSchema.safeParse(req.body);
       if (!bodyParseResult.success) {
         const errors = bodyParseResult.error.errors.map((e) => e.message).join(', ');
+        await ensureConstantTime(startTime);
         throw new ValidationError(`Invalid request body: ${errors}`);
       }
       const { signature, walletAddress } = bodyParseResult.data;
@@ -213,53 +431,72 @@ export function createVerifyRouter(deps: {
       // Get community ID for this session
       const communityId = await deps.getCommunityIdForSession(sessionId);
       if (!communityId) {
+        await ensureConstantTime(startTime);
         throw new NotFoundError('Session not found');
       }
 
       // Get verification service and verify signature
+      // LOW-1: Hash IP for privacy-compliant logging
       const service = deps.getVerificationService(communityId);
       const result = await service.verifySignature({
         sessionId,
         signature,
         walletAddress,
-        ipAddress: req.ip,
+        ipAddress: hashIp(req.ip), // Hashed for privacy
         userAgent: req.get('User-Agent'),
       });
 
+      // Log with hashed IP
       logger.info(
         {
           sessionId,
           success: result.success,
           errorCode: result.errorCode,
           walletAddress: result.walletAddress,
+          ipHash: hashIp(req.ip),
         },
         'Verification attempt'
       );
 
-      const response: VerifySignatureResponse = {
-        success: result.success,
-        error: result.error,
-        errorCode: result.errorCode,
-        walletAddress: result.walletAddress,
-        sessionStatus: result.sessionStatus,
-      };
+      // LOW-2: Use generic error messages externally, detailed logging internally
+      let response: VerifySignatureResponse;
+      let statusCode: number;
 
-      // Set appropriate status code
       if (result.success) {
-        res.status(200).json(response);
-      } else if (result.errorCode === 'SESSION_NOT_FOUND') {
-        res.status(404).json(response);
-      } else if (
-        result.errorCode === 'INVALID_SIGNATURE' ||
-        result.errorCode === 'ADDRESS_MISMATCH'
-      ) {
-        res.status(400).json(response);
-      } else if (result.errorCode === 'MAX_ATTEMPTS_EXCEEDED') {
-        res.status(429).json(response);
+        response = {
+          success: true,
+          walletAddress: result.walletAddress,
+          sessionStatus: result.sessionStatus,
+        };
+        statusCode = 200;
       } else {
-        res.status(400).json(response);
+        // Log detailed error internally
+        logger.warn(
+          { sessionId, errorCode: result.errorCode, error: result.error },
+          'Verification failed'
+        );
+
+        // Return generic error externally
+        response = {
+          success: false,
+          error: 'Verification failed. Please check your wallet and try again.',
+          sessionStatus: result.sessionStatus,
+        };
+
+        // Determine status code based on error type
+        if (result.errorCode === 'SESSION_NOT_FOUND') {
+          statusCode = 404;
+        } else if (result.errorCode === 'MAX_ATTEMPTS_EXCEEDED') {
+          statusCode = 429;
+        } else {
+          statusCode = 400;
+        }
       }
+
+      await ensureConstantTime(startTime);
+      res.status(statusCode).json(response);
     } catch (error) {
+      await ensureConstantTime(startTime);
       next(error);
     }
   });
@@ -267,12 +504,19 @@ export function createVerifyRouter(deps: {
   /**
    * GET /verify/:sessionId/status
    * Poll verification status (lightweight endpoint for polling)
+   *
+   * @security
+   * - Rate limited per session (CRIT-2)
+   * - Constant-time responses (HIGH-2)
    */
-  router.get('/:sessionId/status', async (req: Request, res: Response, next: NextFunction) => {
+  router.get('/:sessionId/status', sessionRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+    const startTime = Date.now();
+
     try {
       // Validate session ID
       const parseResult = sessionIdSchema.safeParse(req.params.sessionId);
       if (!parseResult.success) {
+        await ensureConstantTime(startTime);
         throw new ValidationError('Invalid session ID format');
       }
       const sessionId = parseResult.data;
@@ -280,6 +524,7 @@ export function createVerifyRouter(deps: {
       // Get community ID for this session
       const communityId = await deps.getCommunityIdForSession(sessionId);
       if (!communityId) {
+        await ensureConstantTime(startTime);
         throw new NotFoundError('Session not found');
       }
 
@@ -288,16 +533,19 @@ export function createVerifyRouter(deps: {
       const session = await service.getSession(sessionId);
 
       if (!session) {
+        await ensureConstantTime(startTime);
         throw new NotFoundError('Session not found');
       }
 
       // Return minimal status response
+      await ensureConstantTime(startTime);
       res.json({
         status: session.status,
         walletAddress: session.walletAddress,
         completedAt: session.completedAt?.toISOString(),
       });
     } catch (error) {
+      await ensureConstantTime(startTime);
       next(error);
     }
   });

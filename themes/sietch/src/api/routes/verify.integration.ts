@@ -5,6 +5,9 @@
  * Provides dependency injection setup for verification routes.
  * Creates database helpers needed for session lookup and service instantiation.
  *
+ * @security Sprint 79 Security Hardening:
+ * - HIGH-2: Constant-time responses to prevent timing attacks
+ *
  * @module api/routes/verify.integration
  */
 
@@ -19,6 +22,16 @@ import { WalletVerificationService } from '../../packages/verification/Verificat
 import { MessageBuilder } from '../../packages/verification/MessageBuilder.js';
 import { createVerifyRouter } from './verify.routes.js';
 import { logger } from '../../utils/logger.js';
+
+// =============================================================================
+// Security Constants
+// =============================================================================
+
+/**
+ * Minimum response time in ms for constant-time responses (timing attack mitigation)
+ * Applied at the database query level for getCommunityIdForSession
+ */
+const MIN_DB_RESPONSE_TIME_MS = 50;
 
 // =============================================================================
 // Types
@@ -74,8 +87,13 @@ export function createVerifyIntegration(deps: VerificationIntegrationDeps) {
   /**
    * Get community ID for a session (bypasses RLS for lookup)
    * This is safe because session IDs are cryptographically random UUIDs
+   *
+   * @security HIGH-2: Constant-time response to prevent timing attacks
+   * Ensures minimum response time regardless of whether session exists
    */
   async function getCommunityIdForSession(sessionId: string): Promise<string | null> {
+    const startTime = Date.now();
+
     try {
       // Direct query without tenant context - only returns community_id
       // This is a controlled bypass since we only expose community_id, not session data
@@ -85,8 +103,21 @@ export function createVerifyIntegration(deps: VerificationIntegrationDeps) {
         .where(eq(walletVerificationSessions.id, sessionId))
         .limit(1);
 
+      // HIGH-2: Constant-time response - always wait minimum time
+      // This prevents attackers from detecting valid session IDs via timing
+      const elapsed = Date.now() - startTime;
+      if (elapsed < MIN_DB_RESPONSE_TIME_MS) {
+        await new Promise((resolve) => setTimeout(resolve, MIN_DB_RESPONSE_TIME_MS - elapsed));
+      }
+
       return result[0]?.communityId ?? null;
     } catch (error) {
+      // HIGH-2: Constant-time even on errors
+      const elapsed = Date.now() - startTime;
+      if (elapsed < MIN_DB_RESPONSE_TIME_MS) {
+        await new Promise((resolve) => setTimeout(resolve, MIN_DB_RESPONSE_TIME_MS - elapsed));
+      }
+
       logger.error({ sessionId, error }, 'Failed to lookup community for session');
       return null;
     }
