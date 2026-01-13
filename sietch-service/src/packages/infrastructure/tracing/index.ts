@@ -42,13 +42,13 @@ export type {
   Span,
   CreateTraceOptions,
   CreateSpanOptions,
-} from './TraceContext';
+} from './TraceContext.js';
 
 // Constants
-export { TRACE_HEADERS } from './TraceContext';
+export { TRACE_HEADERS } from './TraceContext.js';
 
 // Utility functions
-export { generateId, generateSpanId } from './TraceContext';
+export { generateId, generateSpanId } from './TraceContext.js';
 
 // Core trace functions
 export {
@@ -58,42 +58,42 @@ export {
   getSpanId,
   runWithTrace,
   runWithTraceAsync,
-} from './TraceContext';
+} from './TraceContext.js';
 
 // Span functions
-export { createSpan, withSpan } from './TraceContext';
+export { createSpan, withSpan } from './TraceContext.js';
 
 // Attribute functions
 export {
   setTraceAttribute,
   setTenantId,
   setUserId,
-} from './TraceContext';
+} from './TraceContext.js';
 
 // HTTP header functions
 export {
   extractTraceFromHeaders,
   injectTraceHeaders,
   getTraceLogFields,
-} from './TraceContext';
+} from './TraceContext.js';
 
 // SQL helper
-export { getTraceSqlComment } from './TraceContext';
+export { getTraceSqlComment } from './TraceContext.js';
 
 // Express middleware
-export { traceMiddleware } from './TraceContext';
+export { traceMiddleware } from './TraceContext.js';
 
 // Database tracing
 export {
   TracedDatabase,
   createTracedDatabase,
-} from './TracedDatabase';
+} from './TracedDatabase.js';
 
 export type {
   QueryStats,
   QueryStatsCallback,
   TracedDatabaseOptions,
-} from './TracedDatabase';
+} from './TracedDatabase.js';
 
 // Redis tracing
 export {
@@ -101,10 +101,10 @@ export {
   withRedisTraceSync,
   createTracedRedisOps,
   parseRedisKey,
-} from './TracedRedis';
+} from './TracedRedis.js';
 
 export type {
   RedisOperationStats,
   RedisStatsCallback,
   TracedRedisOptions,
-} from './TracedRedis';
+} from './TracedRedis.js';
