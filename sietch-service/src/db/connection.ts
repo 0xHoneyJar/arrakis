@@ -117,26 +117,38 @@ function seedDefaultStoryFragments(database: Database.Database): void {
 
 /**
  * Initialize the database connection
+ *
+ * When DATABASE_URL (PostgreSQL) is configured without DATABASE_PATH,
+ * uses an in-memory SQLite for local caching. Production data should
+ * be accessed via DrizzleStorageAdapter with PostgreSQL.
  */
 export function initDatabase(): Database.Database {
   if (db) {
     return db;
   }
 
-  // Ensure data directory exists
   // Sprint 70: database.path is now optional (PostgreSQL is preferred)
-  // SQLite should only be used for legacy/migration scenarios
-  const dbPath = config.database.path;
+  // When PostgreSQL is configured, use in-memory SQLite as fallback for legacy code
+  let dbPath = config.database.path;
   if (!dbPath) {
-    throw new Error(
-      'DATABASE_PATH is not configured. SQLite is deprecated in favor of PostgreSQL (DATABASE_URL). ' +
-      'Use DrizzleStorageAdapter with PostgreSQL for production.'
-    );
+    if (config.database.url) {
+      // PostgreSQL is primary storage - use in-memory SQLite for legacy compatibility
+      dbPath = ':memory:';
+      logger.info('PostgreSQL configured - using in-memory SQLite for legacy code paths');
+    } else {
+      throw new Error(
+        'No database configured. Set DATABASE_URL (PostgreSQL recommended) or DATABASE_PATH (SQLite deprecated).'
+      );
+    }
   }
-  const dbDir = dirname(dbPath);
-  if (!existsSync(dbDir)) {
-    mkdirSync(dbDir, { recursive: true });
-    logger.info({ path: dbDir }, 'Created database directory');
+
+  // For file-based SQLite, ensure data directory exists
+  if (dbPath !== ':memory:') {
+    const dbDir = dirname(dbPath);
+    if (!existsSync(dbDir)) {
+      mkdirSync(dbDir, { recursive: true });
+      logger.info({ path: dbDir }, 'Created database directory');
+    }
   }
 
   // Create database connection
