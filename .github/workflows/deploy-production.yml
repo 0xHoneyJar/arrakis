@@ -132,7 +132,9 @@ jobs:
       - name: Update API task definition with new image
         id: api-task-def-update
         run: |
-          NEW_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          # Use short SHA (7 chars) to match docker/metadata-action output
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          NEW_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${SHORT_SHA}"
           echo "Updating API task definition with image: $NEW_IMAGE"
 
           # Update the container image
@@ -162,7 +164,9 @@ jobs:
       - name: Update Worker task definition with new image
         id: worker-task-def-update
         run: |
-          NEW_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          # Use short SHA (7 chars) to match docker/metadata-action output
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          NEW_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${SHORT_SHA}"
           echo "Updating Worker task definition with image: $NEW_IMAGE"
 
           jq --arg IMAGE "$NEW_IMAGE" \
