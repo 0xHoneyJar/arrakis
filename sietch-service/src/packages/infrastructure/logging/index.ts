@@ -15,7 +15,7 @@
  * @module packages/infrastructure/logging
  */
 
-import { getTraceLogFields } from '../tracing';
+import { getTraceLogFields } from '../tracing/index.js';
 
 // Export PII scrubbing utilities
 export {
