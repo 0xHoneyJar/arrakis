@@ -114,11 +114,75 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get current API task definition
+        id: api-task-def
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition arrakis-production-api \
+            --query 'taskDefinition' \
+            --output json > api-task-definition.json
+          # Remove fields that can't be included in register-task-definition
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            api-task-definition.json > api-task-definition-clean.json
+
+      - name: Update API task definition with new image
+        id: api-task-def-update
+        run: |
+          NEW_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "Updating API task definition with image: $NEW_IMAGE"
+
+          # Update the container image
+          jq --arg IMAGE "$NEW_IMAGE" \
+            '.containerDefinitions[0].image = $IMAGE' \
+            api-task-definition-clean.json > api-task-definition-new.json
+
+          # Register new task definition
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://api-task-definition-new.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "New API task definition: $NEW_TASK_DEF_ARN"
+          echo "task_definition_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
+
+      - name: Get current Worker task definition
+        id: worker-task-def
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition arrakis-production-worker \
+            --query 'taskDefinition' \
+            --output json > worker-task-definition.json
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            worker-task-definition.json > worker-task-definition-clean.json
+
+      - name: Update Worker task definition with new image
+        id: worker-task-def-update
+        run: |
+          NEW_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "Updating Worker task definition with image: $NEW_IMAGE"
+
+          jq --arg IMAGE "$NEW_IMAGE" \
+            '.containerDefinitions[0].image = $IMAGE' \
+            worker-task-definition-clean.json > worker-task-definition-new.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://worker-task-definition-new.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "New Worker task definition: $NEW_TASK_DEF_ARN"
+          echo "task_definition_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
+
       - name: Update ECS API Service
         run: |
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE_API }} \
+            --task-definition ${{ steps.api-task-def-update.outputs.task_definition_arn }} \
             --force-new-deployment \
             --query 'service.deployments[0].{status:status,running:runningCount,desired:desiredCount}' \
             --output table
@@ -128,6 +192,7 @@ jobs:
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE_WORKER }} \
+            --task-definition ${{ steps.worker-task-def-update.outputs.task_definition_arn }} \
             --force-new-deployment \
             --query 'service.deployments[0].{status:status,running:runningCount,desired:desiredCount}' \
             --output table
