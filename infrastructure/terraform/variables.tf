@@ -22,12 +22,8 @@ variable "vault_namespace" {
   default     = "admin"
 }
 
-variable "vault_token" {
-  description = "Vault token for ECS tasks"
-  type        = string
-  sensitive   = true
-  default     = "placeholder"
-}
+# vault_token is now stored in Secrets Manager and referenced via data source
+# Create it manually: aws secretsmanager create-secret --name arrakis-{env}/vault-token
 
 # VPC
 variable "vpc_cidr" {

@@ -1,5 +1,12 @@
-# Arrakis Production Infrastructure
-# Version: 5.1 (Post-Security Hardening)
+# Arrakis Infrastructure
+# Version: 5.2 (Multi-Environment Support)
+#
+# Usage:
+#   terraform init -backend-config=environments/staging/backend.tfvars -reconfigure
+#   terraform plan -var-file=environments/staging/terraform.tfvars
+#
+#   terraform init -backend-config=environments/production/backend.tfvars -reconfigure
+#   terraform plan -var-file=environments/production/terraform.tfvars
 
 terraform {
   required_version = ">= 1.6.0"
@@ -15,12 +22,15 @@ terraform {
     }
   }
 
+  # Backend configuration is provided via -backend-config flag
+  # See environments/*/backend.tfvars for environment-specific configs
   backend "s3" {
+    # These values are overridden by backend.tfvars
     bucket         = "arrakis-tfstate-891376933289"
-    key            = "production/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
     dynamodb_table = "arrakis-terraform-locks"
+    # key is set per-environment in backend.tfvars
   }
 }
 
@@ -46,13 +56,8 @@ locals {
   }
 }
 
-# Vault token stored in AWS Secrets Manager (bootstrap)
-resource "aws_secretsmanager_secret" "vault_token" {
-  name                    = "${local.name_prefix}/vault-token"
-  recovery_window_in_days = 7
-}
-
-resource "aws_secretsmanager_secret_version" "vault_token" {
-  secret_id     = aws_secretsmanager_secret.vault_token.id
-  secret_string = var.vault_token
+# Vault token - uses pre-existing secret (create manually before terraform apply)
+# aws secretsmanager create-secret --name arrakis-{environment}/vault-token --secret-string "your-token"
+data "aws_secretsmanager_secret" "vault_token" {
+  name = "${local.name_prefix}/vault-token"
 }

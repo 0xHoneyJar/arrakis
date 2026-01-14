@@ -87,7 +87,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = [
-          aws_secretsmanager_secret.vault_token.arn,
+          data.aws_secretsmanager_secret.vault_token.arn,
           data.aws_secretsmanager_secret.app_config.arn,
           aws_secretsmanager_secret.db_credentials.arn,
           aws_secretsmanager_secret.redis_credentials.arn
@@ -176,7 +176,7 @@ resource "aws_ecs_task_definition" "api" {
       ]
 
       secrets = [
-        { name = "VAULT_TOKEN", valueFrom = aws_secretsmanager_secret.vault_token.arn },
+        { name = "VAULT_TOKEN", valueFrom = data.aws_secretsmanager_secret.vault_token.arn },
         { name = "BGT_ADDRESS", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:BGT_ADDRESS::" },
         { name = "BERACHAIN_RPC_URLS", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:BERACHAIN_RPC_URLS::" },
         { name = "TRIGGER_PROJECT_ID", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:TRIGGER_PROJECT_ID::" },
@@ -243,7 +243,7 @@ resource "aws_ecs_task_definition" "worker" {
       ]
 
       secrets = [
-        { name = "VAULT_TOKEN", valueFrom = aws_secretsmanager_secret.vault_token.arn },
+        { name = "VAULT_TOKEN", valueFrom = data.aws_secretsmanager_secret.vault_token.arn },
         { name = "BGT_ADDRESS", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:BGT_ADDRESS::" },
         { name = "BERACHAIN_RPC_URLS", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:BERACHAIN_RPC_URLS::" },
         { name = "TRIGGER_PROJECT_ID", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:TRIGGER_PROJECT_ID::" },
