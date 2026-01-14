@@ -20,9 +20,9 @@ api_cpu           = 256
 api_memory        = 512
 api_desired_count = 1
 
-# RDS - Minimal sizing for staging
+# RDS - Minimal sizing for staging (gp3 requires minimum 20GB)
 db_instance_class    = "db.t3.micro"
-db_allocated_storage = 10
+db_allocated_storage = 20
 
 # ElastiCache - Same minimal instance
 redis_node_type = "cache.t3.micro"
