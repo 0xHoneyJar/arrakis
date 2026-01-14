@@ -77,3 +77,9 @@ output "ingestor_ecr_repository_url" {
   description = "Ingestor ECR repository URL"
   value       = aws_ecr_repository.ingestor.repository_url
 }
+
+# Gateway Proxy Pattern - Worker
+output "gp_worker_ecr_repository_url" {
+  description = "GP Worker ECR repository URL"
+  value       = aws_ecr_repository.gp_worker.repository_url
+}

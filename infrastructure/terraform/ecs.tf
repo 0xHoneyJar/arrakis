@@ -581,3 +581,285 @@ resource "aws_ecs_service" "ingestor" {
     Service = "GatewayProxy"
   })
 }
+
+# =============================================================================
+# Gateway Proxy Worker Infrastructure (Sprint GW-3)
+# =============================================================================
+
+# CloudWatch Log Group for Worker
+resource "aws_cloudwatch_log_group" "gp_worker" {
+  name              = "/ecs/${local.name_prefix}/gp-worker"
+  retention_in_days = var.log_retention_days
+
+  tags = merge(local.common_tags, {
+    Service = "GatewayProxy"
+  })
+}
+
+# ECR Repository for Worker
+resource "aws_ecr_repository" "gp_worker" {
+  name                 = "${local.name_prefix}-gp-worker"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = merge(local.common_tags, {
+    Service = "GatewayProxy"
+  })
+}
+
+# ECR Lifecycle Policy for Worker
+resource "aws_ecr_lifecycle_policy" "gp_worker" {
+  repository = aws_ecr_repository.gp_worker.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 10 images"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = 10
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 2
+        description  = "Expire untagged images after 7 days"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 7
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
+# Security Group for Worker
+resource "aws_security_group" "gp_worker" {
+  name        = "${local.name_prefix}-gp-worker-sg"
+  description = "Security group for Gateway Proxy Worker"
+  vpc_id      = module.vpc.vpc_id
+
+  # No inbound rules - Worker only makes outbound connections
+
+  tags = merge(local.common_tags, {
+    Name    = "${local.name_prefix}-gp-worker-sg"
+    Service = "GatewayProxy"
+  })
+}
+
+# Worker egress to RabbitMQ (AMQPS)
+resource "aws_security_group_rule" "gp_worker_to_rabbitmq" {
+  type                     = "egress"
+  from_port                = 5671
+  to_port                  = 5671
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.gp_worker.id
+  source_security_group_id = aws_security_group.rabbitmq.id
+  description              = "Allow AMQPS to RabbitMQ"
+}
+
+# Worker egress to Redis
+resource "aws_security_group_rule" "gp_worker_to_redis" {
+  type                     = "egress"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.gp_worker.id
+  source_security_group_id = aws_security_group.redis.id
+  description              = "Allow Redis access"
+}
+
+# Worker egress to PostgreSQL
+resource "aws_security_group_rule" "gp_worker_to_postgres" {
+  type                     = "egress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.gp_worker.id
+  source_security_group_id = aws_security_group.postgres.id
+  description              = "Allow PostgreSQL access"
+}
+
+# Worker egress to HTTPS (Discord REST API, CloudWatch)
+resource "aws_security_group_rule" "gp_worker_https" {
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  security_group_id = aws_security_group.gp_worker.id
+  cidr_blocks       = ["0.0.0.0/0"]
+  description       = "Allow HTTPS for Discord REST API"
+}
+
+# Allow RabbitMQ ingress from Worker
+resource "aws_security_group_rule" "rabbitmq_from_gp_worker" {
+  type                     = "ingress"
+  from_port                = 5671
+  to_port                  = 5671
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.rabbitmq.id
+  source_security_group_id = aws_security_group.gp_worker.id
+  description              = "Allow AMQPS from GP Worker"
+}
+
+# Allow Redis ingress from Worker
+resource "aws_security_group_rule" "redis_from_gp_worker" {
+  type                     = "ingress"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.redis.id
+  source_security_group_id = aws_security_group.gp_worker.id
+  description              = "Allow Redis from GP Worker"
+}
+
+# Allow PostgreSQL ingress from Worker
+resource "aws_security_group_rule" "postgres_from_gp_worker" {
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.postgres.id
+  source_security_group_id = aws_security_group.gp_worker.id
+  description              = "Allow PostgreSQL from GP Worker"
+}
+
+# Worker Task Definition
+resource "aws_ecs_task_definition" "gp_worker" {
+  family                   = "${local.name_prefix}-gp-worker"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = var.gp_worker_cpu
+  memory                   = var.gp_worker_memory
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "gp-worker"
+      image = "${aws_ecr_repository.gp_worker.repository_url}:${var.environment}"
+
+      essential = true
+
+      environment = [
+        {
+          name  = "NODE_ENV"
+          value = var.environment
+        },
+        {
+          name  = "LOG_LEVEL"
+          value = var.log_level
+        },
+        {
+          name  = "HEALTH_PORT"
+          value = "8080"
+        },
+        {
+          name  = "MEMORY_THRESHOLD_MB"
+          value = tostring(var.gp_worker_memory * 0.85)
+        },
+        {
+          name  = "INTERACTION_PREFETCH"
+          value = "5"
+        },
+        {
+          name  = "EVENT_PREFETCH"
+          value = "10"
+        }
+      ]
+
+      secrets = [
+        {
+          name      = "RABBITMQ_URL"
+          valueFrom = aws_secretsmanager_secret.rabbitmq_credentials.arn
+        },
+        {
+          name      = "REDIS_URL"
+          valueFrom = "${aws_secretsmanager_secret.app_config.arn}:REDIS_URL::"
+        },
+        {
+          name      = "DATABASE_URL"
+          valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DATABASE_URL::"
+        },
+        {
+          name      = "DISCORD_APPLICATION_ID"
+          valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DISCORD_APPLICATION_ID::"
+        },
+        {
+          name      = "DISCORD_BOT_TOKEN"
+          valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DISCORD_BOT_TOKEN::"
+        }
+      ]
+
+      portMappings = [
+        {
+          containerPort = 8080
+          hostPort      = 8080
+          protocol      = "tcp"
+        }
+      ]
+
+      healthCheck = {
+        command     = ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
+      }
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.gp_worker.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "gp-worker"
+        }
+      }
+    }
+  ])
+
+  tags = merge(local.common_tags, {
+    Service = "GatewayProxy"
+  })
+}
+
+# Worker Service
+resource "aws_ecs_service" "gp_worker" {
+  name            = "${local.name_prefix}-gp-worker"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.gp_worker.arn
+  desired_count   = var.gp_worker_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = module.vpc.private_subnets
+    security_groups  = [aws_security_group.gp_worker.id]
+    assign_public_ip = false
+  }
+
+  # No load balancer - Worker makes outbound connections only
+
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  tags = merge(local.common_tags, {
+    Service = "GatewayProxy"
+  })
+}

@@ -109,3 +109,22 @@ variable "ingestor_desired_count" {
   type        = number
   default     = 1
 }
+
+# Gateway Proxy Worker Service
+variable "gp_worker_cpu" {
+  description = "GP Worker task CPU units"
+  type        = number
+  default     = 256
+}
+
+variable "gp_worker_memory" {
+  description = "GP Worker task memory (MB)"
+  type        = number
+  default     = 512
+}
+
+variable "gp_worker_desired_count" {
+  description = "Desired GP Worker task count (can scale horizontally)"
+  type        = number
+  default     = 1
+}
