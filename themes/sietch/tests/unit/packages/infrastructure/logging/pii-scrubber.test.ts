@@ -371,8 +371,9 @@ describe('PII Scrubber', () => {
   // ==========================================================================
   describe('Default Constants', () => {
     it('should have expected number of default patterns', () => {
-      // 8 patterns: wallet, discord, email, ipv4, ipv6, api key, bearer, jwt
-      expect(DEFAULT_PII_PATTERNS.length).toBe(8);
+      // 15 patterns after Sprint 82: connection strings (4), bot tokens (2),
+      // wallet, discord ID, email, ipv4, ipv6, api key, bearer, jwt, generic secret
+      expect(DEFAULT_PII_PATTERNS.length).toBe(15);
     });
 
     it('should include common sensitive fields', () => {
@@ -381,6 +382,129 @@ describe('PII Scrubber', () => {
       expect(DEFAULT_SENSITIVE_FIELDS).toContain('token');
       expect(DEFAULT_SENSITIVE_FIELDS).toContain('apiKey');
       expect(DEFAULT_SENSITIVE_FIELDS).toContain('privateKey');
+    });
+
+    it('should include Sprint 82 sensitive fields (bot tokens)', () => {
+      expect(DEFAULT_SENSITIVE_FIELDS).toContain('botToken');
+      expect(DEFAULT_SENSITIVE_FIELDS).toContain('webhookSecret');
+      expect(DEFAULT_SENSITIVE_FIELDS).toContain('discordToken');
+      expect(DEFAULT_SENSITIVE_FIELDS).toContain('telegramToken');
+      expect(DEFAULT_SENSITIVE_FIELDS).toContain('connectionString');
+      expect(DEFAULT_SENSITIVE_FIELDS).toContain('databaseUrl');
+    });
+  });
+
+  // ==========================================================================
+  // Sprint 82 - Bot Token Tests (MED-2)
+  // Note: Using obviously fake tokens to avoid GitHub secret scanning
+  // Real tokens have similar format but different character distributions
+  // ==========================================================================
+  describe('Bot Tokens (Sprint 82 - MED-2)', () => {
+    it('should redact Discord bot tokens', () => {
+      // Discord bot tokens have format: {base64_user_id}.{timestamp}.{hmac}
+      // Using M prefix (valid) + fake base64 data
+      const input = 'Token: MFAKE00TEST00DATA00EXAMPLE.AAAAAA.BBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('Token: [DISCORD_BOT_TOKEN]');
+    });
+
+    it('should redact Discord bot tokens in error messages', () => {
+      // N prefix is also valid for Discord tokens
+      const input = 'Failed to connect with token NFAKE00TEST00DATA00EXAMPLE.BBBBBB.CCCCCCCCCCCCCCCCCCCCCCCCCCCC';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('Failed to connect with token [DISCORD_BOT_TOKEN]');
+    });
+
+    it('should redact Telegram bot tokens', () => {
+      // Telegram bot tokens have format: {bot_id}:{secret} where secret is 35+ chars
+      // Using obviously fake bot ID (all zeros) and alphabetic secret
+      const input = 'Bot token: 0000000000:AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDD';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('Bot token: [TELEGRAM_BOT_TOKEN]');
+    });
+
+    it('should redact Telegram bot tokens in config objects', () => {
+      // Field name triggers [REDACTED] (sensitive field), not pattern match
+      const input = { telegramToken: '1111111111:ZZZZZZZZZZYYYYYYYYYYYYXXXXXXXXXXWWWWW' };
+      const result = scrubber.scrubObject(input);
+      expect(result.telegramToken).toBe('[REDACTED]');
+    });
+
+    it('should redact Discord bot tokens in config objects', () => {
+      // Field name triggers [REDACTED] (sensitive field), not pattern match
+      const input = { botToken: 'MFAKE00TEST00DATA00EXAMPLE.DDDDDD.EEEEEEEEEEEEEEEEEEEEEEEEEEEE' };
+      const result = scrubber.scrubObject(input);
+      expect(result.botToken).toBe('[REDACTED]');
+    });
+  });
+
+  // ==========================================================================
+  // Sprint 82 - Connection String Tests (MED-8)
+  // ==========================================================================
+  describe('Connection Strings (Sprint 82 - MED-8)', () => {
+    it('should redact PostgreSQL connection string credentials', () => {
+      const input = 'DATABASE_URL=postgresql://admin:supersecretpassword@db.example.com:5432/mydb';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('DATABASE_URL=postgresql://admin:***@db.example.com:5432/mydb');
+    });
+
+    it('should redact MySQL connection string credentials', () => {
+      const input = 'mysql://root:password123@localhost:3306/testdb';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('mysql://root:***@localhost:3306/testdb');
+    });
+
+    it('should redact Redis connection string credentials', () => {
+      const input = 'redis://default:myredispassword@redis.example.com:6379';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('redis://default:***@redis.example.com:6379');
+    });
+
+    it('should redact generic database URLs', () => {
+      const input = 'mongodb://user:pass123@cluster.mongodb.net/db';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('mongodb://user:***@cluster.mongodb.net/db');
+    });
+
+    it('should redact connection strings in error logs', () => {
+      const input = 'Connection failed: postgresql://service:hunter2@prod-db.internal:5432/app';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('Connection failed: postgresql://service:***@prod-db.internal:5432/app');
+    });
+
+    it('should redact databaseUrl field in objects', () => {
+      const input = { databaseUrl: 'postgresql://user:secret@host:5432/db' };
+      const result = scrubber.scrubObject(input);
+      expect(result.databaseUrl).toBe('[REDACTED]');
+    });
+
+    it('should redact connectionString field in objects', () => {
+      const input = { connectionString: 'redis://user:pass@host:6379' };
+      const result = scrubber.scrubObject(input);
+      expect(result.connectionString).toBe('[REDACTED]');
+    });
+
+    it('should preserve connection strings without credentials', () => {
+      const input = 'postgresql://localhost:5432/mydb';
+      const result = scrubber.scrub(input);
+      expect(result).toBe('postgresql://localhost:5432/mydb');
+    });
+  });
+
+  // ==========================================================================
+  // Sprint 82 - Webhook Secret Tests
+  // ==========================================================================
+  describe('Webhook Secrets (Sprint 82)', () => {
+    it('should redact webhookSecret field', () => {
+      const input = { webhookSecret: 'whsec_1234567890abcdefghijklmnopqrstuvwxyz' };
+      const result = scrubber.scrubObject(input);
+      expect(result.webhookSecret).toBe('[REDACTED]');
+    });
+
+    it('should redact webhook_secret field', () => {
+      const input = { webhook_secret: 'some_secret_value_here' };
+      const result = scrubber.scrubObject(input);
+      expect(result.webhook_secret).toBe('[REDACTED]');
     });
   });
 });

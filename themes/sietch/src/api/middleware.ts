@@ -1,7 +1,8 @@
 import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { type Store } from 'express-rate-limit';
+import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import { logger } from '../utils/logger.js';
-import { validateApiKey, validateApiKeyAsync } from '../config.js';
+import { config, validateApiKey, validateApiKeyAsync } from '../config.js';
 import { redisService } from '../services/cache/RedisService.js';
 import { getApiKeyAuditLogger } from '../services/security/AdminApiKeyService.js';
 
@@ -11,6 +12,78 @@ import { getApiKeyAuditLogger } from '../services/security/AdminApiKeyService.js
 export interface AuthenticatedRequest extends Request {
   adminName?: string;
   apiKeyId?: string;
+}
+
+// =============================================================================
+// Distributed Rate Limiting (Sprint 82 - MED-4)
+// =============================================================================
+
+/**
+ * Track rate limit events for metrics
+ */
+let rateLimitHitCount = 0;
+let rateLimitRedisFailures = 0;
+
+/**
+ * Get rate limit metrics for monitoring
+ */
+export function getRateLimitMetrics(): { hitCount: number; redisFailures: number } {
+  return { hitCount: rateLimitHitCount, redisFailures: rateLimitRedisFailures };
+}
+
+/**
+ * Reset rate limit metrics (for testing)
+ */
+export function resetRateLimitMetrics(): void {
+  rateLimitHitCount = 0;
+  rateLimitRedisFailures = 0;
+}
+
+/**
+ * Create a Redis store for rate limiting with graceful fallback
+ *
+ * Sprint 82 (MED-4): Distributed rate limiting for multi-instance deployments
+ *
+ * @param prefix - Key prefix for this rate limiter (e.g., 'rl:public', 'rl:admin')
+ * @returns Redis store if available, undefined for memory store fallback
+ */
+function createRateLimitStore(prefix: string): Store | undefined {
+  // Only use Redis store if Redis is enabled and connected
+  if (!config.features.redisEnabled) {
+    logger.debug({ prefix }, 'Rate limiter using memory store (Redis disabled)');
+    return undefined;
+  }
+
+  try {
+    if (!redisService.isConnected()) {
+      logger.warn({ prefix }, 'Rate limiter using memory store (Redis not connected)');
+      return undefined;
+    }
+
+    // Create Redis store with sendCommand for rate-limit-redis v4
+    const store = new RedisStore({
+      // Use sendCommand to execute Redis commands via RedisService
+      sendCommand: async (...args: string[]): Promise<RedisReply> => {
+        try {
+          const result = await redisService.sendCommand(...args);
+          // Cast to RedisReply - ioredis returns compatible types
+          return result as RedisReply;
+        } catch (error) {
+          rateLimitRedisFailures++;
+          logger.error({ error, prefix }, 'Redis rate limit command failed');
+          throw error;
+        }
+      },
+      prefix,
+    });
+
+    logger.info({ prefix }, 'Rate limiter using Redis store (distributed)');
+    return store;
+  } catch (error) {
+    rateLimitRedisFailures++;
+    logger.error({ error, prefix }, 'Failed to create Redis rate limit store, falling back to memory');
+    return undefined;
+  }
 }
 
 /**
@@ -23,14 +96,17 @@ export interface RawBodyRequest extends Request {
 
 /**
  * Rate limiter for public endpoints
- * 100 requests per minute per IP
+ *
+ * Sprint 82 (MED-4): Reduced from 100 to 50 requests per minute
+ * Uses Redis store for distributed rate limiting when available
  */
 export const publicRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 100,
+  max: 50, // Sprint 82: Reduced from 100 to 50
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
+  store: createRateLimitStore('rl:public:'),
   keyGenerator: (req) => {
     // Use X-Forwarded-For for proxied requests, fall back to IP
     const forwarded = req.headers['x-forwarded-for'];
@@ -39,11 +115,26 @@ export const publicRateLimiter = rateLimit({
     }
     return req.ip ?? 'unknown';
   },
+  handler: (req, res, _next, options) => {
+    rateLimitHitCount++;
+    logger.warn(
+      {
+        ip: req.ip,
+        path: req.path,
+        limit: options.max,
+        type: 'public',
+      },
+      'Public rate limit exceeded'
+    );
+    res.status(429).json(options.message);
+  },
 });
 
 /**
  * Rate limiter for admin endpoints
  * 30 requests per minute per API key
+ *
+ * Sprint 82 (MED-4): Uses Redis store for distributed rate limiting
  */
 export const adminRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -51,19 +142,35 @@ export const adminRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many admin requests, please try again later' },
+  store: createRateLimitStore('rl:admin:'),
   keyGenerator: (req) => {
     // Use API key as rate limit key for admin endpoints
     const apiKey = req.headers['x-api-key'];
     if (typeof apiKey === 'string') {
-      return `admin:${apiKey}`;
+      return `admin:${apiKey.substring(0, 16)}`; // Hash prefix for privacy
     }
     return `admin:${req.ip ?? 'unknown'}`;
+  },
+  handler: (req, res, _next, options) => {
+    rateLimitHitCount++;
+    logger.warn(
+      {
+        ip: req.ip,
+        path: req.path,
+        limit: options.max,
+        type: 'admin',
+      },
+      'Admin rate limit exceeded'
+    );
+    res.status(429).json(options.message);
   },
 });
 
 /**
  * Rate limiter for member-facing API endpoints
  * 60 requests per minute per IP (Sprint 9)
+ *
+ * Sprint 82 (MED-4): Uses Redis store for distributed rate limiting
  */
 export const memberRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -71,6 +178,7 @@ export const memberRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
+  store: createRateLimitStore('rl:member:'),
   keyGenerator: (req) => {
     // Use X-Forwarded-For for proxied requests, fall back to IP
     const forwarded = req.headers['x-forwarded-for'];
@@ -78,6 +186,19 @@ export const memberRateLimiter = rateLimit({
       return `member:${forwarded.split(',')[0]?.trim() ?? 'unknown'}`;
     }
     return `member:${req.ip ?? 'unknown'}`;
+  },
+  handler: (req, res, _next, options) => {
+    rateLimitHitCount++;
+    logger.warn(
+      {
+        ip: req.ip,
+        path: req.path,
+        limit: options.max,
+        type: 'member',
+      },
+      'Member rate limit exceeded'
+    );
+    res.status(429).json(options.message);
   },
 });
 
@@ -90,6 +211,8 @@ export const memberRateLimiter = rateLimit({
  * - Prevents brute-force signature guessing attempts
  * - Returns standard headers for client visibility
  *
+ * Sprint 82 (MED-4): Uses Redis store for distributed rate limiting
+ *
  * @see https://developer.paddle.com/webhooks
  */
 export const webhookRateLimiter = rateLimit({
@@ -101,6 +224,7 @@ export const webhookRateLimiter = rateLimit({
     error: 'Too many webhook requests',
     retryAfter: 60,
   },
+  store: createRateLimitStore('rl:webhook:'),
   keyGenerator: (req) => {
     // Use X-Forwarded-For for proxied requests
     const forwarded = req.headers['x-forwarded-for'];
@@ -110,6 +234,7 @@ export const webhookRateLimiter = rateLimit({
     return `webhook:${req.ip ?? 'unknown'}`;
   },
   handler: (req, res, _next, options) => {
+    rateLimitHitCount++;
     // Log rate limit violations for monitoring
     const ip = req.ip ?? 'unknown';
     logger.warn(
@@ -118,6 +243,7 @@ export const webhookRateLimiter = rateLimit({
         path: req.path,
         limit: options.max,
         windowMs: options.windowMs,
+        type: 'webhook',
       },
       'Webhook rate limit exceeded (HIGH-2 security)'
     );

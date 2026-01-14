@@ -68,14 +68,74 @@ export interface ScrubResult {
  * Standard PII patterns for log scrubbing
  *
  * Order matters: More specific patterns should come before general ones.
+ *
+ * Sprint 82 (MED-2): Added Discord/Telegram bot tokens and connection strings
  */
 export const DEFAULT_PII_PATTERNS: PIIPattern[] = [
+  // ==========================================================================
+  // Connection Strings (Sprint 82 - MED-8)
+  // Must come first to avoid partial matches by other patterns
+  // ==========================================================================
+
+  // PostgreSQL connection strings (postgresql://user:pass@host:port/db)
+  {
+    pattern: /postgresql:\/\/([^:]+):([^@]+)@/gi,
+    replacement: 'postgresql://$1:***@',
+    description: 'PostgreSQL connection string',
+  },
+  // MySQL connection strings (mysql://user:pass@host:port/db)
+  {
+    pattern: /mysql:\/\/([^:]+):([^@]+)@/gi,
+    replacement: 'mysql://$1:***@',
+    description: 'MySQL connection string',
+  },
+  // Redis connection strings (redis://user:pass@host:port)
+  {
+    pattern: /redis:\/\/([^:]+):([^@]+)@/gi,
+    replacement: 'redis://$1:***@',
+    description: 'Redis connection string',
+  },
+  // Generic database connection strings (scheme://user:pass@host)
+  {
+    pattern: /(\w+):\/\/([^:]+):([^@]+)@([^/\s]+)/gi,
+    replacement: '$1://$2:***@$4',
+    description: 'Database connection string',
+  },
+
+  // ==========================================================================
+  // Bot Tokens (Sprint 82 - MED-2)
+  // ==========================================================================
+
+  // Discord bot tokens (NTk3MTk0Nzg1... format - base64-like with periods)
+  // Format: {base64_user_id}.{timestamp}.{hmac}
+  {
+    pattern: /[MN][A-Za-z\d]{23,}\.[\w-]{6}\.[\w-]{27,}/g,
+    replacement: '[DISCORD_BOT_TOKEN]',
+    description: 'Discord bot token',
+  },
+  // Telegram bot tokens (123456789:ABCdefGHIjklMNOpqrsTUVwxyz format)
+  // Token format: {bot_id}:{secret} where secret is 35+ alphanumeric chars
+  {
+    pattern: /\d{8,10}:[A-Za-z0-9_-]{35,}/g,
+    replacement: '[TELEGRAM_BOT_TOKEN]',
+    description: 'Telegram bot token',
+  },
+
+  // ==========================================================================
+  // Wallet & Blockchain
+  // ==========================================================================
+
   // Ethereum wallet addresses (40 hex chars after 0x)
   {
     pattern: /0x[a-fA-F0-9]{40}/g,
     replacement: '0x[WALLET_REDACTED]',
     description: 'Ethereum wallet address',
   },
+
+  // ==========================================================================
+  // User Identifiers
+  // ==========================================================================
+
   // Discord user IDs (17-19 digit snowflakes)
   // More strict to avoid matching random numbers
   {
@@ -89,6 +149,11 @@ export const DEFAULT_PII_PATTERNS: PIIPattern[] = [
     replacement: '[EMAIL_REDACTED]',
     description: 'Email address',
   },
+
+  // ==========================================================================
+  // Network Addresses
+  // ==========================================================================
+
   // IPv4 addresses
   {
     pattern: /(?<![0-9])(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?![0-9])/g,
@@ -101,6 +166,11 @@ export const DEFAULT_PII_PATTERNS: PIIPattern[] = [
     replacement: '[IPV6_REDACTED]',
     description: 'IPv6 address',
   },
+
+  // ==========================================================================
+  // API Keys & Tokens
+  // ==========================================================================
+
   // API keys with common prefixes
   {
     pattern: /(?:sk_|pk_|api_|key_)[a-zA-Z0-9_-]{20,}/g,
@@ -119,6 +189,14 @@ export const DEFAULT_PII_PATTERNS: PIIPattern[] = [
     replacement: '[JWT_REDACTED]',
     description: 'JWT token',
   },
+  // Generic long tokens (webhook secrets, API keys without prefix)
+  // 32+ character alphanumeric strings that look like secrets
+  {
+    pattern: /(?:secret|token|key|password|passwd|pwd)["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]{32,})["']?/gi,
+    replacement: '$&'.replace(/([a-zA-Z0-9_-]{32,})/, '[SECRET_REDACTED]'),
+    description: 'Generic secret value',
+  },
+
   // Note: Phone numbers and credit cards removed - too aggressive for web3 context
   // and would match version numbers, counts, and other numeric data.
   // If needed, add more specific patterns based on actual data formats.
@@ -126,6 +204,8 @@ export const DEFAULT_PII_PATTERNS: PIIPattern[] = [
 
 /**
  * Fields that should be completely redacted if present
+ *
+ * Sprint 82 (MED-2): Added bot tokens and webhook secrets
  */
 export const DEFAULT_SENSITIVE_FIELDS = [
   'password',
@@ -142,6 +222,19 @@ export const DEFAULT_SENSITIVE_FIELDS = [
   'credit_card',
   'ssn',
   'socialSecurityNumber',
+  // Sprint 82 - Bot tokens and secrets
+  'botToken',
+  'bot_token',
+  'webhookSecret',
+  'webhook_secret',
+  'discordToken',
+  'discord_token',
+  'telegramToken',
+  'telegram_token',
+  'connectionString',
+  'connection_string',
+  'databaseUrl',
+  'database_url',
 ];
 
 // =============================================================================

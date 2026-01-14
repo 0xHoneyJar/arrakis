@@ -633,6 +633,40 @@ class RedisService {
   }
 
   // ---------------------------------------------------------------------------
+  // Raw Command Execution (Sprint 82 - MED-4)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Send a raw Redis command
+   *
+   * Used by rate-limit-redis for distributed rate limiting.
+   * Wraps ioredis call() method for generic command execution.
+   *
+   * @param args - Command arguments (e.g., ['GET', 'key'] or ['SET', 'key', 'value', 'EX', '60'])
+   * @returns Command result
+   * @throws Error if Redis is unavailable
+   */
+  async sendCommand(...args: string[]): Promise<unknown> {
+    if (!this.isConnected()) {
+      throw new Error('Redis not connected');
+    }
+
+    const [command, ...rest] = args;
+    if (!command) {
+      throw new Error('No command provided');
+    }
+
+    try {
+      // Use ioredis call() method for generic command execution
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return await (this.client as any).call(command, ...rest);
+    } catch (error) {
+      logger.warn({ command, error: (error as Error).message }, 'Redis command failed');
+      throw error;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Health & Monitoring
   // ---------------------------------------------------------------------------
 
