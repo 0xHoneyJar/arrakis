@@ -55,14 +55,26 @@ Thank you for your interest in contributing to Sietch! This document provides gu
 
 ## Making Changes
 
+### Branching Strategy
+
+We use a modified GitFlow model. See [DEVELOPMENT.md](./DEVELOPMENT.md) for full details.
+
+**Key branches:**
+- `main` - Production code (protected, requires 2 reviewers)
+- `staging` - Pre-production validation (protected, requires 1 reviewer)
+- `feature/*` - New features (branch from staging)
+- `fix/*` - Bug fixes (branch from staging)
+- `hotfix/*` - Production emergencies (branch from main)
+
 ### Branch Naming
 
-Use descriptive branch names:
-- `feature/add-new-badge` - New features
-- `fix/tier-calculation-bug` - Bug fixes
+Use descriptive branch names with optional ticket reference:
+- `feature/ARK-123-add-new-badge` - New features
+- `fix/ARK-456-tier-calculation-bug` - Bug fixes
 - `docs/update-readme` - Documentation
 - `refactor/cleanup-services` - Code improvements
 - `test/add-integration-tests` - Test additions
+- `hotfix/ARK-789-critical-auth-fix` - Production emergencies
 
 ### Code Style
 
@@ -136,13 +148,19 @@ dates near year boundaries. Now uses the Thursday rule per ISO 8601.
 
 ## Pull Request Process
 
-1. **Create a feature branch** from `main`
+### Standard Features (staging -> main flow)
+
+1. **Create a feature branch** from `staging`
+   ```bash
+   git checkout staging && git pull
+   git checkout -b feature/your-feature
+   ```
 2. **Make your changes** with appropriate tests
 3. **Run the full test suite** - `npm run test:run`
 4. **Run linting** - `npm run lint`
 5. **Run type checking** - `npm run typecheck`
 6. **Update documentation** if needed
-7. **Create a pull request** with:
+7. **Create a pull request to staging** with:
    - Clear title following commit conventions
    - Description of changes
    - Link to related issues
@@ -168,6 +186,27 @@ Brief description of changes
 - [ ] Documentation updated
 - [ ] CHANGELOG.md updated (for features/fixes)
 ```
+
+### Quality Gates
+
+All PRs must pass these automated checks:
+- **Build** - TypeScript compilation succeeds
+- **Tests** - All unit tests pass with >= 80% coverage
+- **Lint** - ESLint passes with no errors
+- **Security** - npm audit finds no high/critical vulnerabilities
+- **Docker** - Docker image builds successfully
+
+### Hotfix Process
+
+For critical production issues (use sparingly):
+
+1. **Branch from main**
+   ```bash
+   git checkout main && git pull
+   git checkout -b hotfix/critical-fix
+   ```
+2. **Fix, test, and create PR directly to main**
+3. **After merge**, cherry-pick to staging immediately
 
 ## Versioning
 

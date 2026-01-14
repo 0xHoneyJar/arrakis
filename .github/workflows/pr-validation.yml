@@ -1,0 +1,280 @@
+# =============================================================================
+# Pull Request Validation Workflow
+# =============================================================================
+# Comprehensive quality gates for all PRs to staging and main branches
+#
+# Quality Gates:
+#   - Build verification
+#   - Unit tests (>= 80% coverage)
+#   - Type checking
+#   - Linting
+#   - Security scanning
+#   - Docker build test
+# =============================================================================
+
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - 'themes/sietch/**'
+      - '.github/workflows/pr-validation.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  WORKING_DIR: './themes/sietch'
+
+jobs:
+  # ===========================================================================
+  # Build Verification
+  # ===========================================================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.WORKING_DIR }}/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: ${{ env.WORKING_DIR }}/dist
+          retention-days: 1
+
+  # ===========================================================================
+  # Unit Tests with Coverage
+  # ===========================================================================
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    env:
+      SKIP_INTEGRATION_TESTS: 'true'
+      API_KEY_PEPPER: 'test-pepper-32-char-minimum-value'
+      RATE_LIMIT_SALT: 'test-salt-value'
+      WEBHOOK_SECRET: 'test-webhook-secret'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.WORKING_DIR }}/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Check coverage threshold
+        run: |
+          # Extract coverage percentage from report
+          COVERAGE=$(cat coverage/coverage-summary.json | jq -r '.total.lines.pct')
+          echo "Coverage: ${COVERAGE}%"
+
+          # Check if coverage meets threshold (80%)
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below threshold of 80%"
+            exit 1
+          fi
+
+          echo "Coverage check passed: ${COVERAGE}% >= 80%"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ${{ env.WORKING_DIR }}/coverage
+          retention-days: 7
+
+  # ===========================================================================
+  # Linting
+  # ===========================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.WORKING_DIR }}/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  # ===========================================================================
+  # Security Scanning
+  # ===========================================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.WORKING_DIR }}/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level=high || {
+            echo "::warning::Security vulnerabilities found"
+            exit 1
+          }
+
+      - name: Check for secrets in code
+        run: |
+          # Simple check for common secret patterns
+          if grep -rE "(password|secret|api_key|apikey|token).*=.*['\"][^'\"]{10,}['\"]" src/ --include="*.ts" --include="*.js" 2>/dev/null | grep -v "test" | grep -v ".test." | grep -v "example"; then
+            echo "::error::Potential secrets found in source code"
+            exit 1
+          fi
+          echo "No secrets detected in source code"
+
+  # ===========================================================================
+  # Docker Build Test
+  # ===========================================================================
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [build, test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (test)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./themes/sietch
+          file: ./themes/sietch/Dockerfile
+          push: false
+          tags: arrakis-api:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ===========================================================================
+  # PR Summary
+  # ===========================================================================
+  summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs: [build, test, lint, security, docker]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## PR Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Build status
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "- :white_check_mark: **Build**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- :x: **Build**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Test status
+          if [ "${{ needs.test.result }}" == "success" ]; then
+            echo "- :white_check_mark: **Tests**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- :x: **Tests**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Lint status
+          if [ "${{ needs.lint.result }}" == "success" ]; then
+            echo "- :white_check_mark: **Lint**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- :x: **Lint**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Security status
+          if [ "${{ needs.security.result }}" == "success" ]; then
+            echo "- :white_check_mark: **Security**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- :x: **Security**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Docker status
+          if [ "${{ needs.docker.result }}" == "success" ]; then
+            echo "- :white_check_mark: **Docker Build**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- :x: **Docker Build**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "All checks must pass before merging." >> $GITHUB_STEP_SUMMARY
+
+      - name: Check all jobs passed
+        if: |
+          needs.build.result != 'success' ||
+          needs.test.result != 'success' ||
+          needs.lint.result != 'success' ||
+          needs.security.result != 'success' ||
+          needs.docker.result != 'success'
+        run: |
+          echo "One or more quality gates failed"
+          exit 1
