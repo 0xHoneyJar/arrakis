@@ -139,10 +139,13 @@ const configSchema = z.object({
   }),
 
   // Paddle Configuration (Paddle Migration - Sprint 2)
+  // Sprint 80 (CRIT-1): webhookSecret is required when billing is enabled
   paddle: z.object({
-    apiKey: z.string().optional(),
-    webhookSecret: z.string().optional(),
-    clientToken: z.string().optional(),
+    apiKey: z.string().min(1).optional(),
+    // SECURITY (Sprint 80 CRIT-1): Webhook secret MUST be set when billing is enabled
+    // This prevents authentication bypass attacks on the billing webhook endpoint
+    webhookSecret: z.string().min(1).optional(),
+    clientToken: z.string().min(1).optional(),
     environment: z.enum(['sandbox', 'production']).default('sandbox'),
     priceIds: priceIdsSchema,
     // One-time product price IDs (nested structure for cleaner access)
@@ -271,6 +274,99 @@ const configSchema = z.object({
   // Grace Period Configuration
   gracePeriod: z.object({
     hours: z.coerce.number().int().min(1).default(24),
+  }),
+
+  // ==========================================================================
+  // Sprint 81: Security Configuration (HIGH-2, MED-1, MED-7)
+  // ==========================================================================
+
+  // Security Configuration
+  security: z.object({
+    // API Key pepper for HMAC operations
+    // MED-1: Must not be the default value in production
+    apiKeyPepper: z.string().min(1).default('CHANGE_ME_IN_PRODUCTION'),
+    // Rate limit salt for IP hashing
+    rateLimitSalt: z.string().min(1).optional(),
+    // Webhook secret for KillSwitch protocol
+    webhookSecret: z.string().min(1).optional(),
+    // Allowed webhooks for KillSwitch (comma-separated)
+    allowedWebhooks: z.string().optional().transform((val) =>
+      val ? val.split(',').map((w) => w.trim()).filter(Boolean) : []
+    ),
+  }),
+
+  // CORS Configuration (MED-7)
+  cors: z.object({
+    // Allowed origins (comma-separated) - '*' allows all (not recommended for production)
+    allowedOrigins: z.string().default('*').transform((val) =>
+      val === '*' ? ['*'] : val.split(',').map((o) => o.trim()).filter(Boolean)
+    ),
+    // Allow credentials (cookies, auth headers)
+    credentials: envBooleanSchema.default(false),
+    // Max age for preflight cache in seconds
+    maxAge: z.coerce.number().int().min(0).max(86400).default(86400),
+  }),
+
+  // Verification Configuration (HIGH-2 - Direct env var access)
+  verification: z.object({
+    // Base URL for verification links (e.g., https://api.arrakis.community)
+    // Sprint 81: proper optional URL handling - invalid URLs become undefined
+    baseUrl: z.string().optional().transform((val) => {
+      if (!val || val.length === 0) return undefined;
+      try {
+        new URL(val);
+        return val;
+      } catch {
+        return undefined;
+      }
+    }),
+  }),
+
+  // Duo MFA Configuration (HIGH-2 - Direct env var access)
+  mfa: z.object({
+    duo: z.object({
+      integrationKey: z.string().min(1).optional(),
+      secretKey: z.string().min(1).optional(),
+      apiHostname: z.string().min(1).optional(),
+    }),
+  }),
+
+  // Boost Configuration (HIGH-2 - Direct env var access)
+  boost: z.object({
+    thresholds: z.object({
+      level1: z.coerce.number().int().min(0).default(1),
+      level2: z.coerce.number().int().min(0).default(5),
+      level3: z.coerce.number().int().min(0).default(10),
+    }),
+    pricing: z.object({
+      pricePerMonthCents: z.coerce.number().int().min(0).default(499),
+    }),
+    // JSON bundles configuration (optional)
+    bundles: z.string().optional(),
+  }),
+
+  // Upgrade URL for billing gatekeeper (Sprint 81: proper optional URL handling)
+  // Accepts valid URL, or undefined. Non-URL strings are coerced to undefined.
+  upgradeUrl: z.string().optional().transform((val) => {
+    if (!val || val.length === 0) return undefined;
+    try {
+      new URL(val); // Validate URL format
+      return val;
+    } catch {
+      return undefined; // Invalid URL becomes undefined
+    }
+  }),
+
+  // Base URL for badge routes (Sprint 81: proper optional URL handling)
+  // Accepts valid URL, or undefined. Non-URL strings are coerced to undefined.
+  baseUrl: z.string().optional().transform((val) => {
+    if (!val || val.length === 0) return undefined;
+    try {
+      new URL(val); // Validate URL format
+      return val;
+    } catch {
+      return undefined; // Invalid URL becomes undefined
+    }
   }),
 
   // Social Layer Configuration (v2.0)
@@ -432,6 +528,43 @@ function parseConfig() {
     gracePeriod: {
       hours: process.env.GRACE_PERIOD_HOURS ?? '24',
     },
+    // ==========================================================================
+    // Sprint 81: Security Configuration (HIGH-2, MED-1, MED-7)
+    // ==========================================================================
+    security: {
+      apiKeyPepper: process.env.API_KEY_PEPPER ?? 'CHANGE_ME_IN_PRODUCTION',
+      rateLimitSalt: process.env.RATE_LIMIT_SALT,
+      webhookSecret: process.env.WEBHOOK_SECRET,
+      allowedWebhooks: process.env.ALLOWED_WEBHOOKS,
+    },
+    cors: {
+      allowedOrigins: process.env.CORS_ALLOWED_ORIGINS ?? '*',
+      credentials: process.env.CORS_CREDENTIALS ?? 'false',
+      maxAge: process.env.CORS_MAX_AGE ?? '86400',
+    },
+    verification: {
+      baseUrl: process.env.VERIFY_BASE_URL,
+    },
+    mfa: {
+      duo: {
+        integrationKey: process.env.DUO_INTEGRATION_KEY,
+        secretKey: process.env.DUO_SECRET_KEY,
+        apiHostname: process.env.DUO_API_HOSTNAME,
+      },
+    },
+    boost: {
+      thresholds: {
+        level1: process.env.BOOST_LEVEL1_THRESHOLD ?? '1',
+        level2: process.env.BOOST_LEVEL2_THRESHOLD ?? '5',
+        level3: process.env.BOOST_LEVEL3_THRESHOLD ?? '10',
+      },
+      pricing: {
+        pricePerMonthCents: process.env.BOOST_PRICE_PER_MONTH_CENTS ?? '499',
+      },
+      bundles: process.env.BOOST_BUNDLES,
+    },
+    upgradeUrl: process.env.UPGRADE_URL,
+    baseUrl: process.env.BASE_URL,
     // Social Layer Configuration (v2.0)
     socialLayer: {
       activity: {
@@ -598,6 +731,43 @@ export interface Config {
   gracePeriod: {
     hours: number;
   };
+  // ==========================================================================
+  // Sprint 81: Security Configuration (HIGH-2, MED-1, MED-7)
+  // ==========================================================================
+  security: {
+    apiKeyPepper: string;
+    rateLimitSalt?: string;
+    webhookSecret?: string;
+    allowedWebhooks: string[];
+  };
+  cors: {
+    allowedOrigins: string[];
+    credentials: boolean;
+    maxAge: number;
+  };
+  verification: {
+    baseUrl?: string;
+  };
+  mfa: {
+    duo: {
+      integrationKey?: string;
+      secretKey?: string;
+      apiHostname?: string;
+    };
+  };
+  boost: {
+    thresholds: {
+      level1: number;
+      level2: number;
+      level3: number;
+    };
+    pricing: {
+      pricePerMonthCents: number;
+    };
+    bundles?: string;
+  };
+  upgradeUrl?: string;
+  baseUrl?: string;
   // Social Layer Configuration (v2.0)
   socialLayer: {
     activity: {
@@ -691,6 +861,46 @@ function validateStartupConfig(cfg: typeof parsedConfig): void {
       'SECURITY WARNING: Running in production without Vault. Sensitive secrets are stored in environment variables. Consider enabling FEATURE_VAULT_ENABLED=true for enhanced security.'
     );
   }
+
+  // ==========================================================================
+  // Sprint 81: Security Configuration Validation
+  // ==========================================================================
+
+  // MED-1: Reject default API_KEY_PEPPER value in production
+  if (isProduction && cfg.security.apiKeyPepper === 'CHANGE_ME_IN_PRODUCTION') {
+    logger.fatal('API_KEY_PEPPER must be changed from default value in production');
+    throw new Error(
+      'SECURITY ERROR: API_KEY_PEPPER is set to default value "CHANGE_ME_IN_PRODUCTION". ' +
+        'Generate a secure 32+ character random string for production use.'
+    );
+  }
+
+  // MED-1: Enforce minimum pepper length in production
+  if (isProduction && cfg.security.apiKeyPepper.length < 32) {
+    logger.fatal('API_KEY_PEPPER must be at least 32 characters in production');
+    throw new Error(
+      'SECURITY ERROR: API_KEY_PEPPER must be at least 32 characters in production. ' +
+        `Current length: ${cfg.security.apiKeyPepper.length}`
+    );
+  }
+
+  // MED-5: Require Telegram webhook secret when webhook URL is configured
+  if (cfg.features.telegramEnabled && cfg.telegram.webhookUrl && !cfg.telegram.webhookSecret) {
+    logger.fatal('TELEGRAM_WEBHOOK_SECRET is required when webhook URL is configured');
+    throw new Error(
+      'Missing required configuration: TELEGRAM_WEBHOOK_SECRET must be set when ' +
+        'FEATURE_TELEGRAM_ENABLED=true and TELEGRAM_WEBHOOK_URL is configured. ' +
+        'This prevents unauthorized webhook calls.'
+    );
+  }
+
+  // MED-7: Warn about wildcard CORS in production
+  if (isProduction && cfg.cors.allowedOrigins.includes('*')) {
+    logger.warn(
+      'SECURITY WARNING: CORS is configured to allow all origins (*). ' +
+        'Consider setting CORS_ALLOWED_ORIGINS to specific domains in production.'
+    );
+  }
 }
 
 // Run startup validation
@@ -716,6 +926,14 @@ export const config: Config = {
   database: parsedConfig.database,
   logging: parsedConfig.logging,
   gracePeriod: parsedConfig.gracePeriod,
+  // Sprint 81: Security configuration
+  security: parsedConfig.security,
+  cors: parsedConfig.cors,
+  verification: parsedConfig.verification,
+  mfa: parsedConfig.mfa,
+  boost: parsedConfig.boost,
+  upgradeUrl: parsedConfig.upgradeUrl,
+  baseUrl: parsedConfig.baseUrl,
   socialLayer: parsedConfig.socialLayer,
 };
 

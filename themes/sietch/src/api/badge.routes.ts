@@ -203,8 +203,8 @@ badgeRouter.post(
         profile.nym // name
       );
 
-      // Create checkout session using Paddle provider
-      const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+      // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+      const baseUrl = config.baseUrl || 'http://localhost:3000';
       const result = await provider.createOneTimeCheckoutSession({
         customerId,
         priceId,

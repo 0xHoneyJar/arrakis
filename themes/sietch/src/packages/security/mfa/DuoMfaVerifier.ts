@@ -18,6 +18,7 @@
 
 import * as crypto from 'crypto';
 import type { MfaVerifier } from '../../infrastructure/EnhancedHITLApprovalGate.js';
+import { config } from '../../../config.js';
 
 // =============================================================================
 // Types
@@ -486,19 +487,20 @@ export class DuoMfaVerifier implements MfaVerifier {
 }
 
 /**
- * Factory function to create DuoMfaVerifier from environment variables
+ * Factory function to create DuoMfaVerifier from validated config
+ * Sprint 81 (HIGH-2): Uses config instead of direct env var access
  */
 export function createDuoMfaVerifierFromEnv(options?: {
   debug?: boolean;
   httpClient?: DuoHttpClient;
 }): DuoMfaVerifier {
-  const integrationKey = process.env.DUO_INTEGRATION_KEY;
-  const secretKey = process.env.DUO_SECRET_KEY;
-  const apiHostname = process.env.DUO_API_HOSTNAME;
+  const integrationKey = config.mfa.duo.integrationKey;
+  const secretKey = config.mfa.duo.secretKey;
+  const apiHostname = config.mfa.duo.apiHostname;
 
   if (!integrationKey || !secretKey || !apiHostname) {
     throw new Error(
-      'Duo MFA environment variables not configured. ' +
+      'Duo MFA not configured. ' +
         'Required: DUO_INTEGRATION_KEY, DUO_SECRET_KEY, DUO_API_HOSTNAME'
     );
   }
@@ -514,11 +516,12 @@ export function createDuoMfaVerifierFromEnv(options?: {
 
 /**
  * Check if Duo MFA is configured
+ * Sprint 81 (HIGH-2): Uses config instead of direct env var access
  */
 export function isDuoConfigured(): boolean {
   return !!(
-    process.env.DUO_INTEGRATION_KEY &&
-    process.env.DUO_SECRET_KEY &&
-    process.env.DUO_API_HOSTNAME
+    config.mfa.duo.integrationKey &&
+    config.mfa.duo.secretKey &&
+    config.mfa.duo.apiHostname
   );
 }

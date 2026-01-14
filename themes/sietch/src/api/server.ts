@@ -122,13 +122,44 @@ function createApp(): Application {
 
   expressApp.use(httpLogger);
 
-  // CORS headers
+  // ==========================================================================
+  // CORS Configuration (Sprint 81 - MED-7)
+  // ==========================================================================
+  // Configurable CORS via environment variables:
+  // - CORS_ALLOWED_ORIGINS: Comma-separated list of allowed origins, or '*' for all
+  // - CORS_CREDENTIALS: Enable credentials (cookies, auth headers)
+  // - CORS_MAX_AGE: Preflight cache duration in seconds
+  //
+  // @security MED-7: Explicit CORS configuration instead of hardcoded '*'
   expressApp.use((req, res, next) => {
-    // Allow requests from any origin (Collab.Land will be calling from various sources)
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, X-Request-ID, X-Member-Nym');
-    res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+    const origin = req.headers.origin;
+    const allowedOrigins = config.cors.allowedOrigins;
+
+    // Determine if origin is allowed
+    let allowOrigin = '*';
+    if (allowedOrigins.includes('*')) {
+      // Allow all origins (backward compatible, but not recommended for production)
+      allowOrigin = '*';
+    } else if (origin && allowedOrigins.includes(origin)) {
+      // Specific origin is in whitelist
+      allowOrigin = origin;
+    } else if (origin) {
+      // Origin not in whitelist - don't set header (browser will block)
+      // But still process the request (for non-CORS clients)
+      allowOrigin = '';
+    }
+
+    if (allowOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, X-Request-ID, X-Member-Nym, Authorization');
+    res.setHeader('Access-Control-Max-Age', String(config.cors.maxAge));
+
+    // Conditionally enable credentials
+    if (config.cors.credentials && allowOrigin !== '*') {
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
 
     // Handle preflight requests
     if (req.method === 'OPTIONS') {

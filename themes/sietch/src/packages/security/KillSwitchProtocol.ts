@@ -28,6 +28,7 @@ import type {
 import type { WizardSessionStore } from '../wizard/WizardSessionStore.js';
 import type { VaultSigningAdapter } from '../adapters/vault/VaultSigningAdapter.js';
 import * as crypto from 'crypto';
+import { config } from '../../config.js';
 
 /**
  * Kill switch protocol configuration
@@ -566,7 +567,8 @@ export class KillSwitchProtocol {
     }
 
     // HIGH-002: Validate webhook URL against whitelist
-    const allowedWebhooks = process.env.ALLOWED_WEBHOOKS?.split(',') || [];
+    // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+    const allowedWebhooks = config.security.allowedWebhooks;
     if (allowedWebhooks.length > 0) {
       const isAllowed = allowedWebhooks.some((allowed) => webhookUrl.startsWith(allowed.trim()));
       if (!isAllowed) {
@@ -591,11 +593,11 @@ export class KillSwitchProtocol {
     const payloadString = JSON.stringify(payload);
 
     // HIGH-002: Sign webhook payload with HMAC-SHA256
-    // SECURITY: Fail-closed - require explicit secret (no predictable default)
-    const webhookSecret = process.env.WEBHOOK_SECRET;
+    // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+    const webhookSecret = config.security.webhookSecret;
     if (!webhookSecret) {
       throw new Error(
-        'WEBHOOK_SECRET environment variable is required for webhook authentication. ' +
+        'WEBHOOK_SECRET must be configured for webhook authentication. ' +
         'Generate one with: openssl rand -hex 32'
       );
     }

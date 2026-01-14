@@ -22,6 +22,18 @@ vi.mock('../../../src/config.js', () => ({
     featureFlags: {
       gatekeeperEnabled: true,
     },
+    // Sprint 81: Add boost config for BoostService
+    boost: {
+      thresholds: {
+        level1: 2,
+        level2: 7,
+        level3: 15,
+      },
+      pricing: {
+        pricePerMonthCents: 499,
+      },
+      bundles: undefined,
+    },
   },
 }));
 

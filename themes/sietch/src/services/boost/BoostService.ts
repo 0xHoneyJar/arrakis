@@ -165,17 +165,15 @@ class BoostService {
   private billingProvider: IBillingProvider | null = null;
 
   constructor() {
-    // Initialize with defaults, can be overridden via config
+    // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
     this.thresholds = {
-      level1: parseInt(process.env.BOOST_LEVEL1_THRESHOLD ?? String(DEFAULT_BOOST_THRESHOLDS.level1)),
-      level2: parseInt(process.env.BOOST_LEVEL2_THRESHOLD ?? String(DEFAULT_BOOST_THRESHOLDS.level2)),
-      level3: parseInt(process.env.BOOST_LEVEL3_THRESHOLD ?? String(DEFAULT_BOOST_THRESHOLDS.level3)),
+      level1: config.boost.thresholds.level1,
+      level2: config.boost.thresholds.level2,
+      level3: config.boost.thresholds.level3,
     };
 
     this.pricing = {
-      pricePerMonthCents: parseInt(
-        process.env.BOOST_PRICE_PER_MONTH_CENTS ?? String(DEFAULT_BOOST_PRICING.pricePerMonthCents)
-      ),
+      pricePerMonthCents: config.boost.pricing.pricePerMonthCents,
       bundles: this.loadBundlePricing(),
     };
   }
@@ -201,12 +199,13 @@ class BoostService {
    * Load bundle pricing from environment or defaults
    */
   private loadBundlePricing(): BoostBundle[] {
-    const envBundles = process.env.BOOST_BUNDLES;
+    // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+    const envBundles = config.boost.bundles;
     if (envBundles) {
       try {
         return JSON.parse(envBundles);
       } catch {
-        logger.warn('Invalid BOOST_BUNDLES env var, using defaults');
+        logger.warn('Invalid BOOST_BUNDLES config, using defaults');
       }
     }
     return DEFAULT_BOOST_PRICING.bundles;

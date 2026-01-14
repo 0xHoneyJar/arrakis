@@ -28,6 +28,7 @@ import crypto from 'crypto';
 
 import { logger } from '../../utils/logger.js';
 import { ValidationError, NotFoundError } from '../middleware.js';
+import { config } from '../../config.js';
 
 // =============================================================================
 // Security Constants
@@ -143,8 +144,8 @@ function validateOrigin(req: Request, hostname: string): boolean {
   // Build list of expected hostnames
   const expectedHostnames: string[] = [];
 
-  // Get expected origin from environment
-  const verifyBaseUrl = process.env.VERIFY_BASE_URL;
+  // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+  const verifyBaseUrl = config.verification.baseUrl;
   if (verifyBaseUrl) {
     const baseHostname = parseHostname(verifyBaseUrl);
     if (baseHostname) {

@@ -471,8 +471,8 @@ async function handleVerifyReset(
  * Uses VERIFY_BASE_URL env var if set, otherwise constructs from API config
  */
 function buildVerifyUrl(sessionId: string): string {
-  // Check for explicit verify URL config
-  const baseUrl = process.env.VERIFY_BASE_URL;
+  // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+  const baseUrl = config.verification.baseUrl;
 
   if (baseUrl) {
     return `${baseUrl.replace(/\/$/, '')}/verify/${sessionId}`;

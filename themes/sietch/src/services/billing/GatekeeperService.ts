@@ -366,8 +366,8 @@ class GatekeeperService {
     communityId: string,
     requiredTier: SubscriptionTier
   ): string {
-    // In production, this would link to Paddle Checkout with pre-selected tier
-    const baseUrl = process.env.UPGRADE_URL || 'https://sietch.io/upgrade';
+    // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+    const baseUrl = config.upgradeUrl || 'https://sietch.io/upgrade';
     return `${baseUrl}?tier=${requiredTier}&community=${communityId}`;
   }
 

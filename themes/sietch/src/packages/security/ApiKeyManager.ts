@@ -19,6 +19,7 @@ import type { Redis } from 'ioredis';
 import { apiKeys, type ApiKey, type NewApiKey } from '../adapters/storage/schema.js';
 import { eq, and, desc, or, isNull, lte, gt } from 'drizzle-orm';
 import type { AuditLogPersistence, AuditLogEntry } from './AuditLogPersistence.js';
+import { config } from '../../config.js';
 
 // =============================================================================
 // Types
@@ -800,10 +801,11 @@ export class ApiKeyManager {
    * Sprint 53: Removed insecure default pepper (CRITICAL-002)
    */
   private hashSecret(secret: string): string {
-    const pepper = process.env.API_KEY_PEPPER;
-    if (!pepper) {
+    // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+    const pepper = config.security.apiKeyPepper;
+    if (!pepper || pepper === 'CHANGE_ME_IN_PRODUCTION') {
       throw new Error(
-        'API_KEY_PEPPER environment variable is required. ' +
+        'API_KEY_PEPPER must be configured with a secure value. ' +
         'Generate one with: openssl rand -base64 32'
       );
     }

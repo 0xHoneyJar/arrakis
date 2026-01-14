@@ -18,6 +18,7 @@
 import { Redis } from 'ioredis';
 import * as crypto from 'node:crypto';
 import { createChildLogger } from '../../utils/logger.js';
+import { config as appConfig } from '../../config.js';
 
 /**
  * Session security context
@@ -168,10 +169,11 @@ export class SecureSessionStore {
 
     // SECURITY: Rate limit salt MUST be persistent across restarts
     // Sprint 53: Fixed rate limit bypass via container restart (CRITICAL-004)
-    const rateLimitSalt = process.env.RATE_LIMIT_SALT;
+    // Sprint 81 (HIGH-2): Use validated config instead of direct env var access
+    const rateLimitSalt = appConfig.security.rateLimitSalt;
     if (!rateLimitSalt) {
       throw new Error(
-        'RATE_LIMIT_SALT environment variable is required. ' +
+        'RATE_LIMIT_SALT must be configured. ' +
         'Generate one with: openssl rand -hex 16'
       );
     }
