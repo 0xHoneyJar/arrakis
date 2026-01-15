@@ -54,7 +54,7 @@ export interface ConsumerConfig {
 }
 
 /**
- * Worker health status response
+ * Worker health status response (RabbitMQ mode - legacy)
  */
 export interface WorkerHealthStatus {
   status: 'healthy' | 'unhealthy';
@@ -79,6 +79,51 @@ export interface WorkerHealthStatus {
   stats: {
     messagesProcessed: number;
     messagesErrored: number;
+    uptime: number;
+  };
+}
+
+/**
+ * NATS consumer statistics
+ * Sprint S-6: Worker Migration to NATS
+ */
+export interface NatsConsumerStats {
+  processed: number;
+  errored: number;
+  running: boolean;
+}
+
+/**
+ * Worker health status response (NATS mode)
+ * Sprint S-6: Worker Migration to NATS
+ */
+export interface NatsWorkerHealthStatus {
+  status: 'healthy' | 'unhealthy';
+  timestamp: number;
+  mode: 'nats';
+  checks: {
+    nats: {
+      connected: boolean;
+    };
+    consumers: {
+      command: NatsConsumerStats;
+      event: NatsConsumerStats;
+      eligibility: NatsConsumerStats;
+    };
+    redis: {
+      connected: boolean;
+      latencyMs: number | null;
+    };
+    memory: {
+      heapUsed: number;
+      heapTotal: number;
+      rss: number;
+      belowThreshold: boolean;
+    };
+  };
+  stats: {
+    totalMessagesProcessed: number;
+    totalMessagesErrored: number;
     uptime: number;
   };
 }

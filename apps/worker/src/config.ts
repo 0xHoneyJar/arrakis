@@ -4,8 +4,25 @@ import { z } from 'zod';
  * Configuration schema with validation
  */
 const configSchema = z.object({
-  // RabbitMQ
-  rabbitmqUrl: z.string().url('RABBITMQ_URL must be a valid URL'),
+  // Message Broker (NATS or RabbitMQ)
+  // NATS is preferred for Sprint S-5+; RabbitMQ for backwards compatibility
+  natsUrl: z.string().optional(), // NATS JetStream URL(s), comma-separated
+  rabbitmqUrl: z.string().url('RABBITMQ_URL must be a valid URL').optional(), // Legacy
+
+  // RPC Pool (Sprint S-2)
+  rpcProviders: z.array(z.object({
+    name: z.string(),
+    url: z.string().url(),
+    priority: z.number().int().min(1),
+    weight: z.number().int().min(1).default(1),
+  })).default([
+    { name: 'drpc', url: 'https://berachain.drpc.org', priority: 1, weight: 1 },
+    { name: 'publicnode', url: 'https://berachain-rpc.publicnode.com', priority: 2, weight: 1 },
+    { name: 'bartio', url: 'https://bartio.rpc.berachain.com', priority: 3, weight: 1 },
+  ]),
+  rpcTimeoutMs: z.number().int().min(1000).max(30000).default(10000),
+  rpcErrorThreshold: z.number().int().min(1).max(100).default(50),
+  rpcResetTimeoutMs: z.number().int().min(1000).max(300000).default(30000),
 
   // Queue configuration
   exchangeName: z.string().default('arrakis.events'),
@@ -48,8 +65,25 @@ export type Config = z.infer<typeof configSchema>;
  */
 export function loadConfig(): Config {
   const env = process.env;
+
+  // Parse RPC providers from env if provided (JSON array)
+  let rpcProviders;
+  if (env['RPC_PROVIDERS']) {
+    try {
+      rpcProviders = JSON.parse(env['RPC_PROVIDERS']);
+    } catch {
+      // Fall back to defaults if invalid JSON
+      rpcProviders = undefined;
+    }
+  }
+
   const raw = {
+    natsUrl: env['NATS_URL'],
     rabbitmqUrl: env['RABBITMQ_URL'],
+    rpcProviders,
+    rpcTimeoutMs: env['RPC_TIMEOUT_MS'] ? parseInt(env['RPC_TIMEOUT_MS'], 10) : 10000,
+    rpcErrorThreshold: env['RPC_ERROR_THRESHOLD'] ? parseInt(env['RPC_ERROR_THRESHOLD'], 10) : 50,
+    rpcResetTimeoutMs: env['RPC_RESET_TIMEOUT_MS'] ? parseInt(env['RPC_RESET_TIMEOUT_MS'], 10) : 30000,
     exchangeName: env['EXCHANGE_NAME'] || 'arrakis.events',
     interactionQueue: env['INTERACTION_QUEUE'] || 'arrakis.interactions',
     eventQueue: env['EVENT_QUEUE'] || 'arrakis.events.guild',
