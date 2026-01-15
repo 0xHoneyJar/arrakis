@@ -13,6 +13,14 @@
     "./chain": {
       "import": "./dist/chain/index.js",
       "types": "./dist/chain/index.d.ts"
+    },
+    "./storage": {
+      "import": "./dist/storage/index.js",
+      "types": "./dist/storage/index.d.ts"
+    },
+    "./themes": {
+      "import": "./dist/themes/index.js",
+      "types": "./dist/themes/index.d.ts"
     }
   },
   "files": [
@@ -28,7 +36,9 @@
   },
   "dependencies": {
     "@arrakis/core": "file:../core",
+    "drizzle-orm": "^0.33.0",
     "opossum": "^8.1.0",
+    "postgres": "^3.4.0",
     "viem": "^2.21.0"
   },
   "devDependencies": {
