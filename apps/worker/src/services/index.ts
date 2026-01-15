@@ -29,3 +29,29 @@ export {
   type ConfigReloadEvent,
 } from './ConfigReloader.js';
 export * from './TenantMetrics.js';
+
+// Sprint S-9: Hot-Path Migration
+export {
+  HotPathService,
+  type PositionData,
+  type ThresholdData,
+  type WaitlistPositionData,
+  type MemberRankData,
+  type HandlerLeaderboardEntry,
+  type HotPathConfig,
+} from './HotPathService.js';
+
+// Sprint S-10: Write-Behind Cache
+export {
+  WriteBehindCache,
+  createWriteBehindCache,
+  type PendingSyncItem,
+  type SyncBatchResult,
+  type WriteBehindConfig,
+  type PostgresSyncFn,
+} from './WriteBehindCache.js';
+export {
+  PostgresScoreSync,
+  createPostgresScoreSync,
+  type PostgresScoreSyncConfig,
+} from './PostgresScoreSync.js';

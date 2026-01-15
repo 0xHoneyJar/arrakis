@@ -32,3 +32,8 @@ export {
   createAdminBadgeHandler,
   createAdminBadgeAutocompleteHandler,
 } from './admin-badge.js';
+
+// Sprint S-9: Hot-Path Handlers (ScyllaDB)
+export { createPositionHotPathHandler } from './position-hotpath.js';
+export { createThresholdHotPathHandler } from './threshold-hotpath.js';
+export { createConvictionLeaderboardHandler } from './conviction-leaderboard.js';
