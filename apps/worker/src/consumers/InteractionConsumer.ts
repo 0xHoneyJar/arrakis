@@ -140,7 +140,7 @@ export class InteractionConsumer {
             {
               error,
               eventId: payload?.eventId,
-              raw: msg.content.toString().slice(0, 200),
+              // Note: Raw message content not logged to prevent token exposure (MED-1)
             },
             'Error processing interaction message'
           );
