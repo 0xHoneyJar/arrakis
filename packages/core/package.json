@@ -13,6 +13,10 @@
     "./ports": {
       "import": "./dist/ports/index.js",
       "types": "./dist/ports/index.d.ts"
+    },
+    "./domain": {
+      "import": "./dist/domain/index.js",
+      "types": "./dist/domain/index.d.ts"
     }
   },
   "files": [

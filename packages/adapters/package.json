@@ -21,6 +21,10 @@
     "./themes": {
       "import": "./dist/themes/index.js",
       "types": "./dist/themes/index.d.ts"
+    },
+    "./wizard": {
+      "import": "./dist/wizard/index.js",
+      "types": "./dist/wizard/index.d.ts"
     }
   },
   "files": [

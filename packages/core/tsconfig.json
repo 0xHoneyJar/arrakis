@@ -20,6 +20,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["ports/**/*.ts"],
+  "include": ["ports/**/*.ts", "domain/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/__tests__/**"]
 }
