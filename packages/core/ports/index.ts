@@ -9,6 +9,7 @@
  * Sprint S-22: Vault Integration & Kill Switch
  * Sprint S-24: Shadow Ledger & Incumbent Detection
  * Sprint S-25: Shadow Sync Job & Verification Tiers
+ * Sprint S-26: Namespaced Roles & Parallel Channels
  *
  * Exports all port interfaces (contracts) for the application.
  * Ports define the boundaries between the core domain and external adapters.
@@ -60,3 +61,6 @@ export * from './shadow-sync.js';
 
 // Feature Gate Interface (Sprint S-25)
 export * from './feature-gate.js';
+
+// Parallel Mode Interface (Sprint S-26)
+export * from './parallel-mode.js';

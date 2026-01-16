@@ -3,14 +3,19 @@
  *
  * Sprint S-24: Incumbent Detection & Shadow Ledger
  * Sprint S-25: Shadow Sync Job & Verification Tiers
+ * Sprint S-26: Namespaced Roles & Parallel Channels
  *
- * Adapters for shadow mode coexistence including:
+ * Adapters for coexistence including:
  * - IncumbentDetector: Auto-detection of Collab.Land, Matrica, Guild.xyz
  * - ScyllaDBShadowLedger: Shadow state and divergence tracking
  * - ShadowSyncJob: 6-hour periodic comparison
  * - FeatureGate: Tier-based feature access control
+ * - NamespacedRoleManager: Arrakis role management in parallel mode
+ * - ChannelStrategyManager: Conviction-gated channel management
+ * - ParallelModeOrchestrator: Coordination of parallel mode operations
  *
  * @see SDD §7.1 Shadow Mode Architecture
+ * @see SDD §7.2 Parallel Mode Architecture
  */
 
 // Sprint S-24: Incumbent Detection
@@ -56,3 +61,36 @@ export {
   type IFeatureOverrideStore,
   type FeatureGateOptions,
 } from './feature-gate.js';
+
+// Sprint S-26: Namespaced Role Manager
+export {
+  NamespacedRoleManager,
+  createNamespacedRoleManager,
+  type IDiscordRoleService,
+  type ISynthesisQueue,
+  type IParallelModeConfigStore,
+  type IParallelModeMetrics,
+  type NamespacedRoleManagerOptions,
+} from './namespaced-role-manager.js';
+
+// Sprint S-26: Channel Strategy Manager
+export {
+  ChannelStrategyManager,
+  createChannelStrategyManager,
+  type IDiscordChannelService,
+  type IChannelConfigStore,
+  type IChannelMetrics,
+  type ChannelStrategyManagerOptions,
+  type PermissionOverwrite,
+} from './channel-strategy-manager.js';
+
+// Sprint S-26: Parallel Mode Orchestrator
+export {
+  ParallelModeOrchestrator,
+  createParallelModeOrchestrator,
+  type IParallelModeCommunityService,
+  type IShadowLedgerReadiness,
+  type IFeatureGateReadiness,
+  type IParallelModeOrchestratorMetrics,
+  type ParallelModeOrchestratorOptions,
+} from './parallel-mode-orchestrator.js';

@@ -4,6 +4,7 @@
  * Sprint S-20: Wizard Session Store & State Model
  * Sprint S-24: Incumbent Detection & Shadow Ledger
  * Sprint S-25: Shadow Sync Job & Verification Tiers
+ * Sprint S-26: Namespaced Roles & Parallel Channels
  *
  * Exports all domain types and models for the application.
  * Domain types represent core business concepts independent of infrastructure.
@@ -17,3 +18,6 @@ export * from './coexistence.js';
 
 // Verification Tiers Domain Types (Sprint S-25)
 export * from './verification-tiers.js';
+
+// Parallel Mode Domain Types (Sprint S-26)
+export * from './parallel-mode.js';
