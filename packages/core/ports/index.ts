@@ -5,6 +5,7 @@
  * Sprint S-17: Theme Interface & BasicTheme
  * Sprint S-19: Enhanced RLS & Drizzle Adapter
  * Sprint S-20: Wizard Session Store & State Model
+ * Sprint S-21: Synthesis Engine & Rate Limiting
  *
  * Exports all port interfaces (contracts) for the application.
  * Ports define the boundaries between the core domain and external adapters.
@@ -38,3 +39,6 @@ export {
 
 // Wizard Session Store Interface
 export * from './wizard-session-store.js';
+
+// Synthesis Engine Interface
+export * from './synthesis-engine.js';

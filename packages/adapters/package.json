@@ -25,6 +25,10 @@
     "./wizard": {
       "import": "./dist/wizard/index.js",
       "types": "./dist/wizard/index.d.ts"
+    },
+    "./synthesis": {
+      "import": "./dist/synthesis/index.js",
+      "types": "./dist/synthesis/index.d.ts"
     }
   },
   "files": [
