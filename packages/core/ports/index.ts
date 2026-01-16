@@ -6,6 +6,7 @@
  * Sprint S-19: Enhanced RLS & Drizzle Adapter
  * Sprint S-20: Wizard Session Store & State Model
  * Sprint S-21: Synthesis Engine & Rate Limiting
+ * Sprint S-22: Vault Integration & Kill Switch
  *
  * Exports all port interfaces (contracts) for the application.
  * Ports define the boundaries between the core domain and external adapters.
@@ -42,3 +43,6 @@ export * from './wizard-session-store.js';
 
 // Synthesis Engine Interface
 export * from './synthesis-engine.js';
+
+// Vault Client Interface
+export * from './vault-client.js';
