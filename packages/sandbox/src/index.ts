@@ -29,6 +29,7 @@ export type {
   AuditEventType,
   AuditLogEntry,
   SchemaStats,
+  MinimalRedis,
 } from './types.js';
 
 export { VALID_STATUS_TRANSITIONS, SandboxErrorCode, SandboxError } from './types.js';

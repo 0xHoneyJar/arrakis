@@ -12,9 +12,8 @@
 
 import type { Logger } from 'pino';
 import type postgres from 'postgres';
-import type { Redis } from 'ioredis';
 
-import type { Sandbox, SandboxStatus } from '../types.js';
+import type { Sandbox, SandboxStatus, MinimalRedis } from '../types.js';
 import { SandboxError, SandboxErrorCode } from '../types.js';
 import type { SchemaProvisioner } from './schema-provisioner.js';
 import type { RouteProvider } from './route-provider.js';
@@ -30,8 +29,8 @@ export interface CleanupProviderConfig {
   /** PostgreSQL client (postgres.js) */
   sql: postgres.Sql;
 
-  /** Redis client (ioredis) */
-  redis: Redis;
+  /** Redis client (ioredis-compatible) */
+  redis: MinimalRedis;
 
   /** Schema provisioner for schema cleanup */
   schemaProvisioner: SchemaProvisioner;

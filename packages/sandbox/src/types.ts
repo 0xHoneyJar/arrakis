@@ -8,6 +8,39 @@
  */
 
 // =============================================================================
+// Minimal Redis Interface
+// =============================================================================
+
+/**
+ * Minimal Redis interface for sandbox operations.
+ * Avoids importing ioredis types directly to prevent version mismatch issues
+ * in monorepo builds.
+ *
+ * Compatible with ioredis Redis client.
+ */
+export interface MinimalRedis {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<'OK'>;
+  set(key: string, value: string, mode: 'EX', duration: number): Promise<'OK'>;
+  del(...keys: string[]): Promise<number>;
+  keys(pattern: string): Promise<string[]>;
+  scan(
+    cursor: number | string,
+    ...args: (string | number)[]
+  ): Promise<[string, string[]]>;
+  exists(...keys: string[]): Promise<number>;
+  hget(key: string, field: string): Promise<string | null>;
+  hset(key: string, field: string, value: string): Promise<number>;
+  hdel(key: string, ...fields: string[]): Promise<number>;
+  hgetall(key: string): Promise<Record<string, string>>;
+  sadd(key: string, ...members: string[]): Promise<number>;
+  srem(key: string, ...members: string[]): Promise<number>;
+  smembers(key: string): Promise<string[]>;
+  expire(key: string, seconds: number): Promise<number>;
+  ttl(key: string): Promise<number>;
+}
+
+// =============================================================================
 // Sandbox Status
 // =============================================================================
 

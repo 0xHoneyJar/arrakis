@@ -12,7 +12,7 @@
 
 import type { Logger } from 'pino';
 import type postgres from 'postgres';
-import type { Redis } from 'ioredis';
+import type { MinimalRedis } from '../types.js';
 
 // =============================================================================
 // Types
@@ -25,8 +25,8 @@ export interface RouteProviderConfig {
   /** PostgreSQL client (postgres.js) */
   sql: postgres.Sql;
 
-  /** Redis client (ioredis) */
-  redis: Redis;
+  /** Redis client (ioredis-compatible) */
+  redis: MinimalRedis;
 
   /** Logger instance */
   logger: Logger;
