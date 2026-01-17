@@ -137,7 +137,11 @@ export class EventRouter {
     errors: 0,
     avgLatencyMs: 0,
   };
-  private latencySum = 0;
+
+  // Rolling average window for latency (prevents unbounded memory growth)
+  private static readonly LATENCY_WINDOW_SIZE = 1000;
+  private latencyWindow: number[] = [];
+  private latencyWindowIndex = 0;
 
   constructor(config: EventRouterConfig) {
     this.jetstream = config.jetstream;
@@ -433,12 +437,26 @@ export class EventRouter {
   }
 
   /**
-   * Update latency statistics
+   * Update latency statistics using rolling average
+   *
+   * Uses a fixed-size circular buffer to prevent unbounded memory growth.
+   * Maintains average over last LATENCY_WINDOW_SIZE samples.
    */
   private updateLatencyStats(latencyMs: number): void {
     this.stats.totalProcessed++;
-    this.latencySum += latencyMs;
-    this.stats.avgLatencyMs = this.latencySum / this.stats.totalProcessed;
+
+    // Add to rolling window (circular buffer)
+    if (this.latencyWindow.length < EventRouter.LATENCY_WINDOW_SIZE) {
+      this.latencyWindow.push(latencyMs);
+    } else {
+      this.latencyWindow[this.latencyWindowIndex] = latencyMs;
+      this.latencyWindowIndex =
+        (this.latencyWindowIndex + 1) % EventRouter.LATENCY_WINDOW_SIZE;
+    }
+
+    // Calculate rolling average
+    const sum = this.latencyWindow.reduce((a, b) => a + b, 0);
+    this.stats.avgLatencyMs = sum / this.latencyWindow.length;
   }
 
   // ===========================================================================
@@ -464,7 +482,8 @@ export class EventRouter {
       errors: 0,
       avgLatencyMs: 0,
     };
-    this.latencySum = 0;
+    this.latencyWindow = [];
+    this.latencyWindowIndex = 0;
   }
 
   /**

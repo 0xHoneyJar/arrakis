@@ -98,6 +98,8 @@ export class RouteProvider {
    * 2. If miss: query sandbox_guild_mapping table
    * 3. Cache result (even null to prevent repeated DB hits)
    *
+   * Gracefully degrades to database-only if Redis fails.
+   *
    * @param guildId - Discord guild ID
    * @returns Sandbox ID or null if not mapped
    */
@@ -105,18 +107,24 @@ export class RouteProvider {
     const startTime = Date.now();
     const cacheKey = this.getCacheKey(guildId);
 
-    // Try cache first
-    const cached = await this.redis.get(cacheKey);
-    if (cached !== null) {
-      const sandboxId = cached === NULL_SENTINEL ? null : cached;
-      return {
-        sandboxId,
-        cached: true,
-        latencyMs: Date.now() - startTime,
-      };
+    // Try cache first (with graceful degradation)
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+      if (cached !== null) {
+        const sandboxId = cached === NULL_SENTINEL ? null : cached;
+        return {
+          sandboxId,
+          cached: true,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+    } catch (error) {
+      // Redis failure - degrade to database-only lookup
+      this.logger.warn({ guildId, error }, 'Redis cache read failed, falling back to database');
     }
 
-    // Cache miss - query database
+    // Cache miss or Redis failure - query database
     const rows = await this.sql<{ sandbox_id: string }[]>`
       SELECT m.sandbox_id
       FROM sandbox_guild_mapping m
@@ -127,13 +135,18 @@ export class RouteProvider {
 
     const sandboxId = rows.length > 0 ? rows[0].sandbox_id : null;
 
-    // Cache the result (including null)
-    await this.redis.set(
-      cacheKey,
-      sandboxId ?? NULL_SENTINEL,
-      'PX',
-      this.cacheTtlMs
-    );
+    // Cache the result (best-effort, non-blocking)
+    try {
+      await this.redis.set(
+        cacheKey,
+        sandboxId ?? NULL_SENTINEL,
+        'PX',
+        this.cacheTtlMs
+      );
+    } catch (error) {
+      // Cache write failure is non-fatal
+      this.logger.warn({ guildId, error }, 'Redis cache write failed');
+    }
 
     this.logger.debug(
       { guildId, sandboxId, cached: false },

@@ -30,6 +30,7 @@ import type {
 } from '../types.js';
 import { VALID_STATUS_TRANSITIONS, SandboxError, SandboxErrorCode } from '../types.js';
 import { SchemaProvisioner } from './schema-provisioner.js';
+import type { RouteProvider } from './route-provider.js';
 
 // =============================================================================
 // Types
@@ -53,6 +54,12 @@ export interface SandboxManagerConfig {
 
   /** Maximum sandboxes per owner */
   maxSandboxesPerOwner?: number;
+
+  /**
+   * Optional RouteProvider for cache synchronization
+   * Sprint 86: Event Routing - Cache synchronization
+   */
+  routeProvider?: RouteProvider;
 }
 
 /**
@@ -94,6 +101,7 @@ export class SandboxManager {
   private readonly defaultTtlHours: number;
   private readonly maxTtlHours: number;
   private readonly maxSandboxesPerOwner: number;
+  private readonly routeProvider: RouteProvider | null;
 
   constructor(config: SandboxManagerConfig) {
     this.sql = config.sql;
@@ -101,6 +109,7 @@ export class SandboxManager {
     this.defaultTtlHours = config.defaultTtlHours ?? DEFAULT_TTL_HOURS;
     this.maxTtlHours = config.maxTtlHours ?? MAX_TTL_HOURS;
     this.maxSandboxesPerOwner = config.maxSandboxesPerOwner ?? MAX_SANDBOXES_PER_OWNER;
+    this.routeProvider = config.routeProvider ?? null;
 
     this.schemaProvisioner = new SchemaProvisioner({
       sql: config.sql,
@@ -443,6 +452,16 @@ export class SandboxManager {
       VALUES (${guildId}, ${sandboxId}::uuid)
     `;
 
+    // Sprint 86: Update RouteProvider cache for immediate routing
+    if (this.routeProvider) {
+      try {
+        await this.routeProvider.registerMapping(guildId, sandboxId);
+      } catch (error) {
+        // Cache update failure is non-fatal - events will route correctly after TTL
+        this.logger.warn({ sandboxId, guildId, error }, 'Failed to update route cache');
+      }
+    }
+
     // Audit log
     await this.createAuditEntry(sandboxId, 'guild_registered', actor, { guildId });
 
@@ -461,6 +480,16 @@ export class SandboxManager {
     if (result.count === 0) {
       this.logger.warn({ sandboxId, guildId }, 'Guild was not registered to sandbox');
       return;
+    }
+
+    // Sprint 86: Invalidate RouteProvider cache for immediate routing change
+    if (this.routeProvider) {
+      try {
+        await this.routeProvider.removeMapping(guildId);
+      } catch (error) {
+        // Cache invalidation failure is non-fatal - events will route correctly after TTL
+        this.logger.warn({ sandboxId, guildId, error }, 'Failed to invalidate route cache');
+      }
     }
 
     // Audit log
