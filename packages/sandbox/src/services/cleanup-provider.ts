@@ -129,7 +129,7 @@ const DEFAULT_SCAN_BATCH_SIZE = 100;
  */
 export class CleanupProvider {
   private readonly sql: postgres.Sql;
-  private readonly redis: Redis;
+  private readonly redis: MinimalRedis;
   private readonly schemaProvisioner: SchemaProvisioner;
   private readonly routeProvider: RouteProvider;
   private readonly logger: Logger;

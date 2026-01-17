@@ -75,7 +75,7 @@ const NULL_SENTINEL = '__NULL__'; // Sentinel value to cache "not found"
  */
 export class RouteProvider {
   private readonly sql: postgres.Sql;
-  private readonly redis: Redis;
+  private readonly redis: MinimalRedis;
   private readonly logger: Logger;
   private readonly cacheTtlMs: number;
 
