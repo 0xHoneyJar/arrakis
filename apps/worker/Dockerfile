@@ -4,37 +4,68 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy root package files for workspace resolution
-COPY package.json package-lock.json* ./
-
-# Copy workspace packages that worker depends on
-COPY packages/core/package.json ./packages/core/
-COPY packages/sandbox/package.json ./packages/sandbox/
-
-# Copy worker package
-COPY apps/worker/package.json ./apps/worker/
-
-# Install all dependencies (including workspace links)
-RUN npm ci --workspace=apps/worker --include-workspace-root
-
-# Copy source code for packages
-COPY packages/core/src ./packages/core/src
-COPY packages/core/tsconfig.json ./packages/core/
-COPY packages/sandbox/src ./packages/sandbox/src
-COPY packages/sandbox/tsconfig.json ./packages/sandbox/
-
-# Copy worker source
-COPY apps/worker/src ./apps/worker/src
-COPY apps/worker/tsconfig.json ./apps/worker/
-
-# Build packages first, then worker
+# ============================================
+# Stage 1: Build @arrakis/core
+# ============================================
 WORKDIR /app/packages/core
-RUN npm run build || true
 
-WORKDIR /app/packages/sandbox
+# Copy package files
+COPY packages/core/package.json packages/core/package-lock.json* ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source (core uses domain/ and ports/, not src/)
+COPY packages/core/domain ./domain
+COPY packages/core/ports ./ports
+COPY packages/core/tsconfig.json ./
+
+# Build core package
 RUN npm run build
 
+# ============================================
+# Stage 2: Build @arrakis/sandbox
+# ============================================
+WORKDIR /app/packages/sandbox
+
+# Copy package files
+COPY packages/sandbox/package.json packages/sandbox/package-lock.json* ./
+
+# Install dependencies (excluding @arrakis/core which we'll link)
+RUN npm ci --ignore-scripts || npm install --ignore-scripts
+
+# Copy source
+COPY packages/sandbox/src ./src
+COPY packages/sandbox/tsconfig.json ./
+
+# Link @arrakis/core
+RUN mkdir -p node_modules/@arrakis && \
+    ln -sf /app/packages/core node_modules/@arrakis/core
+
+# Build sandbox package
+RUN npm run build
+
+# ============================================
+# Stage 3: Build Worker
+# ============================================
 WORKDIR /app/apps/worker
+
+# Copy package files
+COPY apps/worker/package.json apps/worker/package-lock.json* ./
+
+# Install dependencies (excluding workspace packages which we'll link)
+RUN npm ci --ignore-scripts || npm install --ignore-scripts
+
+# Link workspace packages
+RUN mkdir -p node_modules/@arrakis && \
+    ln -sf /app/packages/core node_modules/@arrakis/core && \
+    ln -sf /app/packages/sandbox node_modules/@arrakis/sandbox
+
+# Copy worker source
+COPY apps/worker/src ./src
+COPY apps/worker/tsconfig.json ./
+
+# Build worker
 RUN npm run build
 
 # Production stage
@@ -46,18 +77,17 @@ RUN addgroup -g 1001 -S worker && \
 
 WORKDIR /app
 
-# Copy package files
-COPY apps/worker/package.json ./
-COPY package-lock.json* ./
+# Copy package files from worker
+COPY apps/worker/package.json apps/worker/package-lock.json* ./
 
-# Copy built workspace packages
+# Copy built workspace packages (with their node_modules for any transitive deps)
 COPY --from=builder /app/packages/core/dist ./node_modules/@arrakis/core/dist
 COPY --from=builder /app/packages/core/package.json ./node_modules/@arrakis/core/
 COPY --from=builder /app/packages/sandbox/dist ./node_modules/@arrakis/sandbox/dist
 COPY --from=builder /app/packages/sandbox/package.json ./node_modules/@arrakis/sandbox/
 
 # Install production dependencies only (excluding workspace deps which we copied)
-RUN npm ci --omit=dev --ignore-scripts && \
+RUN npm ci --omit=dev --ignore-scripts || npm install --omit=dev --ignore-scripts && \
     npm cache clean --force
 
 # Copy built worker files from builder stage
