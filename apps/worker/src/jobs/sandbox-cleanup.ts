@@ -25,6 +25,7 @@ import Redis from 'ioredis';
 import { CleanupProvider } from '@arrakis/sandbox';
 import { SchemaProvisioner } from '@arrakis/sandbox';
 import { RouteProvider } from '@arrakis/sandbox';
+import type { MinimalRedis } from '@arrakis/sandbox';
 
 // =============================================================================
 // Configuration
@@ -95,15 +96,19 @@ async function main(): Promise<void> {
       logger,
     });
 
+    // Cast redis to MinimalRedis for type compatibility
+    // ioredis.Redis implements all MinimalRedis methods
+    const redisClient = redis as unknown as MinimalRedis;
+
     const routeProvider = new RouteProvider({
       sql,
-      redis,
+      redis: redisClient,
       logger,
     });
 
     const cleanupProvider = new CleanupProvider({
       sql,
-      redis,
+      redis: redisClient,
       schemaProvisioner,
       routeProvider,
       logger,
