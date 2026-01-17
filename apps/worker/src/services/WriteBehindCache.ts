@@ -242,7 +242,7 @@ export class WriteBehindCache {
         ctx.communityId,
         ctx.tier,
         'writebehind_batch_update',
-        failed === 0 ? 'success' : 'partial',
+        failed === 0 ? 'success' : 'error',
         Date.now() - start
       );
 

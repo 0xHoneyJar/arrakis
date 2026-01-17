@@ -322,7 +322,7 @@ export class ScoreRepository {
     after: Score,
     update: ScoreUpdate
   ): Promise<void> {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0] ?? new Date().toISOString().substring(0, 10);
 
     const entry: ScoreHistoryEntry = {
       communityId: ctx.communityId,

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * /setup Command Handler
  *

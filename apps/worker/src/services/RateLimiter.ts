@@ -242,8 +242,8 @@ export class RateLimiter {
     // Get oldest entry timestamp
     const oldest = await this.stateManager.zrangebyscore(windowKey, 0, Infinity, 0, 1);
 
-    if (oldest.length > 0) {
-      const oldestTime = parseInt(oldest[0].split(':')[0], 10);
+    if (oldest.length > 0 && oldest[0]) {
+      const oldestTime = parseInt(oldest[0].split(':')[0] ?? '0', 10);
       return oldestTime + windowMs;
     }
 

@@ -71,6 +71,11 @@ export function parseTraceparent(header: string): TraceContext | null {
 
   const [version, traceId, spanId, flagsHex] = parts;
 
+  // Validate all parts are present
+  if (!version || !traceId || !spanId || !flagsHex) {
+    return null;
+  }
+
   // Validate version (currently only 00 is supported)
   if (version !== '00') {
     return null;

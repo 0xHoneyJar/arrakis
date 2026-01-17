@@ -7,14 +7,16 @@
 
 import {
   connect,
-  NatsConnection,
-  JetStreamClient,
-  JetStreamManager,
   StringCodec,
   RetentionPolicy,
   StorageType,
   AckPolicy,
   DeliverPolicy,
+} from 'nats';
+import type {
+  NatsConnection,
+  JetStreamClient,
+  JetStreamManager,
 } from 'nats';
 import type { Logger } from 'pino';
 
@@ -208,7 +210,7 @@ export class NatsClient {
     });
 
     // Handle connection events
-    this.connection.closed().then((err) => {
+    this.connection.closed().then((err: Error | void) => {
       if (err) {
         this.log.error({ error: err }, 'NATS connection closed with error');
       } else {

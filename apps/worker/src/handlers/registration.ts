@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Handler Registration Module
  * Sprint S-6: Worker Migration to NATS

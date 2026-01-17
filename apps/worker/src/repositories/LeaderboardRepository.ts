@@ -214,6 +214,7 @@ export class LeaderboardRepository {
 
       for (let i = 0; i < topScores.length; i++) {
         const score = topScores[i];
+        if (!score) continue;
         const rank = i + 1;
         const bucket = Math.floor(rank / 100) * 100;
         const scoreValue = type === 'activity' ? score.activityScore : score.convictionScore;

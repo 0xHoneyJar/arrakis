@@ -64,7 +64,7 @@ export class PostgresScoreSync {
    */
   async syncBatch(items: PendingSyncItem[]): Promise<SyncBatchResult> {
     if (items.length === 0) {
-      return { success: 0, failed: 0 };
+      return { success: 0, failed: 0, retried: 0 };
     }
 
     const start = Date.now();
@@ -106,7 +106,7 @@ export class PostgresScoreSync {
       }
 
       const duration = Date.now() - start;
-      recordCommand('_system', 'enterprise', 'postgres_sync_batch', failed === 0 ? 'success' : 'partial', duration);
+      recordCommand('_system', 'enterprise', 'postgres_sync_batch', failed === 0 ? 'success' : 'error', duration);
 
       if (this.config.verboseLogging || failed > 0) {
         this.log.info(
@@ -115,13 +115,13 @@ export class PostgresScoreSync {
         );
       }
 
-      return { success, failed };
+      return { success, failed, retried: 0 };
     } catch (error) {
       const duration = Date.now() - start;
       recordCommand('_system', 'enterprise', 'postgres_sync_batch', 'error', duration);
       this.log.error({ error, itemCount: items.length }, 'Batch sync failed completely');
 
-      return { success: 0, failed: items.length };
+      return { success: 0, failed: items.length, retried: 0 };
     }
   }
 

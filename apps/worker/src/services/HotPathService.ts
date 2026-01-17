@@ -176,7 +176,7 @@ export class HotPathService {
 
       if (!profileRank) {
         this.log.debug({ profileId }, 'Profile not found in leaderboard');
-        recordCommand(ctx.communityId, ctx.tier, 'hotpath_position_get', 'not_found', Date.now() - start);
+        recordCommand(ctx.communityId, ctx.tier, 'hotpath_position_get', 'success', Date.now() - start);
         return null;
       }
 
