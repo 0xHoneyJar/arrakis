@@ -22,12 +22,8 @@ variable "vault_namespace" {
   default     = "admin"
 }
 
-variable "vault_token" {
-  description = "Vault token for ECS tasks"
-  type        = string
-  sensitive   = true
-  default     = "placeholder"
-}
+# vault_token is now stored in Secrets Manager and referenced via data source
+# Create it manually: aws secretsmanager create-secret --name arrakis-{env}/vault-token
 
 # VPC
 variable "vpc_cidr" {
@@ -86,4 +82,112 @@ variable "domain_name" {
   description = "Domain name for SSL certificate"
   type        = string
   default     = "api.arrakis.community"
+}
+
+# Amazon MQ (RabbitMQ) for Gateway Proxy Pattern
+variable "rabbitmq_instance_type" {
+  description = "Amazon MQ RabbitMQ instance type"
+  type        = string
+  default     = "mq.t3.micro" # Small for staging, mq.m5.large for production
+}
+
+# Ingestor Service
+variable "ingestor_cpu" {
+  description = "Ingestor task CPU units"
+  type        = number
+  default     = 256
+}
+
+variable "ingestor_memory" {
+  description = "Ingestor task memory (MB)"
+  type        = number
+  default     = 512
+}
+
+variable "ingestor_desired_count" {
+  description = "Desired Ingestor task count (1 per Discord shard group)"
+  type        = number
+  default     = 1
+}
+
+# Gateway Proxy Worker Service
+variable "gp_worker_cpu" {
+  description = "GP Worker task CPU units"
+  type        = number
+  default     = 256
+}
+
+variable "gp_worker_memory" {
+  description = "GP Worker task memory (MB)"
+  type        = number
+  default     = 512
+}
+
+variable "gp_worker_desired_count" {
+  description = "Desired GP Worker task count (can scale horizontally)"
+  type        = number
+  default     = 1
+}
+
+# PgBouncer Configuration (Sprint S-1: Scaling Foundation)
+variable "pgbouncer_max_client_conn" {
+  description = "Maximum client connections to PgBouncer"
+  type        = number
+  default     = 1000
+}
+
+variable "pgbouncer_default_pool_size" {
+  description = "Default pool size per database/user pair"
+  type        = number
+  default     = 25
+}
+
+variable "pgbouncer_desired_count" {
+  description = "Desired PgBouncer task count"
+  type        = number
+  default     = 1
+}
+
+variable "enable_service_discovery" {
+  description = "Enable AWS Cloud Map service discovery"
+  type        = bool
+  default     = true
+}
+
+# NATS JetStream Configuration (Sprint S-5: Scaling Phase 2)
+variable "nats_cpu" {
+  description = "NATS task CPU units"
+  type        = number
+  default     = 512
+}
+
+variable "nats_memory" {
+  description = "NATS task memory (MB)"
+  type        = number
+  default     = 1024
+}
+
+variable "nats_desired_count" {
+  description = "Desired NATS cluster node count (recommend 3 for HA)"
+  type        = number
+  default     = 3
+}
+
+# Gateway (Rust Twilight) Configuration (Sprint S-5)
+variable "gateway_cpu" {
+  description = "Gateway task CPU units"
+  type        = number
+  default     = 512
+}
+
+variable "gateway_memory" {
+  description = "Gateway task memory (MB)"
+  type        = number
+  default     = 1024
+}
+
+variable "gateway_desired_count" {
+  description = "Desired Gateway pool count (each manages 25 shards)"
+  type        = number
+  default     = 1
 }

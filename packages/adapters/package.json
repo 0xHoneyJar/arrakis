@@ -1,0 +1,73 @@
+{
+  "name": "@arrakis/adapters",
+  "version": "0.1.0",
+  "description": "Adapter implementations for Arrakis core ports",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./chain": {
+      "import": "./dist/chain/index.js",
+      "types": "./dist/chain/index.d.ts"
+    },
+    "./storage": {
+      "import": "./dist/storage/index.js",
+      "types": "./dist/storage/index.d.ts"
+    },
+    "./themes": {
+      "import": "./dist/themes/index.js",
+      "types": "./dist/themes/index.d.ts"
+    },
+    "./wizard": {
+      "import": "./dist/wizard/index.js",
+      "types": "./dist/wizard/index.d.ts"
+    },
+    "./synthesis": {
+      "import": "./dist/synthesis/index.js",
+      "types": "./dist/synthesis/index.d.ts"
+    },
+    "./security": {
+      "import": "./dist/security/index.js",
+      "types": "./dist/security/index.d.ts"
+    },
+    "./coexistence": {
+      "import": "./dist/coexistence/index.js",
+      "types": "./dist/coexistence/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@arrakis/core": "file:../core",
+    "drizzle-orm": "^0.33.0",
+    "opossum": "^8.1.0",
+    "postgres": "^3.4.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "pino": "^9.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  },
+  "peerDependencies": {
+    "pino": ">=8.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "UNLICENSED"
+}
