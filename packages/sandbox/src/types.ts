@@ -21,7 +21,7 @@
 export interface MinimalRedis {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<'OK'>;
-  set(key: string, value: string, mode: 'EX', duration: number): Promise<'OK'>;
+  set(key: string, value: string, mode: 'EX' | 'PX', duration: number): Promise<'OK'>;
   del(...keys: string[]): Promise<number>;
   keys(pattern: string): Promise<string[]>;
   scan(
