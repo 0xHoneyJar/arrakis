@@ -78,8 +78,14 @@ variable "redis_node_type" {
 }
 
 # Domain
+variable "root_domain" {
+  description = "Root domain for Route 53 hosted zone"
+  type        = string
+  default     = "arrakis.community"
+}
+
 variable "domain_name" {
-  description = "Domain name for SSL certificate"
+  description = "Domain name for SSL certificate (API endpoint)"
   type        = string
   default     = "api.arrakis.community"
 }

@@ -76,7 +76,7 @@ resource "aws_lb_listener" "https" {
     target_group_arn = aws_lb_target_group.api.arn
   }
 
-  depends_on = [aws_acm_certificate_validation.main]
+  depends_on = [aws_acm_certificate_validation.main_with_route53]
 }
 
 # HTTP to HTTPS redirect
@@ -108,13 +108,5 @@ resource "aws_acm_certificate" "main" {
   tags = local.common_tags
 }
 
-# Certificate validation (requires DNS records to be created)
-resource "aws_acm_certificate_validation" "main" {
-  certificate_arn = aws_acm_certificate.main.arn
-
-  # This will wait for DNS validation
-  # You need to create the DNS records shown in the certificate output
-  timeouts {
-    create = "30m"
-  }
-}
+# Certificate validation is now managed in route53.tf with automatic DNS record creation
+# See aws_acm_certificate_validation.main_with_route53
