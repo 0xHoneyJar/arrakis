@@ -26,6 +26,8 @@ on:
       - main
     paths:
       - 'apps/worker/**'
+      - 'packages/sandbox/**'
+      - 'packages/core/**'
       - '.github/workflows/deploy-gp-worker.yml'
   workflow_dispatch:
     inputs:
@@ -111,7 +113,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: ./apps/worker
+          # Use repo root as context for monorepo workspace dependencies
+          context: .
           file: ./apps/worker/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}

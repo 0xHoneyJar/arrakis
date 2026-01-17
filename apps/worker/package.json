@@ -27,6 +27,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@arrakis/sandbox": "file:../../packages/sandbox",
     "@discordjs/rest": "^2.6.0",
     "amqplib": "^0.10.4",
     "cassandra-driver": "^4.7.2",
