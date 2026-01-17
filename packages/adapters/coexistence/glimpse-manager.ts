@@ -42,6 +42,94 @@ import {
 } from '@arrakis/core/domain';
 
 // =============================================================================
+// Input Validation Constants
+// =============================================================================
+
+/** Maximum allowed limit for pagination queries */
+const MAX_QUERY_LIMIT = 100;
+
+/** Maximum allowed search string length */
+const MAX_SEARCH_LENGTH = 100;
+
+/** Valid leaderboard time periods */
+const VALID_PERIODS = ['day', 'week', 'month', 'all_time'] as const;
+
+/** Valid badge rarities */
+const VALID_RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'] as const;
+
+// =============================================================================
+// Input Validation Helpers
+// =============================================================================
+
+/**
+ * Validate and sanitize numeric limit parameter.
+ * @param value - Input value
+ * @param defaultValue - Default if undefined
+ * @returns Safe value between 1 and MAX_QUERY_LIMIT
+ */
+function sanitizeLimit(value: number | undefined, defaultValue: number): number {
+  if (value === undefined) return defaultValue;
+  return Math.max(1, Math.min(Math.floor(value), MAX_QUERY_LIMIT));
+}
+
+/**
+ * Validate and sanitize numeric offset parameter.
+ * @param value - Input value
+ * @returns Safe value >= 0
+ */
+function sanitizeOffset(value: number | undefined): number {
+  if (value === undefined) return 0;
+  return Math.max(0, Math.floor(value));
+}
+
+/**
+ * Validate and sanitize period enum parameter.
+ * @param value - Input value
+ * @returns Valid period or 'all_time' default
+ */
+function sanitizePeriod(
+  value: 'day' | 'week' | 'month' | 'all_time' | undefined
+): 'day' | 'week' | 'month' | 'all_time' {
+  if (value === undefined) return 'all_time';
+  return VALID_PERIODS.includes(value) ? value : 'all_time';
+}
+
+/**
+ * Validate and sanitize rarity enum parameter.
+ * @param value - Input value
+ * @returns Valid rarity or undefined
+ */
+function sanitizeRarity(
+  value: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | undefined
+): 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | undefined {
+  if (value === undefined) return undefined;
+  return VALID_RARITIES.includes(value) ? value : undefined;
+}
+
+/**
+ * Validate and sanitize search string parameter.
+ * @param value - Input value
+ * @returns Trimmed, length-limited string or undefined
+ */
+function sanitizeSearch(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed.slice(0, MAX_SEARCH_LENGTH);
+}
+
+/**
+ * Validate and sanitize tier filter parameter.
+ * @param value - Input value
+ * @returns Trimmed string or undefined
+ */
+function sanitizeTier(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 50) : undefined;
+}
+
+// =============================================================================
 // Dependency Interfaces
 // =============================================================================
 
@@ -336,6 +424,12 @@ export class GlimpseManager implements IGlimpseAndReadiness {
 
   /**
    * Update glimpse mode configuration.
+   *
+   * @security CRITICAL: This method MUST be protected by an authorization layer.
+   * Only community admins should be able to call this method. Exposure without
+   * authorization allows malicious users to modify glimpse visibility settings.
+   *
+   * @rateLimit Recommended: 10 requests/minute per community
    */
   async updateConfig(
     communityId: string,
@@ -378,11 +472,16 @@ export class GlimpseManager implements IGlimpseAndReadiness {
       feature: 'leaderboard',
     });
 
+    // Validate and sanitize query parameters
+    const safeLimit = sanitizeLimit(options?.limit, this.options.defaultLeaderboardLimit);
+    const safeOffset = sanitizeOffset(options?.offset);
+    const safePeriod = sanitizePeriod(options?.period);
+
     // Get raw leaderboard data
     const data = await this.leaderboard.getLeaderboard(guildId, {
-      limit: options?.limit ?? this.options.defaultLeaderboardLimit,
-      offset: options?.offset ?? 0,
-      period: options?.period ?? 'all_time',
+      limit: safeLimit,
+      offset: safeOffset,
+      period: safePeriod,
     });
 
     // Get viewer's position
@@ -463,12 +562,18 @@ export class GlimpseManager implements IGlimpseAndReadiness {
       feature: 'profile_directory',
     });
 
+    // Validate and sanitize query parameters
+    const safeLimit = sanitizeLimit(options?.limit, this.options.defaultProfileLimit);
+    const safeOffset = sanitizeOffset(options?.offset);
+    const safeTier = sanitizeTier(options?.tier);
+    const safeSearch = sanitizeSearch(options?.search);
+
     // Get raw profile data
     const data = await this.profiles.getProfiles(guildId, {
-      limit: options?.limit ?? this.options.defaultProfileLimit,
-      offset: options?.offset ?? 0,
-      tier: options?.tier,
-      search: options?.search,
+      limit: safeLimit,
+      offset: safeOffset,
+      tier: safeTier,
+      search: safeSearch,
     });
 
     // Transform profiles based on glimpse mode
@@ -550,9 +655,12 @@ export class GlimpseManager implements IGlimpseAndReadiness {
       feature: 'badge_showcase',
     });
 
+    // Validate and sanitize query parameters
+    const safeRarity = sanitizeRarity(options?.rarity);
+
     // Get available badges
     const data = await this.badges.getBadges(guildId, {
-      rarity: options?.rarity,
+      rarity: safeRarity,
       earnedOnly: options?.earnedOnly,
     });
 
@@ -661,6 +769,12 @@ export class GlimpseManager implements IGlimpseAndReadiness {
 
   /**
    * Set custom unlock message.
+   *
+   * @security CRITICAL: This method MUST be protected by an authorization layer.
+   * Only community admins should be able to call this method. Exposure without
+   * authorization allows malicious users to set arbitrary unlock messages.
+   *
+   * @rateLimit Recommended: 10 requests/minute per community
    */
   async setCustomUnlockMessage(
     communityId: string,
@@ -784,6 +898,13 @@ export class GlimpseManager implements IGlimpseAndReadiness {
 
   /**
    * Update readiness requirements (admin override).
+   *
+   * @security CRITICAL: This method MUST be protected by an authorization layer.
+   * Only community admins should be able to call this method. Exposure without
+   * authorization allows malicious users to bypass migration readiness checks
+   * by setting minShadowDays=0 or minAccuracy=0.
+   *
+   * @rateLimit Recommended: 5 requests/minute per community
    */
   async updateRequirements(
     communityId: string,

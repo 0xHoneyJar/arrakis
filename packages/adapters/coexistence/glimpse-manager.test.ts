@@ -1020,6 +1020,283 @@ describe('GlimpseManager', () => {
 });
 
 // =============================================================================
+// Input Validation Tests (MED-S27-1)
+// =============================================================================
+
+describe('Input Validation', () => {
+  let manager: GlimpseManager;
+  let leaderboard: ILeaderboardDataSource;
+  let profiles: IProfileDataSource;
+  let badges: IBadgeDataSource;
+  let verification: ICommunityVerificationSource;
+  let shadow: IShadowStats;
+  let configStore: IGlimpseConfigStore;
+  let metrics: IGlimpseMetrics;
+  let logger: Logger;
+
+  beforeEach(() => {
+    leaderboard = createMockLeaderboard();
+    profiles = createMockProfiles();
+    badges = createMockBadges();
+    verification = createMockVerification();
+    shadow = createMockShadow();
+    configStore = createMockConfigStore();
+    metrics = createMockMetrics();
+    logger = createMockLogger();
+
+    manager = new GlimpseManager(
+      leaderboard,
+      profiles,
+      badges,
+      verification,
+      shadow,
+      configStore,
+      metrics,
+      logger
+    );
+  });
+
+  describe('getLeaderboard validation', () => {
+    it('should clamp excessive limit to MAX_QUERY_LIMIT (100)', async () => {
+      const context = createTestContext();
+
+      await manager.getLeaderboard(context, {
+        limit: 999999,
+        offset: 0,
+      });
+
+      expect(leaderboard.getLeaderboard).toHaveBeenCalledWith('guild-123', {
+        limit: 100, // Clamped to max
+        offset: 0,
+        period: 'all_time',
+      });
+    });
+
+    it('should clamp negative limit to 1', async () => {
+      const context = createTestContext();
+
+      await manager.getLeaderboard(context, {
+        limit: -10,
+        offset: 0,
+      });
+
+      expect(leaderboard.getLeaderboard).toHaveBeenCalledWith('guild-123', {
+        limit: 1, // Minimum
+        offset: 0,
+        period: 'all_time',
+      });
+    });
+
+    it('should clamp negative offset to 0', async () => {
+      const context = createTestContext();
+
+      await manager.getLeaderboard(context, {
+        limit: 10,
+        offset: -50,
+      });
+
+      expect(leaderboard.getLeaderboard).toHaveBeenCalledWith('guild-123', {
+        limit: 10,
+        offset: 0, // Clamped to 0
+        period: 'all_time',
+      });
+    });
+
+    it('should floor floating point limit', async () => {
+      const context = createTestContext();
+
+      await manager.getLeaderboard(context, {
+        limit: 10.9,
+        offset: 0,
+      });
+
+      expect(leaderboard.getLeaderboard).toHaveBeenCalledWith('guild-123', {
+        limit: 10, // Floored
+        offset: 0,
+        period: 'all_time',
+      });
+    });
+
+    it('should reject invalid period and default to all_time', async () => {
+      const context = createTestContext();
+
+      await manager.getLeaderboard(context, {
+        period: 'invalid_period' as 'day' | 'week' | 'month' | 'all_time',
+      });
+
+      expect(leaderboard.getLeaderboard).toHaveBeenCalledWith('guild-123', {
+        limit: 25, // default from GlimpseManagerOptions
+        offset: 0,
+        period: 'all_time', // Defaulted
+      });
+    });
+  });
+
+  describe('getProfileDirectory validation', () => {
+    it('should clamp excessive limit to MAX_QUERY_LIMIT (100)', async () => {
+      const context = createTestContext();
+
+      await manager.getProfileDirectory(context, {
+        limit: 500000,
+      });
+
+      expect(profiles.getProfiles).toHaveBeenCalledWith('guild-123', {
+        limit: 100, // Clamped to MAX_QUERY_LIMIT
+        offset: 0,
+        search: undefined,
+        tier: undefined,
+      });
+    });
+
+    it('should clamp negative limit to 1', async () => {
+      const context = createTestContext();
+
+      await manager.getProfileDirectory(context, {
+        limit: -5,
+      });
+
+      expect(profiles.getProfiles).toHaveBeenCalledWith('guild-123', {
+        limit: 1, // Minimum
+        offset: 0,
+        search: undefined,
+        tier: undefined,
+      });
+    });
+
+    it('should clamp negative offset to 0', async () => {
+      const context = createTestContext();
+
+      await manager.getProfileDirectory(context, {
+        offset: -100,
+      });
+
+      expect(profiles.getProfiles).toHaveBeenCalledWith('guild-123', {
+        limit: 20, // defaultProfileLimit
+        offset: 0, // Clamped to 0
+        search: undefined,
+        tier: undefined,
+      });
+    });
+
+    it('should sanitize search string with excessive length', async () => {
+      const context = createTestContext();
+      const longSearch = 'a'.repeat(500); // 500 chars
+
+      await manager.getProfileDirectory(context, {
+        search: longSearch,
+      });
+
+      expect(profiles.getProfiles).toHaveBeenCalledWith('guild-123', {
+        limit: 20, // defaultProfileLimit from GlimpseManagerOptions
+        offset: 0,
+        search: 'a'.repeat(100), // Truncated to 100
+        tier: undefined,
+      });
+    });
+
+    it('should trim whitespace from search', async () => {
+      const context = createTestContext();
+
+      await manager.getProfileDirectory(context, {
+        search: '   trimmed   ',
+      });
+
+      expect(profiles.getProfiles).toHaveBeenCalledWith('guild-123', {
+        limit: 20, // defaultProfileLimit from GlimpseManagerOptions
+        offset: 0,
+        search: 'trimmed', // Trimmed
+        tier: undefined,
+      });
+    });
+
+    it('should convert empty search to undefined', async () => {
+      const context = createTestContext();
+
+      await manager.getProfileDirectory(context, {
+        search: '   ',
+      });
+
+      expect(profiles.getProfiles).toHaveBeenCalledWith('guild-123', {
+        limit: 20, // defaultProfileLimit from GlimpseManagerOptions
+        offset: 0,
+        search: undefined, // Empty after trim
+        tier: undefined,
+      });
+    });
+
+    it('should sanitize tier string length', async () => {
+      const context = createTestContext();
+      const longTier = 'x'.repeat(100);
+
+      await manager.getProfileDirectory(context, {
+        tier: longTier,
+      });
+
+      expect(profiles.getProfiles).toHaveBeenCalledWith('guild-123', {
+        limit: 20, // defaultProfileLimit from GlimpseManagerOptions
+        offset: 0,
+        search: undefined,
+        tier: 'x'.repeat(50), // Truncated to 50
+      });
+    });
+  });
+
+  describe('getBadgeShowcase validation', () => {
+    it('should reject invalid rarity and default to undefined', async () => {
+      const context = createTestContext();
+
+      await manager.getBadgeShowcase(context, {
+        rarity: 'super_rare' as 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary',
+      });
+
+      expect(badges.getBadges).toHaveBeenCalledWith('guild-123', {
+        rarity: undefined, // Invalid rarity rejected
+        earnedOnly: undefined,
+      });
+    });
+
+    it('should accept valid rarity - legendary', async () => {
+      const context = createTestContext();
+
+      await manager.getBadgeShowcase(context, {
+        rarity: 'legendary',
+      });
+
+      expect(badges.getBadges).toHaveBeenCalledWith('guild-123', {
+        rarity: 'legendary', // Valid
+        earnedOnly: undefined,
+      });
+    });
+
+    it('should accept valid rarity - common', async () => {
+      const context = createTestContext();
+
+      await manager.getBadgeShowcase(context, {
+        rarity: 'common',
+      });
+
+      expect(badges.getBadges).toHaveBeenCalledWith('guild-123', {
+        rarity: 'common', // Valid
+        earnedOnly: undefined,
+      });
+    });
+
+    it('should accept valid rarity - rare', async () => {
+      const context = createTestContext();
+
+      await manager.getBadgeShowcase(context, {
+        rarity: 'rare',
+      });
+
+      expect(badges.getBadges).toHaveBeenCalledWith('guild-123', {
+        rarity: 'rare', // Valid
+        earnedOnly: undefined,
+      });
+    });
+  });
+});
+
+// =============================================================================
 // Factory Function Tests
 // =============================================================================
 
