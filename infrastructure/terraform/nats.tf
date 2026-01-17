@@ -177,7 +177,7 @@ resource "aws_ecs_service" "nats" {
 
   service_connect_configuration {
     enabled   = true
-    namespace = aws_service_discovery_private_dns_namespace.main.arn
+    namespace = var.enable_service_discovery ? aws_service_discovery_private_dns_namespace.main[0].arn : null
 
     service {
       port_name      = "client"
@@ -189,9 +189,9 @@ resource "aws_ecs_service" "nats" {
     }
   }
 
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 100
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
   }
 
   enable_execute_command = true
@@ -417,7 +417,7 @@ resource "aws_service_discovery_service" "nats" {
   name = "nats"
 
   dns_config {
-    namespace_id   = aws_service_discovery_private_dns_namespace.main.id
+    namespace_id   = var.enable_service_discovery ? aws_service_discovery_private_dns_namespace.main[0].id : null
     routing_policy = "MULTIVALUE"
 
     dns_records {

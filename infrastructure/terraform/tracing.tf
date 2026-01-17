@@ -307,8 +307,11 @@ resource "aws_ecs_service" "tempo" {
   }
 
   # Service discovery for internal DNS resolution
-  service_registries {
-    registry_arn = aws_service_discovery_service.tempo.arn
+  dynamic "service_registries" {
+    for_each = var.enable_service_discovery ? [1] : []
+    content {
+      registry_arn = aws_service_discovery_service.tempo[0].arn
+    }
   }
 
   tags = merge(local.common_tags, {
@@ -323,10 +326,11 @@ resource "aws_ecs_service" "tempo" {
 # Service Discovery
 # -----------------------------------------------------------------------------
 resource "aws_service_discovery_service" "tempo" {
-  name = "tempo"
+  count = var.enable_service_discovery ? 1 : 0
+  name  = "tempo"
 
   dns_config {
-    namespace_id = aws_service_discovery_private_dns_namespace.internal.id
+    namespace_id = aws_service_discovery_private_dns_namespace.main[0].id
 
     dns_records {
       ttl  = 10
@@ -404,15 +408,15 @@ output "tempo_service_name" {
 
 output "tempo_endpoint_query" {
   description = "Tempo Query API endpoint (internal)"
-  value       = "http://tempo.${aws_service_discovery_private_dns_namespace.internal.name}:3200"
+  value       = var.enable_service_discovery ? "http://tempo.${aws_service_discovery_private_dns_namespace.main[0].name}:3200" : ""
 }
 
 output "tempo_endpoint_otlp_grpc" {
   description = "Tempo OTLP gRPC endpoint (internal)"
-  value       = "tempo.${aws_service_discovery_private_dns_namespace.internal.name}:4317"
+  value       = var.enable_service_discovery ? "tempo.${aws_service_discovery_private_dns_namespace.main[0].name}:4317" : ""
 }
 
 output "tempo_endpoint_otlp_http" {
   description = "Tempo OTLP HTTP endpoint (internal)"
-  value       = "http://tempo.${aws_service_discovery_private_dns_namespace.internal.name}:4318"
+  value       = var.enable_service_discovery ? "http://tempo.${aws_service_discovery_private_dns_namespace.main[0].name}:4318" : ""
 }

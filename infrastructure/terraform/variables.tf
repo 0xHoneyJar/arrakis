@@ -191,3 +191,16 @@ variable "gateway_desired_count" {
   type        = number
   default     = 1
 }
+
+# Observability
+variable "log_retention_days" {
+  description = "CloudWatch log retention in days"
+  type        = number
+  default     = 30
+}
+
+variable "log_level" {
+  description = "Application log level"
+  type        = string
+  default     = "info"
+}

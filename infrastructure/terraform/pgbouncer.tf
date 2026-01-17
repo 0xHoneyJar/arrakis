@@ -31,7 +31,7 @@ resource "aws_security_group" "pgbouncer" {
     from_port       = 6432
     to_port         = 6432
     protocol        = "tcp"
-    security_groups = [aws_security_group.worker.id]
+    security_groups = [aws_security_group.ecs_tasks.id]
     description     = "PgBouncer from workers"
   }
 

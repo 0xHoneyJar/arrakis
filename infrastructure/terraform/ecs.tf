@@ -688,7 +688,7 @@ resource "aws_security_group_rule" "gp_worker_to_postgres" {
   to_port                  = 5432
   protocol                 = "tcp"
   security_group_id        = aws_security_group.gp_worker.id
-  source_security_group_id = aws_security_group.postgres.id
+  source_security_group_id = aws_security_group.rds.id
   description              = "Allow PostgreSQL access"
 }
 
@@ -731,7 +731,7 @@ resource "aws_security_group_rule" "postgres_from_gp_worker" {
   from_port                = 5432
   to_port                  = 5432
   protocol                 = "tcp"
-  security_group_id        = aws_security_group.postgres.id
+  security_group_id        = aws_security_group.rds.id
   source_security_group_id = aws_security_group.gp_worker.id
   description              = "Allow PostgreSQL from GP Worker"
 }
@@ -787,19 +787,19 @@ resource "aws_ecs_task_definition" "gp_worker" {
         },
         {
           name      = "REDIS_URL"
-          valueFrom = "${aws_secretsmanager_secret.app_config.arn}:REDIS_URL::"
+          valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:REDIS_URL::"
         },
         {
           name      = "DATABASE_URL"
-          valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DATABASE_URL::"
+          valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:DATABASE_URL::"
         },
         {
           name      = "DISCORD_APPLICATION_ID"
-          valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DISCORD_APPLICATION_ID::"
+          valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:DISCORD_APPLICATION_ID::"
         },
         {
           name      = "DISCORD_BOT_TOKEN"
-          valueFrom = "${aws_secretsmanager_secret.app_config.arn}:DISCORD_BOT_TOKEN::"
+          valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:DISCORD_BOT_TOKEN::"
         }
       ]
 
