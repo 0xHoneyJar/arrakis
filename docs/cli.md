@@ -428,5 +428,6 @@ gaib sandbox destroy my-sandbox
 
 ## See Also
 
+- [Discord Test Server Setup](./discord-test-server-setup.md) - Create a test server with proper permissions
 - [Sandbox Operations Runbook](./sandbox-runbook.md) - Operational procedures and troubleshooting
 - [Gateway Proxy Architecture](./architecture/gateway-proxy.md) - Event routing details
