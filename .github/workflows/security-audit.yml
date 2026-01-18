@@ -19,35 +19,87 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Check if app has dependencies
+      - name: Check for monorepo structure
         id: check-deps
         run: |
-          if [ -f "app/package.json" ]; then
+          # Check for monorepo (apps/ or packages/)
+          if [ -d "apps" ] || [ -d "packages" ]; then
             echo "has_deps=true" >> $GITHUB_OUTPUT
+            echo "is_monorepo=true" >> $GITHUB_OUTPUT
+          # Fallback to legacy app/ structure
+          elif [ -f "app/package.json" ]; then
+            echo "has_deps=true" >> $GITHUB_OUTPUT
+            echo "is_monorepo=false" >> $GITHUB_OUTPUT
           else
             echo "has_deps=false" >> $GITHUB_OUTPUT
-            echo "::notice::No app/package.json found - skipping NPM audit (template repo)"
+            echo "is_monorepo=false" >> $GITHUB_OUTPUT
+            echo "::notice::No package.json found - skipping NPM audit (template repo)"
           fi
 
       - name: Setup Node.js
         if: steps.check-deps.outputs.has_deps == 'true'
         uses: actions/setup-node@v6
         with:
-          node-version: '18'
+          node-version: '20'
 
-      - name: Install dependencies
-        if: steps.check-deps.outputs.has_deps == 'true'
-        working-directory: ./app
-        run: npm install
+      # Monorepo audit (apps/ and packages/)
+      - name: Audit monorepo packages
+        if: steps.check-deps.outputs.is_monorepo == 'true'
+        run: |
+          echo "=== Auditing monorepo packages ==="
+          FAILED=0
 
-      - name: Run npm audit
-        if: steps.check-deps.outputs.has_deps == 'true'
+          # Audit apps/
+          for dir in apps/*/; do
+            if [ -f "${dir}package.json" ]; then
+              echo ""
+              echo "--- Auditing $dir ---"
+              cd "$dir"
+              npm install --package-lock-only 2>/dev/null || true
+              if ! npm audit --audit-level=high; then
+                echo "::error::High/critical vulnerabilities found in $dir"
+                FAILED=1
+              fi
+              cd - > /dev/null
+            fi
+          done
+
+          # Audit packages/
+          for dir in packages/*/; do
+            if [ -f "${dir}package.json" ]; then
+              echo ""
+              echo "--- Auditing $dir ---"
+              cd "$dir"
+              npm install --package-lock-only 2>/dev/null || true
+              if ! npm audit --audit-level=high; then
+                echo "::error::High/critical vulnerabilities found in $dir"
+                FAILED=1
+              fi
+              cd - > /dev/null
+            fi
+          done
+
+          # Exit with failure if any package has vulnerabilities
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "::error::Security audit failed - high/critical vulnerabilities found"
+            exit 1
+          fi
+
+          echo ""
+          echo "=== All packages passed security audit ==="
+
+      # Legacy single-app audit
+      - name: Audit legacy app/
+        if: steps.check-deps.outputs.is_monorepo == 'false' && steps.check-deps.outputs.has_deps == 'true'
         working-directory: ./app
-        run: npm audit --audit-level=moderate
-        continue-on-error: true
+        run: |
+          npm install
+          npm audit --audit-level=high
+          # Fails CI on high/critical vulnerabilities per S-89.2
 
       - name: Run security check
-        if: steps.check-deps.outputs.has_deps == 'true'
+        if: steps.check-deps.outputs.has_deps == 'true' && steps.check-deps.outputs.is_monorepo == 'false'
         working-directory: ./app
         run: npm run security:check
         continue-on-error: true

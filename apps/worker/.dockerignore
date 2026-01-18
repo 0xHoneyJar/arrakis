@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Test
+coverage
+.nyc_output
+
+# Logs
+*.log
+logs
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# TypeScript source maps (built into dist)
+*.map
