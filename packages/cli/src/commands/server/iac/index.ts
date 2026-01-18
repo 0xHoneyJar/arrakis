@@ -2,6 +2,7 @@
  * Discord Infrastructure-as-Code Module
  *
  * Sprint 91: Discord Infrastructure-as-Code - Config Parsing & State Reading
+ * Sprint 92: Discord Infrastructure-as-Code - Diff Calculation & State Application
  *
  * Exports all IaC components for managing Discord server configuration
  * as declarative YAML files.
@@ -106,3 +107,41 @@ export {
   buildResourceMappings,
   type ReadOptions,
 } from './StateReader.js';
+
+// Diff calculation (Sprint 92)
+export {
+  calculateDiff,
+  formatDiff,
+  getActionableChanges,
+  type DiffOptions,
+} from './DiffEngine.js';
+
+// Rate limiting (Sprint 92)
+export {
+  RateLimiter,
+  getDefaultRateLimiter,
+  resetDefaultRateLimiter,
+  type RateLimiterOptions,
+  type OperationType,
+} from './RateLimiter.js';
+
+// Retry handling (Sprint 92)
+export {
+  RetryHandler,
+  createRetryHandler,
+  withRetry,
+  isRetryableError,
+  getRetryAfterMs,
+  type RetryOptions,
+  type RetryResult,
+  type DiscordHttpError,
+} from './RetryHandler.js';
+
+// State writing (Sprint 92)
+export {
+  StateWriter,
+  createWriterFromEnv,
+  formatApplyResult,
+  type ApplyOptions,
+  type ResourceIdMap,
+} from './StateWriter.js';

@@ -16,6 +16,15 @@ import {
   type RESTGetAPIGuildResult,
   type RESTGetAPIGuildRolesResult,
   type RESTGetAPIGuildChannelsResult,
+  type RESTPostAPIGuildRoleJSONBody,
+  type RESTPostAPIGuildRoleResult,
+  type RESTPatchAPIGuildRoleJSONBody,
+  type RESTPatchAPIGuildRoleResult,
+  type RESTPostAPIGuildChannelJSONBody,
+  type RESTPostAPIGuildChannelResult,
+  type RESTPatchAPIChannelJSONBody,
+  type RESTPatchAPIChannelResult,
+  type RESTPutAPIChannelPermissionJSONBody,
   type APIRole,
   type APIChannel,
   type APIGuildCategoryChannel,
@@ -180,6 +189,134 @@ export class DiscordClient {
       return true;
     } catch (error) {
       throw this.handleError(error, `Bot doesn't have access to guild ${guildId}`);
+    }
+  }
+
+  // ============================================================================
+  // Write Methods (Sprint 92)
+  // ============================================================================
+
+  /**
+   * Create a new role
+   */
+  async createRole(
+    guildId: Snowflake,
+    data: RESTPostAPIGuildRoleJSONBody
+  ): Promise<APIRole> {
+    try {
+      return (await this.rest.post(Routes.guildRoles(guildId), {
+        body: data,
+      })) as RESTPostAPIGuildRoleResult;
+    } catch (error) {
+      throw this.handleError(error, `Failed to create role in guild ${guildId}`);
+    }
+  }
+
+  /**
+   * Update an existing role
+   */
+  async updateRole(
+    guildId: Snowflake,
+    roleId: Snowflake,
+    data: RESTPatchAPIGuildRoleJSONBody
+  ): Promise<APIRole> {
+    try {
+      return (await this.rest.patch(Routes.guildRole(guildId, roleId), {
+        body: data,
+      })) as RESTPatchAPIGuildRoleResult;
+    } catch (error) {
+      throw this.handleError(error, `Failed to update role ${roleId} in guild ${guildId}`);
+    }
+  }
+
+  /**
+   * Delete a role
+   */
+  async deleteRole(guildId: Snowflake, roleId: Snowflake): Promise<void> {
+    try {
+      await this.rest.delete(Routes.guildRole(guildId, roleId));
+    } catch (error) {
+      throw this.handleError(error, `Failed to delete role ${roleId} in guild ${guildId}`);
+    }
+  }
+
+  /**
+   * Create a new channel (or category)
+   */
+  async createChannel(
+    guildId: Snowflake,
+    data: RESTPostAPIGuildChannelJSONBody
+  ): Promise<APIChannel> {
+    try {
+      return (await this.rest.post(Routes.guildChannels(guildId), {
+        body: data,
+      })) as RESTPostAPIGuildChannelResult;
+    } catch (error) {
+      throw this.handleError(error, `Failed to create channel in guild ${guildId}`);
+    }
+  }
+
+  /**
+   * Update an existing channel
+   */
+  async updateChannel(
+    channelId: Snowflake,
+    data: RESTPatchAPIChannelJSONBody
+  ): Promise<APIChannel> {
+    try {
+      return (await this.rest.patch(Routes.channel(channelId), {
+        body: data,
+      })) as RESTPatchAPIChannelResult;
+    } catch (error) {
+      throw this.handleError(error, `Failed to update channel ${channelId}`);
+    }
+  }
+
+  /**
+   * Delete a channel
+   */
+  async deleteChannel(channelId: Snowflake): Promise<void> {
+    try {
+      await this.rest.delete(Routes.channel(channelId));
+    } catch (error) {
+      throw this.handleError(error, `Failed to delete channel ${channelId}`);
+    }
+  }
+
+  /**
+   * Set permission overwrite for a channel
+   */
+  async setChannelPermission(
+    channelId: Snowflake,
+    overwriteId: Snowflake,
+    data: RESTPutAPIChannelPermissionJSONBody
+  ): Promise<void> {
+    try {
+      await this.rest.put(Routes.channelPermission(channelId, overwriteId), {
+        body: data,
+      });
+    } catch (error) {
+      throw this.handleError(
+        error,
+        `Failed to set permission for ${overwriteId} on channel ${channelId}`
+      );
+    }
+  }
+
+  /**
+   * Delete permission overwrite for a channel
+   */
+  async deleteChannelPermission(
+    channelId: Snowflake,
+    overwriteId: Snowflake
+  ): Promise<void> {
+    try {
+      await this.rest.delete(Routes.channelPermission(channelId, overwriteId));
+    } catch (error) {
+      throw this.handleError(
+        error,
+        `Failed to delete permission for ${overwriteId} on channel ${channelId}`
+      );
     }
   }
 
