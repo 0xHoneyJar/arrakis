@@ -108,8 +108,12 @@ resource "aws_secretsmanager_secret" "rabbitmq_credentials" {
   name                    = "${local.name_prefix}/rabbitmq"
   description             = "RabbitMQ connection credentials for Gateway Proxy"
   recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.secrets.id # Sprint 95: A-94.1 - Customer-managed KMS encryption
 
-  tags = local.common_tags
+  tags = merge(local.common_tags, {
+    Service = "RabbitMQ"
+    Sprint  = "95"
+  })
 }
 
 resource "aws_secretsmanager_secret_version" "rabbitmq_credentials" {

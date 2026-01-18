@@ -54,6 +54,12 @@ resource "random_password" "redis_auth" {
 resource "aws_secretsmanager_secret" "redis_credentials" {
   name                    = "${local.name_prefix}/redis"
   recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.secrets.id # Sprint 95: A-94.1 - Customer-managed KMS encryption
+
+  tags = merge(local.common_tags, {
+    Service = "Redis"
+    Sprint  = "95"
+  })
 }
 
 resource "aws_secretsmanager_secret_version" "redis_credentials" {

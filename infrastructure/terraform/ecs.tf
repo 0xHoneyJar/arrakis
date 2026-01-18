@@ -74,20 +74,266 @@ data "aws_secretsmanager_secret" "app_config" {
   name = "${local.name_prefix}/app-config"
 }
 
-resource "aws_iam_role_policy" "ecs_execution_secrets" {
-  name = "${local.name_prefix}-ecs-execution-secrets"
-  role = aws_iam_role.ecs_execution.id
+# =============================================================================
+# Service-Specific Execution Roles (Sprint 94 - Least Privilege)
+# =============================================================================
+# Each ECS service gets its own execution role with access only to the secrets
+# it needs. This prevents lateral movement if any single container is compromised.
+#
+# Finding: C-1 - Overly Permissive IAM Access to Discord Bot Token
+# CVSS: 9.1 (Critical)
+
+# -----------------------------------------------------------------------------
+# API Service Execution Role
+# Needs: vault_token, app_config (Discord, API keys), db_credentials, redis
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "ecs_execution_api" {
+  name = "${local.name_prefix}-ecs-execution-api"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = merge(local.common_tags, {
+    Service = "API"
+    Sprint  = "94"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_api" {
+  role       = aws_iam_role.ecs_execution_api.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_execution_api_secrets" {
+  name = "${local.name_prefix}-ecs-execution-api-secrets"
+  role = aws_iam_role.ecs_execution_api.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "APIServiceSecrets"
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue"
         ]
         Resource = [
           data.aws_secretsmanager_secret.vault_token.arn,
+          data.aws_secretsmanager_secret.app_config.arn,
+          aws_secretsmanager_secret.db_credentials.arn,
+          aws_secretsmanager_secret.redis_credentials.arn
+        ]
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# Worker Service Execution Role
+# Needs: vault_token, app_config (limited), db_credentials, redis
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "ecs_execution_worker" {
+  name = "${local.name_prefix}-ecs-execution-worker"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = merge(local.common_tags, {
+    Service = "Worker"
+    Sprint  = "94"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_worker" {
+  role       = aws_iam_role.ecs_execution_worker.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_execution_worker_secrets" {
+  name = "${local.name_prefix}-ecs-execution-worker-secrets"
+  role = aws_iam_role.ecs_execution_worker.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "WorkerServiceSecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          data.aws_secretsmanager_secret.vault_token.arn,
+          data.aws_secretsmanager_secret.app_config.arn,
+          aws_secretsmanager_secret.db_credentials.arn,
+          aws_secretsmanager_secret.redis_credentials.arn
+        ]
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# Ingestor Service Execution Role
+# Needs: app_config (Discord token only), rabbitmq_credentials
+# Minimal secrets - Ingestor only connects to Discord and publishes to RabbitMQ
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "ecs_execution_ingestor" {
+  name = "${local.name_prefix}-ecs-execution-ingestor"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = merge(local.common_tags, {
+    Service = "Ingestor"
+    Sprint  = "94"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_ingestor" {
+  role       = aws_iam_role.ecs_execution_ingestor.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_execution_ingestor_secrets" {
+  name = "${local.name_prefix}-ecs-execution-ingestor-secrets"
+  role = aws_iam_role.ecs_execution_ingestor.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "IngestorServiceSecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          data.aws_secretsmanager_secret.app_config.arn,
+          aws_secretsmanager_secret.rabbitmq_credentials.arn
+        ]
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# Gateway (Rust/Twilight) Execution Role
+# Needs: app_config (Discord token only) - minimal attack surface
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "ecs_execution_gateway" {
+  name = "${local.name_prefix}-ecs-execution-gateway"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = merge(local.common_tags, {
+    Service = "Gateway"
+    Sprint  = "94"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_gateway" {
+  role       = aws_iam_role.ecs_execution_gateway.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_execution_gateway_secrets" {
+  name = "${local.name_prefix}-ecs-execution-gateway-secrets"
+  role = aws_iam_role.ecs_execution_gateway.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "GatewayServiceSecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          data.aws_secretsmanager_secret.app_config.arn
+        ]
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# GP Worker Execution Role
+# Needs: app_config (Discord), db_credentials, redis, rabbitmq
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "ecs_execution_gp_worker" {
+  name = "${local.name_prefix}-ecs-execution-gp-worker"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = merge(local.common_tags, {
+    Service = "GPWorker"
+    Sprint  = "94"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_gp_worker" {
+  role       = aws_iam_role.ecs_execution_gp_worker.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_execution_gp_worker_secrets" {
+  name = "${local.name_prefix}-ecs-execution-gp-worker-secrets"
+  role = aws_iam_role.ecs_execution_gp_worker.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "GPWorkerServiceSecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
           data.aws_secretsmanager_secret.app_config.arn,
           aws_secretsmanager_secret.db_credentials.arn,
           aws_secretsmanager_secret.redis_credentials.arn,
@@ -97,6 +343,19 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
     ]
   })
 }
+
+# -----------------------------------------------------------------------------
+# Sprint 95 (A-94.3): Legacy IAM role removed - all services use service-specific roles
+# This policy was removed because it granted blanket access to ALL secrets,
+# bypassing the least-privilege architecture implemented in Sprint 94.
+#
+# Service-specific roles:
+# - ecs_execution_api: vault_token, app_config, db_credentials, redis_credentials
+# - ecs_execution_worker: vault_token, app_config, db_credentials, redis_credentials
+# - ecs_execution_ingestor: app_config, rabbitmq_credentials
+# - ecs_execution_gateway: app_config only
+# - ecs_execution_gp_worker: app_config, db_credentials, redis_credentials, rabbitmq_credentials
+# -----------------------------------------------------------------------------
 
 # Cloud Map / Service Discovery permissions for ECS services
 # Required for DNS-based service discovery (NATS, etc.)
@@ -184,7 +443,7 @@ resource "aws_ecs_task_definition" "api" {
   network_mode             = "awsvpc"
   cpu                      = var.api_cpu
   memory                   = var.api_memory
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  execution_role_arn       = aws_iam_role.ecs_execution_api.arn # Sprint 94: Least-privilege
   task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
@@ -260,7 +519,7 @@ resource "aws_ecs_task_definition" "worker" {
   network_mode             = "awsvpc"
   cpu                      = 256
   memory                   = 512
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  execution_role_arn       = aws_iam_role.ecs_execution_worker.arn # Sprint 94: Least-privilege
   task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
@@ -535,7 +794,7 @@ resource "aws_ecs_task_definition" "ingestor" {
   network_mode             = "awsvpc"
   cpu                      = var.ingestor_cpu
   memory                   = var.ingestor_memory
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  execution_role_arn       = aws_iam_role.ecs_execution_ingestor.arn # Sprint 94: Least-privilege
   task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
@@ -801,7 +1060,7 @@ resource "aws_ecs_task_definition" "gp_worker" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.gp_worker_cpu
   memory                   = var.gp_worker_memory
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  execution_role_arn       = aws_iam_role.ecs_execution_gp_worker.arn # Sprint 94: Least-privilege IAM
   task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([

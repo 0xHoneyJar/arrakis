@@ -22,8 +22,8 @@ resource "aws_ecs_task_definition" "nats" {
       essential = true
 
       command = [
-        "-js",         # Enable JetStream
-        "-m", "8222"   # HTTP monitoring port
+        "-js",       # Enable JetStream
+        "-m", "8222" # HTTP monitoring port
       ]
 
       portMappings = [
@@ -429,10 +429,11 @@ resource "aws_secretsmanager_secret" "nats" {
   name                    = "${local.name_prefix}/nats"
   description             = "NATS connection configuration for Arrakis services"
   recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.secrets.id # Sprint 95: A-94.1 - Customer-managed KMS encryption
 
   tags = merge(local.common_tags, {
     Service = "NATS"
-    Sprint  = "S-5"
+    Sprint  = "95"
   })
 }
 

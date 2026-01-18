@@ -86,6 +86,12 @@ resource "random_password" "db_password" {
 resource "aws_secretsmanager_secret" "db_credentials" {
   name                    = "${local.name_prefix}/database"
   recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.secrets.id # Sprint 95: A-94.1 - Customer-managed KMS encryption
+
+  tags = merge(local.common_tags, {
+    Service = "Database"
+    Sprint  = "95"
+  })
 }
 
 resource "aws_secretsmanager_secret_version" "db_credentials" {
