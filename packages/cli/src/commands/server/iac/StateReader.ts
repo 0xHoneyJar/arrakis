@@ -14,7 +14,6 @@ import type { APIChannel, APIRole, APIOverwrite } from 'discord-api-types/v10';
 import { ChannelType as DiscordChannelType, OverwriteType } from 'discord-api-types/v10';
 import {
   DiscordClient,
-  type RawGuildData,
   mapChannelType,
   isCategory,
 } from './DiscordClient.js';
@@ -22,7 +21,6 @@ import {
   bitfieldToPermissions,
   intToColor,
   isManaged,
-  type PermissionFlag,
   type ChannelType,
 } from './schemas.js';
 import type {
@@ -144,7 +142,7 @@ function convertRoles(
       position: role.position,
       managed: role.managed,
       isEveryone: role.id === guildId, // @everyone role has same ID as guild
-      isIacManaged: isManaged(role.description ?? undefined),
+      isIacManaged: isManaged((role as { description?: string }).description),
     }))
     .sort((a, b) => b.position - a.position); // Sort by position descending (highest first)
 }
@@ -208,7 +206,7 @@ function convertChannels(
         topic: 'topic' in channel ? (channel.topic ?? undefined) : undefined,
         nsfw: 'nsfw' in channel ? (channel.nsfw ?? false) : false,
         slowmode: 'rate_limit_per_user' in channel ? (channel.rate_limit_per_user ?? 0) : 0,
-        position: channel.position ?? 0,
+        position: 'position' in channel ? (channel.position ?? 0) : 0,
         permissionOverwrites: convertPermissionOverwrites(
           'permission_overwrites' in channel ? (channel.permission_overwrites ?? []) : [],
           roleMap

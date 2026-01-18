@@ -19,7 +19,6 @@ import {
   type APIRole,
   type APIChannel,
   type APIGuildCategoryChannel,
-  type APIGuildTextChannel,
   type APIGuildVoiceChannel,
   ChannelType as DiscordChannelType,
 } from 'discord-api-types/v10';
@@ -298,7 +297,7 @@ export function isCategory(channel: APIChannel): channel is APIGuildCategoryChan
 /**
  * Check if a channel is a text channel
  */
-export function isTextChannel(channel: APIChannel): channel is APIGuildTextChannel {
+export function isTextChannel(channel: APIChannel): boolean {
   return channel.type === DiscordChannelType.GuildText;
 }
 

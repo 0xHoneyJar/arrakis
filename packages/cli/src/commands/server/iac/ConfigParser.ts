@@ -14,7 +14,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
-import { z } from 'zod';
 import { ServerConfigSchema, type ServerConfig } from './schemas.js';
 
 // ============================================================================
