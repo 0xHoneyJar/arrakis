@@ -1,7 +1,8 @@
 /**
- * List Command - bd sandbox list
+ * List Command - gaib sandbox list
  *
  * Sprint 85: Discord Server Sandboxes - CLI Commands
+ * Sprint 90: CLI Rename (bd → gaib)
  *
  * Lists sandboxes with filtering options.
  *
@@ -110,7 +111,7 @@ export async function listCommand(options: ListCommandOptions): Promise<void> {
     if (sandboxes.length === 0) {
       if (!options.quiet) {
         console.log(chalk.yellow('No sandboxes found.'));
-        console.log(chalk.dim('Create one with: bd sandbox create'));
+        console.log(chalk.dim('Create one with: gaib sandbox create'));
       }
       return;
     }

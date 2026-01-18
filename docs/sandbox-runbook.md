@@ -1,6 +1,7 @@
 # Discord Server Sandbox - Operations Runbook
 
 Sprint 87: Discord Server Sandboxes - Cleanup & Polish
+Sprint 90: CLI Rename (bd → gaib)
 
 ## Overview
 
@@ -18,30 +19,30 @@ Each sandbox gets:
 
 ```bash
 # List your sandboxes
-bd sandbox list
+gaib sandbox list
 
 # Create a sandbox (24h TTL default)
-bd sandbox create my-sandbox
+gaib sandbox create my-sandbox
 
 # Create with custom TTL
-bd sandbox create my-sandbox --ttl 48h
+gaib sandbox create my-sandbox --ttl 48h
 
 # Show detailed status
-bd sandbox status my-sandbox
-bd sandbox status my-sandbox --watch  # Live updates
+gaib sandbox status my-sandbox
+gaib sandbox status my-sandbox --watch  # Live updates
 
 # Register a Discord guild
-bd sandbox register-guild my-sandbox 123456789012345678
+gaib sandbox register-guild my-sandbox 123456789012345678
 
 # Unregister a guild
-bd sandbox unregister-guild my-sandbox 123456789012345678
+gaib sandbox unregister-guild my-sandbox 123456789012345678
 
 # Get connection details
-bd sandbox connect my-sandbox
-eval $(bd sandbox connect my-sandbox)  # Export to shell
+gaib sandbox connect my-sandbox
+eval $(gaib sandbox connect my-sandbox)  # Export to shell
 
 # Destroy a sandbox
-bd sandbox destroy my-sandbox
+gaib sandbox destroy my-sandbox
 ```
 
 ### Key Metrics
@@ -70,12 +71,12 @@ bd sandbox destroy my-sandbox
 
 1. Check current count:
    ```bash
-   bd sandbox list --all | wc -l
+   gaib sandbox list --all | wc -l
    ```
 
 2. Identify expired sandboxes not cleaned up:
    ```bash
-   bd sandbox list --status expired
+   gaib sandbox list --status expired
    ```
 
 3. Manually trigger cleanup if needed:
@@ -159,7 +160,7 @@ bd sandbox destroy my-sandbox
 
 2. Verify no active sandbox before cleanup:
    ```bash
-   bd sandbox list --all | grep <schema_suffix>
+   gaib sandbox list --all | grep <schema_suffix>
    ```
 
 3. Manual schema cleanup:
@@ -223,7 +224,7 @@ bd sandbox destroy my-sandbox
 **Trigger:** `sandbox-schema-failures` CloudWatch alarm
 
 **Symptoms:**
-- `bd sandbox create` failing
+- `gaib sandbox create` failing
 - Users can't create new sandboxes
 
 **Resolution:**
@@ -267,7 +268,7 @@ bd sandbox destroy my-sandbox
 ### RB-SB-006: Sandbox Status Command Slow/Timeout
 
 **Symptoms:**
-- `bd sandbox status` taking > 5 seconds
+- `gaib sandbox status` taking > 5 seconds
 - Timeouts on status checks
 
 **Resolution:**

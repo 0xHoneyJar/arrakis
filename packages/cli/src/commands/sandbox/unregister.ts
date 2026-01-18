@@ -1,7 +1,8 @@
 /**
- * Unregister Guild Command
+ * Unregister Guild Command - gaib sandbox unregister-guild
  *
  * Sprint 86: Discord Server Sandboxes - Event Routing
+ * Sprint 90: CLI Rename (bd → gaib)
  *
  * Unregisters a Discord guild from a sandbox (stops event routing).
  *
@@ -140,8 +141,8 @@ export function createUnregisterCommand(): Command {
       'after',
       `
 Examples:
-  bd sandbox unregister-guild my-sandbox 123456789012345678
-  bd sandbox unreg test-sandbox 987654321098765432
+  gaib sandbox unregister-guild my-sandbox 123456789012345678
+  gaib sandbox unreg test-sandbox 987654321098765432
 
 Notes:
   - After unregistering, events from this guild will route to production

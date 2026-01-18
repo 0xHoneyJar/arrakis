@@ -1,7 +1,8 @@
 /**
- * Register Guild Command
+ * Register Guild Command - gaib sandbox register-guild
  *
  * Sprint 86: Discord Server Sandboxes - Event Routing
+ * Sprint 90: CLI Rename (bd → gaib)
  *
  * Registers a Discord guild to route events to a sandbox.
  *
@@ -62,7 +63,7 @@ export async function registerCommand(
         );
       } else {
         spinner?.fail(chalk.red(`Sandbox '${sandboxName}' not found`));
-        console.error(chalk.yellow('\nUse "bd sandbox list" to see available sandboxes'));
+        console.error(chalk.yellow('\nUse "gaib sandbox list" to see available sandboxes'));
       }
       process.exit(1);
     }
@@ -164,13 +165,13 @@ export function createRegisterCommand(): Command {
       'after',
       `
 Examples:
-  bd sandbox register-guild my-sandbox 123456789012345678
-  bd sandbox reg test-sandbox 987654321098765432 --json
+  gaib sandbox register-guild my-sandbox 123456789012345678
+  gaib sandbox reg test-sandbox 987654321098765432 --json
 
 Notes:
   - The guild ID is the Discord server ID (right-click server → Copy Server ID)
   - A guild can only be registered to one sandbox at a time
-  - Use "bd sandbox unregister-guild" to remove a guild mapping
+  - Use "gaib sandbox unregister-guild" to remove a guild mapping
 `
     )
     .action(registerCommand);

@@ -1,7 +1,8 @@
 /**
- * Status Command - bd sandbox status
+ * Status Command - gaib sandbox status
  *
  * Sprint 87: Discord Server Sandboxes - Cleanup & Polish
+ * Sprint 90: CLI Rename (bd → gaib)
  *
  * Displays detailed status and health information for a sandbox.
  *
@@ -173,7 +174,7 @@ export async function statusCommand(
         }, null, 2));
       } else {
         spinner?.fail(chalk.red(`Sandbox '${name}' not found`));
-        console.error(chalk.yellow('\nUse "bd sandbox list" to see available sandboxes'));
+        console.error(chalk.yellow('\nUse "gaib sandbox list" to see available sandboxes'));
       }
       process.exit(1);
     }

@@ -5,8 +5,9 @@
  * Sprint 86: Discord Server Sandboxes - Event Routing
  * Sprint 87: Discord Server Sandboxes - Cleanup & Polish
  * Sprint 88: Discord Server Sandboxes - CLI Best Practices Compliance
+ * Sprint 90: CLI Rename (bd → gaib)
  *
- * Registers the `bd sandbox` command group with all subcommands.
+ * Registers the `gaib sandbox` command group with all subcommands.
  *
  * @see SDD §6.0 CLI Commands
  * @module packages/cli/commands/sandbox
@@ -38,18 +39,18 @@ export function createSandboxCommand(): Command {
       'after',
       `
 Examples:
-  $ bd sandbox create                    Create sandbox with defaults (24h TTL)
-  $ bd sandbox create --ttl 48h          Create sandbox with 48 hour TTL
-  $ bd sandbox create --guild 123456     Create sandbox and register guild
-  $ bd sandbox list                      List your running sandboxes
-  $ bd sandbox list --all                List all statuses including destroyed
-  $ bd sandbox status my-sandbox         Show detailed status and health checks
-  $ bd sandbox status my-sandbox --watch Watch status in real-time
-  $ bd sandbox destroy my-sandbox        Destroy a sandbox by name
-  $ bd sandbox connect my-sandbox        Get connection environment variables
-  $ eval $(bd sandbox connect my-sandbox)  Export env vars to shell
-  $ bd sandbox register-guild my-sandbox 123456789012345678  Register guild
-  $ bd sandbox unregister-guild my-sandbox 123456789012345678  Unregister guild
+  $ gaib sandbox create                    Create sandbox with defaults (24h TTL)
+  $ gaib sandbox create --ttl 48h          Create sandbox with 48 hour TTL
+  $ gaib sandbox create --guild 123456     Create sandbox and register guild
+  $ gaib sandbox list                      List your running sandboxes
+  $ gaib sandbox list --all                List all statuses including destroyed
+  $ gaib sandbox status my-sandbox         Show detailed status and health checks
+  $ gaib sandbox status my-sandbox --watch Watch status in real-time
+  $ gaib sandbox destroy my-sandbox        Destroy a sandbox by name
+  $ gaib sandbox connect my-sandbox        Get connection environment variables
+  $ eval $(gaib sandbox connect my-sandbox)  Export env vars to shell
+  $ gaib sandbox register-guild my-sandbox 123456789012345678  Register guild
+  $ gaib sandbox unregister-guild my-sandbox 123456789012345678  Unregister guild
 `
     );
 

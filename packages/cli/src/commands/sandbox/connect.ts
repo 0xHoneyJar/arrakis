@@ -1,7 +1,8 @@
 /**
- * Connect Command - bd sandbox connect
+ * Connect Command - gaib sandbox connect
  *
  * Sprint 85: Discord Server Sandboxes - CLI Commands
+ * Sprint 90: CLI Rename (bd → gaib)
  *
  * Outputs environment variables for connecting workers to a sandbox.
  *
@@ -30,7 +31,7 @@ export interface ConnectCommandOptions {
  * Outputs environment variables in shell export format by default,
  * suitable for use with eval:
  *
- *   eval $(bd sandbox connect my-sandbox)
+ *   eval $(gaib sandbox connect my-sandbox)
  *
  * @param name - Sandbox name to connect to
  * @param options - Command options

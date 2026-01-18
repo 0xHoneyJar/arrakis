@@ -1,12 +1,12 @@
 {
   "name": "@arrakis/cli",
   "version": "0.1.0",
-  "description": "Arrakis Developer CLI - bd command",
+  "description": "Arrakis Developer CLI - gaib command (Voice from the Outer World)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "bd": "./dist/bin/bd.js"
+    "gaib": "./dist/bin/gaib.js"
   },
   "exports": {
     ".": {
@@ -24,7 +24,7 @@
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx src/bin/bd.ts"
+    "dev": "tsx src/bin/gaib.ts"
   },
   "dependencies": {
     "@arrakis/sandbox": "file:../sandbox",

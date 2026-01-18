@@ -1,7 +1,8 @@
 /**
- * Create Command - bd sandbox create
+ * Create Command - gaib sandbox create
  *
  * Sprint 85: Discord Server Sandboxes - CLI Commands
+ * Sprint 90: CLI Rename (bd → gaib)
  *
  * Creates a new sandbox environment for isolated Discord testing.
  *
@@ -139,7 +140,7 @@ export async function createCommand(
 
       console.log();
       console.log(chalk.dim('To connect workers to this sandbox:'));
-      console.log(chalk.dim(`  eval $(bd sandbox connect ${result.sandbox.name})`));
+      console.log(chalk.dim(`  eval $(gaib sandbox connect ${result.sandbox.name})`));
     }
   } catch (error) {
     spinner?.fail(chalk.red('Failed to create sandbox'));

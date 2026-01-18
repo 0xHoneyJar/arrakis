@@ -1,7 +1,8 @@
 /**
- * Destroy Command - bd sandbox destroy
+ * Destroy Command - gaib sandbox destroy
  *
  * Sprint 85: Discord Server Sandboxes - CLI Commands
+ * Sprint 90: CLI Rename (bd → gaib)
  *
  * Destroys a sandbox and all associated resources.
  *
