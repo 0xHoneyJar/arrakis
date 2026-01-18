@@ -346,6 +346,12 @@ export type ChannelConfig = z.infer<typeof ChannelSchema>;
  * Server metadata in IaC config
  */
 export const ServerMetadataSchema = z.object({
+  /** Server/Guild ID (optional - can be provided via CLI or env var) */
+  id: z
+    .string()
+    .regex(/^\d{17,19}$/, 'Guild ID must be a valid Discord snowflake (17-19 digits)')
+    .optional(),
+
   /** Server name (optional - won't change existing name if not specified) */
   name: z.string().min(2).max(100).optional(),
 
