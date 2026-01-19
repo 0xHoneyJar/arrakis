@@ -138,3 +138,9 @@ app/package.json
 app/package-lock.json
 app/tsconfig.json
 app/ecosystem.config.js
+
+# Terraform plan files (contain sensitive state)
+*.tfplan
+
+# GTM grimoire (go-to-market state, similar to loa)
+grimoires/gtm/
