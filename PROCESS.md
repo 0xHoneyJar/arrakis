@@ -6,7 +6,7 @@ This document outlines the comprehensive agent-driven development workflow. Our 
 
 ## Managed Scaffolding Architecture
 
-Loa v1.0.0 uses **enterprise-grade managed scaffolding** inspired by AWS Projen, Copier, and Google's ADK:
+Loa v1.1.0 uses **enterprise-grade managed scaffolding** inspired by AWS Projen, Copier, and Google's ADK:
 
 ### Three-Zone Model
 
