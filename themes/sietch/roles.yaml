@@ -1,0 +1,100 @@
+# Sietch Theme - Role Hierarchy
+#
+# Fremen-inspired role structure:
+# - Naib: Tribal leader (admin)
+# - Sayyadina: Spiritual guide (moderator)
+# - Fedaykin: Elite warriors (trusted members)
+# - Fremen: Full community members
+# - Pilgrim: New arrivals
+
+roles:
+  # Leadership tier
+  - name: Naib
+    color: "${primary_color}"
+    hoist: true
+    mentionable: true
+    position: 100
+    permissions:
+      - ADMINISTRATOR
+
+  # Moderation tier
+  - name: Sayyadina
+    color: "${secondary_color}"
+    hoist: true
+    mentionable: true
+    position: 90
+    permissions:
+      - KICK_MEMBERS
+      - BAN_MEMBERS
+      - MANAGE_MESSAGES
+      - MANAGE_CHANNELS
+      - MANAGE_NICKNAMES
+      - MODERATE_MEMBERS
+      - VIEW_AUDIT_LOG
+      - MANAGE_THREADS
+      - MANAGE_EVENTS
+
+  # Trusted member tier
+  - name: Fedaykin
+    color: "${warning_color}"
+    hoist: true
+    mentionable: true
+    position: 80
+    permissions:
+      - MANAGE_MESSAGES
+      - MANAGE_THREADS
+      - MODERATE_MEMBERS
+      - CREATE_PUBLIC_THREADS
+      - CREATE_PRIVATE_THREADS
+      - SEND_MESSAGES_IN_THREADS
+
+  # Standard member tier
+  - name: Fremen
+    color: "#7B8D6C"
+    hoist: true
+    mentionable: false
+    position: 70
+    permissions:
+      - VIEW_CHANNEL
+      - SEND_MESSAGES
+      - EMBED_LINKS
+      - ATTACH_FILES
+      - ADD_REACTIONS
+      - USE_EXTERNAL_EMOJIS
+      - READ_MESSAGE_HISTORY
+      - CONNECT
+      - SPEAK
+      - STREAM
+      - USE_VAD
+      - CREATE_PUBLIC_THREADS
+
+  # New member tier
+  - name: Pilgrim
+    color: "#9B9B9B"
+    hoist: false
+    mentionable: false
+    position: 60
+    permissions:
+      - VIEW_CHANNEL
+      - SEND_MESSAGES
+      - ADD_REACTIONS
+      - READ_MESSAGE_HISTORY
+      - CONNECT
+      - SPEAK
+
+  # Bot role
+  - name: Shai-Hulud
+    color: "#FFD700"
+    hoist: false
+    mentionable: false
+    position: 95
+    permissions:
+      - MANAGE_MESSAGES
+      - MANAGE_ROLES
+      - EMBED_LINKS
+      - ATTACH_FILES
+      - READ_MESSAGE_HISTORY
+      - VIEW_CHANNEL
+      - SEND_MESSAGES
+      - ADD_REACTIONS
+      - USE_APPLICATION_COMMANDS

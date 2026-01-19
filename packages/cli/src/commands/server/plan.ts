@@ -21,7 +21,7 @@ import {
   ExitCodes,
 } from './utils.js';
 import {
-  parseConfigString,
+  parseConfigWithTheme,
   createClientFromEnv,
   readServerState,
   calculateDiff,
@@ -58,9 +58,9 @@ export async function planCommand(options: PlanOptions): Promise<void> {
   const workspace = options.workspace ?? await manager.current();
   await manager.getBackend().close();
 
-  // Read and parse configuration
+  // Read and parse configuration (with theme support)
   const configContent = readConfigFile(options.file);
-  const parseResult = parseConfigString(configContent);
+  const parseResult = await parseConfigWithTheme(configContent);
   const config = parseResult.config;
 
   // Get guild ID from options or config

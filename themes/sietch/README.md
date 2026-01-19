@@ -1,79 +1,89 @@
-# Sietch Service
+# Sietch Theme
 
-The backend service for Sietch - a token-gated community for top BGT holders on Berachain.
+A Dune-inspired Discord server theme with Fremen hierarchy and desert aesthetics.
 
-> For project overview, tier system, badge system, and API documentation, see the [main README](../README.md).
+## Overview
 
-## Quick Start
+This theme creates a community structure modeled after a Fremen sietch from Frank Herbert's Dune universe. It includes:
 
-```bash
-# Install dependencies
-npm install
+- **Role hierarchy** reflecting Fremen social structure
+- **Channel categories** themed around sietch life
+- **Permission configurations** for proper access control
 
-# Copy environment template
-cp .env.example .env.local
+## Variables
 
-# Edit .env.local with your credentials
+Customize the theme by setting these variables in your `gaib.yaml`:
 
-# Start development server
-npm run dev
-```
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `community_name` | string | "Sietch" | Name of your community |
+| `primary_color` | color | #D4A574 | Primary accent color for roles |
+| `secondary_color` | color | #8B7355 | Secondary accent color |
+| `warning_color` | color | #CC5500 | Warning/moderation color |
+| `enable_voice` | boolean | true | Include voice channels |
+| `enable_roleplay` | boolean | false | Include roleplay channels |
 
-## Scripts
+## Role Hierarchy
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server with hot reload |
-| `npm run build` | Build TypeScript to JavaScript |
-| `npm run start` | Start production server |
-| `npm test` | Run tests in watch mode |
-| `npm run test:run` | Run tests once |
-| `npm run lint` | Run ESLint |
-| `npm run typecheck` | Run TypeScript type checking |
+| Role | Purpose | Position |
+|------|---------|----------|
+| **Naib** | Tribal leader (admin) | 100 |
+| **Shai-Hulud** | Bot role | 95 |
+| **Sayyadina** | Spiritual guide (moderator) | 90 |
+| **Fedaykin** | Elite warriors (trusted members) | 80 |
+| **Fremen** | Full community members | 70 |
+| **Pilgrim** | New arrivals | 60 |
 
-## Project Structure
+## Channel Structure
 
-```
-sietch-service/
-├── src/
-│   ├── index.ts              # Application entry point
-│   ├── config.ts             # Environment configuration
-│   ├── api/                  # REST API (Express)
-│   ├── services/             # Business logic
-│   ├── discord/              # Discord bot commands
-│   ├── telegram/             # Telegram bot commands
-│   ├── trigger/              # Scheduled tasks (trigger.dev)
-│   ├── db/                   # SQLite schema & queries
-│   └── types/                # TypeScript types
-├── tests/                    # Unit & integration tests
-├── scripts/                  # Utility scripts
-└── docs/                     # Operational docs
-    └── deployment/           # Deployment guides
-```
+### The Gathering
+- `#welcome` - Welcome message (read-only)
+- `#announcements` - Important news
+- `#rules` - Community guidelines
 
-## Environment Variables
+### The Stillsuit
+- `#roles` - Role selection
+- `#resources` - Useful links
+- `#faq` - Frequently asked questions
 
-See `.env.example` for all required variables. Key ones:
+### The Spice Fields
+- `#general` - General discussion
+- `#introductions` - New member intros
+- `#off-topic` - Casual chat
+- `#media` - Images and videos
+- `#bot-commands` - Bot interactions
 
-```bash
-BERACHAIN_RPC_URL=        # Berachain RPC endpoint
-DISCORD_BOT_TOKEN=        # Discord bot token
-DISCORD_GUILD_ID=         # Discord server ID
-TELEGRAM_BOT_TOKEN=       # Telegram bot token (v4.1+)
-API_KEY=                  # API authentication key
-```
+### The Caves
+- `Campfire` - Casual voice
+- `Council Chamber` - Formal discussions
+- `Meditation` - Quiet focus
 
-## Documentation
+### Leadership Chambers (Staff Only)
+- `#staff-chat` - Private staff discussion
+- `#mod-logs` - Moderation logs
+- `Staff Voice` - Private voice
 
-| Document | Location | Description |
-|----------|----------|-------------|
-| Project Overview | [../README.md](../README.md) | Tier system, badges, API |
-| PRD | [../grimoires/loa/prd.md](../grimoires/loa/prd.md) | Product requirements |
-| SDD | [../grimoires/loa/sdd.md](../grimoires/loa/sdd.md) | System design |
-| Sprint Plan | [../grimoires/loa/sprint.md](../grimoires/loa/sprint.md) | Development sprints |
-| Deployment | [docs/deployment/](docs/deployment/) | Operational guides |
-| Discord Permissions | [docs/discord/PERMISSION_MATRIX.md](docs/discord/PERMISSION_MATRIX.md) | Role permissions |
+## Usage
+
+\`\`\`yaml
+# gaib.yaml
+version: "1"
+name: my-community
+
+theme:
+  name: sietch
+  variables:
+    community_name: "Desert Wanderers"
+    primary_color: "#E8C99B"
+
+# Override specific channels
+channels:
+  - name: trading-post
+    type: text
+    category: "The Spice Fields"
+    topic: "Buy, sell, and trade"
+\`\`\`
 
 ## License
 
-AGPL-3.0 - See [../LICENSE.md](../LICENSE.md) for details.
+MIT

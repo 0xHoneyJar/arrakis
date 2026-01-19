@@ -1,0 +1,191 @@
+# Sietch Theme - Channel Structure
+#
+# Categories and channels reflecting sietch life:
+# - The Gathering: Community gathering spaces
+# - The Stillsuit: Resources and information
+# - The Spice Fields: Discussion areas
+# - The Caves: Voice channels (optional)
+# - Leadership Chambers: Staff areas
+
+categories:
+  - name: "The Gathering"
+    position: 0
+    permissions:
+      "@everyone":
+        allow:
+          - VIEW_CHANNEL
+          - READ_MESSAGE_HISTORY
+
+  - name: "The Stillsuit"
+    position: 1
+    permissions:
+      "@everyone":
+        allow:
+          - VIEW_CHANNEL
+          - READ_MESSAGE_HISTORY
+        deny:
+          - SEND_MESSAGES
+
+  - name: "The Spice Fields"
+    position: 2
+    permissions:
+      Pilgrim:
+        deny:
+          - SEND_MESSAGES
+          - ADD_REACTIONS
+
+  - name: "The Caves"
+    position: 3
+
+  - name: "Leadership Chambers"
+    position: 4
+    permissions:
+      "@everyone":
+        deny:
+          - VIEW_CHANNEL
+      Sayyadina:
+        allow:
+          - VIEW_CHANNEL
+          - SEND_MESSAGES
+          - READ_MESSAGE_HISTORY
+      Naib:
+        allow:
+          - VIEW_CHANNEL
+          - SEND_MESSAGES
+          - READ_MESSAGE_HISTORY
+          - MANAGE_MESSAGES
+
+channels:
+  # The Gathering - Welcome and announcements
+  - name: welcome
+    type: text
+    category: "The Gathering"
+    topic: "Welcome to ${community_name}. May your water be clean."
+    position: 0
+    permissions:
+      "@everyone":
+        deny:
+          - SEND_MESSAGES
+      Naib:
+        allow:
+          - SEND_MESSAGES
+
+  - name: announcements
+    type: announcement
+    category: "The Gathering"
+    topic: "Important news from the tribal council"
+    position: 1
+    permissions:
+      "@everyone":
+        deny:
+          - SEND_MESSAGES
+      Sayyadina:
+        allow:
+          - SEND_MESSAGES
+
+  - name: rules
+    type: text
+    category: "The Gathering"
+    topic: "The water discipline - community guidelines"
+    position: 2
+    permissions:
+      "@everyone":
+        deny:
+          - SEND_MESSAGES
+
+  # The Stillsuit - Resources
+  - name: roles
+    type: text
+    category: "The Stillsuit"
+    topic: "Select your roles and customize your profile"
+    position: 0
+
+  - name: resources
+    type: text
+    category: "The Stillsuit"
+    topic: "Useful links and information"
+    position: 1
+
+  - name: faq
+    type: text
+    category: "The Stillsuit"
+    topic: "Frequently asked questions"
+    position: 2
+
+  # The Spice Fields - Discussion
+  - name: general
+    type: text
+    category: "The Spice Fields"
+    topic: "General discussion for the tribe"
+    position: 0
+    slowmode: 0
+
+  - name: introductions
+    type: text
+    category: "The Spice Fields"
+    topic: "Introduce yourself to the sietch"
+    position: 1
+    slowmode: 300
+
+  - name: off-topic
+    type: text
+    category: "The Spice Fields"
+    topic: "Desert wanderings - anything goes"
+    position: 2
+
+  - name: media
+    type: text
+    category: "The Spice Fields"
+    topic: "Share images, videos, and spice visions"
+    position: 3
+
+  - name: bot-commands
+    type: text
+    category: "The Spice Fields"
+    topic: "Summon the sandworm - bot commands here"
+    position: 4
+
+  # The Caves - Voice
+  - name: campfire
+    type: voice
+    category: "The Caves"
+    topic: "Casual voice chat around the fire"
+    position: 0
+    bitrate: 64000
+    userLimit: 0
+
+  - name: council-chamber
+    type: voice
+    category: "The Caves"
+    topic: "Formal voice discussions"
+    position: 1
+    bitrate: 96000
+    userLimit: 10
+
+  - name: meditation
+    type: voice
+    category: "The Caves"
+    topic: "Quiet contemplation and focus"
+    position: 2
+    bitrate: 64000
+    userLimit: 5
+
+  # Leadership Chambers - Staff
+  - name: staff-chat
+    type: text
+    category: "Leadership Chambers"
+    topic: "Private discussion for tribal leadership"
+    position: 0
+
+  - name: mod-logs
+    type: text
+    category: "Leadership Chambers"
+    topic: "Moderation action logs"
+    position: 1
+
+  - name: staff-voice
+    type: voice
+    category: "Leadership Chambers"
+    topic: "Private voice for staff"
+    position: 2
+    bitrate: 96000

@@ -14,7 +14,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
-import { ServerConfigSchema, type ServerConfig } from './schemas.js';
+import { ServerConfigSchema, type ServerConfig, type ThemeConfig } from './schemas.js';
+import { ThemeLoader } from '../themes/ThemeLoader.js';
+import { ThemeMerger } from '../themes/ThemeMerger.js';
 
 // ============================================================================
 // Error Classes
@@ -434,4 +436,166 @@ export function serializeConfig(config: ServerConfig): string {
     noRefs: true,
     sortKeys: false,
   });
+}
+
+// ============================================================================
+// Theme-Aware Parsing
+// ============================================================================
+
+/**
+ * Options for parsing configuration with theme support
+ */
+export interface ParseWithThemeOptions extends ParseOptions {
+  /** Theme loader instance (optional - creates new one if not provided) */
+  themeLoader?: ThemeLoader;
+}
+
+/**
+ * Parse a YAML configuration string with theme support
+ *
+ * If the config includes a `theme` section, loads the theme and merges
+ * it with any user-defined roles/categories/channels.
+ *
+ * @param content - YAML content to parse
+ * @param options - Parsing options
+ * @returns Parsed and validated configuration with theme applied
+ * @throws ConfigError if parsing, theme loading, or validation fails
+ */
+export async function parseConfigWithTheme(
+  content: string,
+  options: ParseWithThemeOptions = {}
+): Promise<ParseResult> {
+  const warnings: string[] = [];
+
+  // Parse YAML first (before schema validation)
+  let rawConfig: Record<string, unknown>;
+  try {
+    rawConfig = (yaml.load(content) ?? { version: '1' }) as Record<string, unknown>;
+  } catch (error) {
+    const yamlError = error as yaml.YAMLException;
+    throw new ConfigError(
+      'YAML syntax error',
+      ConfigErrorCode.YAML_PARSE_ERROR,
+      [
+        {
+          message: yamlError.message,
+          path: yamlError.mark ? [`line ${yamlError.mark.line + 1}`] : [],
+        },
+      ]
+    );
+  }
+
+  // Check if there's a theme to load
+  const themeConfig = rawConfig.theme as ThemeConfig | undefined;
+
+  if (themeConfig && themeConfig.name) {
+    // Load theme
+    const loader = options.themeLoader ?? new ThemeLoader();
+    const theme = await loader.load(themeConfig.name, themeConfig.variables ?? {});
+
+    // Create a GaibConfigFile-like object from raw config for merging
+    const userConfig = {
+      version: (rawConfig.version as string) === '1.0' ? '1' as const : (rawConfig.version as '1' | undefined) ?? '1' as const,
+      server: rawConfig.server as ServerConfig['server'],
+      roles: (rawConfig.roles ?? []) as ServerConfig['roles'],
+      categories: (rawConfig.categories ?? []) as ServerConfig['categories'],
+      channels: (rawConfig.channels ?? []) as ServerConfig['channels'],
+      outputs: {} as Record<string, never>,
+    };
+
+    // Merge theme with user config
+    const merger = new ThemeMerger();
+    const merged = merger.merge(theme, userConfig);
+
+    // Build the final config
+    const finalConfig: Record<string, unknown> = {
+      version: rawConfig.version ?? '1',
+      server: merged.server ?? rawConfig.server,
+      roles: merged.roles,
+      categories: merged.categories,
+      channels: merged.channels,
+    };
+
+    // Validate against schema
+    const parseResult = ServerConfigSchema.safeParse(finalConfig);
+
+    if (!parseResult.success) {
+      const details = parseResult.error.issues.map((issue) => ({
+        message: issue.message,
+        path: issue.path,
+        expected: 'expected' in issue ? String(issue.expected) : undefined,
+        received: 'received' in issue ? String(issue.received) : undefined,
+      }));
+
+      throw new ConfigError(
+        'Configuration validation failed after theme merge',
+        ConfigErrorCode.VALIDATION_ERROR,
+        details
+      );
+    }
+
+    const config = parseResult.data;
+
+    // Additional cross-reference validation
+    if (options.validateReferences !== false) {
+      const referenceErrors = validateReferences(config);
+      if (referenceErrors.length > 0) {
+        throw new ConfigError(
+          'Configuration reference validation failed',
+          ConfigErrorCode.REFERENCE_ERROR,
+          referenceErrors
+        );
+      }
+    }
+
+    // Generate warnings for potential issues
+    warnings.push(...generateWarnings(config));
+    warnings.push(`Theme "${themeConfig.name}" applied`);
+
+    return { config, warnings };
+  }
+
+  // No theme - use standard parsing
+  return parseConfigString(content, options);
+}
+
+/**
+ * Parse a YAML configuration file with theme support
+ *
+ * @param filePath - Path to the YAML configuration file
+ * @param options - Parsing options
+ * @returns Parsed and validated configuration with theme applied
+ * @throws ConfigError if parsing or validation fails
+ */
+export async function parseConfigFileWithTheme(
+  filePath: string,
+  options: ParseWithThemeOptions = {}
+): Promise<ParseResult> {
+  const absolutePath = path.resolve(filePath);
+
+  // Check file exists
+  if (!fs.existsSync(absolutePath)) {
+    throw new ConfigError(
+      `Configuration file not found: ${filePath}`,
+      ConfigErrorCode.FILE_NOT_FOUND
+    );
+  }
+
+  // Read file
+  let content: string;
+  try {
+    content = fs.readFileSync(absolutePath, 'utf-8');
+  } catch (error) {
+    throw new ConfigError(
+      `Failed to read configuration file: ${filePath}`,
+      ConfigErrorCode.FILE_READ_ERROR,
+      [{ message: String(error), path: [] }]
+    );
+  }
+
+  // Parse with theme support
+  const result = await parseConfigWithTheme(content, options);
+  result.sourcePath = absolutePath;
+
+  return result;
 }

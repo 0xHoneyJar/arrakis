@@ -1,0 +1,57 @@
+# Sietch Theme Manifest
+# A Dune-inspired Discord server theme
+#
+# This theme creates a community structure modeled after a Fremen sietch,
+# with role hierarchies and channel categories reflecting desert culture.
+
+name: sietch
+version: 1.0.0
+description: A Dune-inspired community theme with Fremen hierarchy and desert aesthetics
+author: The Honey Jar
+license: MIT
+
+tags:
+  - dune
+  - fremen
+  - desert
+  - community
+  - roleplay
+
+# Theme variables - customize the theme for your community
+variables:
+  community_name:
+    type: string
+    description: Name of your community (used in server name and welcome messages)
+    default: "Sietch"
+    required: false
+
+  primary_color:
+    type: color
+    description: Primary accent color for roles
+    default: "#D4A574"
+
+  secondary_color:
+    type: color
+    description: Secondary accent color
+    default: "#8B7355"
+
+  warning_color:
+    type: color
+    description: Warning/moderation color
+    default: "#CC5500"
+
+  enable_voice:
+    type: boolean
+    description: Include voice channels
+    default: true
+
+  enable_roleplay:
+    type: boolean
+    description: Include roleplay channels
+    default: false
+
+# Component file references
+files:
+  server: server.yaml
+  roles: roles.yaml
+  channels: channels.yaml

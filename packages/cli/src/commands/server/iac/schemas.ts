@@ -362,15 +362,31 @@ export const ServerMetadataSchema = z.object({
 export type ServerMetadata = z.infer<typeof ServerMetadataSchema>;
 
 /**
+ * Theme configuration schema for referencing a theme
+ */
+export const ThemeConfigSchema = z.object({
+  /** Theme name (must match a theme in the themes directory) */
+  name: z.string().min(1, 'Theme name is required'),
+
+  /** Optional variable overrides */
+  variables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+});
+
+export type ThemeConfig = z.infer<typeof ThemeConfigSchema>;
+
+/**
  * Top-level server configuration schema
  */
 export const ServerConfigSchema = z
   .object({
-    /** Config schema version */
-    version: z.literal('1'),
+    /** Config schema version (accepts "1" or "1.0") */
+    version: z.union([z.literal('1'), z.literal('1.0')]).transform(() => '1' as const),
 
     /** Server metadata (optional) */
     server: ServerMetadataSchema.optional(),
+
+    /** Theme configuration (optional - loads roles/categories/channels from theme) */
+    theme: ThemeConfigSchema.optional(),
 
     /** Role definitions */
     roles: z.array(RoleSchema).optional().default([]),
@@ -606,6 +622,9 @@ export const GaibConfigSchema = z.object({
 
   /** Server metadata */
   server: ServerMetadataSchema.optional(),
+
+  /** Theme configuration (optional - loads roles/categories/channels from theme) */
+  theme: ThemeConfigSchema.optional(),
 
   /** Role definitions */
   roles: z.array(RoleSchema).optional().default([]),

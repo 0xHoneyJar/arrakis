@@ -4,6 +4,7 @@
  * Sprint 93: Discord Infrastructure-as-Code - CLI Commands & Polish
  * Sprint 97: Workspace Management
  * Sprint 98: Apply & Destroy Operations
+ * Sprint 99: Import & State Commands
  *
  * Registers the `gaib server` command group with all subcommands.
  * Provides Terraform-like workflow for Discord server configuration.
@@ -59,8 +60,18 @@ Workspace Commands:
   $ gaib server workspace delete staging     Delete a workspace
 
 State Management:
+  $ gaib server import <address> <id>        Import existing Discord resource
+  $ gaib server state list                   List all resources in state
+  $ gaib server state show <address>         Show resource details
+  $ gaib server state rm <address>           Remove resource from state
+  $ gaib server state mv <src> <dest>        Rename resource address
+  $ gaib server state pull                   Refresh state from Discord
   $ gaib server lock-status                  Show lock status for workspace
   $ gaib server force-unlock                 Force release a stuck lock
+
+Theme Commands:
+  $ gaib server theme list                   List available themes
+  $ gaib server theme info <name>            Show detailed theme information
 `
     );
 
@@ -72,8 +83,11 @@ State Management:
   registerDestroyCommand(server);
   registerExportCommand(server);
   registerWorkspaceCommand(server);
+  registerImportCommand(server);
+  registerStateCommand(server);
   registerLockStatusCommand(server);
   registerForceUnlockCommand(server);
+  registerThemeCommand(server);
 
   return server;
 }
@@ -91,6 +105,7 @@ function registerInitCommand(parent: Command): void {
     .description('Initialize a new server configuration file')
     .option('-g, --guild <id>', 'Discord guild/server ID')
     .option('-f, --file <path>', 'Output file path', 'discord-server.yaml')
+    .option('-t, --theme <name>', 'Use a theme as base configuration')
     .option('--force', 'Overwrite existing configuration file')
     .option('--json', 'Output result as JSON')
     .action(async (options) => {
@@ -341,6 +356,126 @@ function registerWorkspaceCommand(parent: Command): void {
 }
 
 /**
+ * Registers the 'import' subcommand
+ *
+ * Imports an existing Discord resource into state management.
+ *
+ * @see Sprint 99: Import & State Commands
+ */
+function registerImportCommand(parent: Command): void {
+  parent
+    .command('import <address> <id>')
+    .description('Import an existing Discord resource into state')
+    .option('-g, --guild <id>', 'Discord guild/server ID (required)')
+    .option('-w, --workspace <name>', 'Override current workspace')
+    .option('--json', 'Output result as JSON')
+    .action(async (address, resourceId, options) => {
+      try {
+        const { importCommand } = await import('./import.js');
+        const globalOpts = parent.optsWithGlobals();
+        await importCommand(address, resourceId, { ...options, quiet: globalOpts.quiet });
+      } catch (error) {
+        handleError(error, options.json);
+      }
+    });
+}
+
+/**
+ * Registers the 'state' subcommand group
+ *
+ * Provides commands for managing state resources directly.
+ *
+ * @see Sprint 99: Import & State Commands
+ */
+function registerStateCommand(parent: Command): void {
+  const state = parent
+    .command('state')
+    .description('Manage state resources directly');
+
+  // state list
+  state
+    .command('list')
+    .description('List all resources in state')
+    .option('-w, --workspace <name>', 'Override current workspace')
+    .option('--json', 'Output result as JSON')
+    .action(async (options) => {
+      try {
+        const { stateListCommand } = await import('./state.js');
+        const globalOpts = parent.optsWithGlobals();
+        await stateListCommand({ ...options, quiet: globalOpts.quiet });
+      } catch (error) {
+        handleError(error, options.json);
+      }
+    });
+
+  // state show
+  state
+    .command('show <address>')
+    .description('Show detailed information about a resource')
+    .option('-w, --workspace <name>', 'Override current workspace')
+    .option('--json', 'Output result as JSON')
+    .action(async (address, options) => {
+      try {
+        const { stateShowCommand } = await import('./state.js');
+        const globalOpts = parent.optsWithGlobals();
+        await stateShowCommand(address, { ...options, quiet: globalOpts.quiet });
+      } catch (error) {
+        handleError(error, options.json);
+      }
+    });
+
+  // state rm
+  state
+    .command('rm <address>')
+    .description('Remove a resource from state (does not delete from Discord)')
+    .option('-w, --workspace <name>', 'Override current workspace')
+    .option('-y, --yes', 'Skip confirmation prompt')
+    .option('--json', 'Output result as JSON')
+    .action(async (address, options) => {
+      try {
+        const { stateRmCommand } = await import('./state.js');
+        const globalOpts = parent.optsWithGlobals();
+        await stateRmCommand(address, { ...options, quiet: globalOpts.quiet });
+      } catch (error) {
+        handleError(error, options.json);
+      }
+    });
+
+  // state mv
+  state
+    .command('mv <source> <destination>')
+    .description('Move/rename a resource address in state')
+    .option('-w, --workspace <name>', 'Override current workspace')
+    .option('--json', 'Output result as JSON')
+    .action(async (source, destination, options) => {
+      try {
+        const { stateMvCommand } = await import('./state.js');
+        const globalOpts = parent.optsWithGlobals();
+        await stateMvCommand(source, destination, { ...options, quiet: globalOpts.quiet });
+      } catch (error) {
+        handleError(error, options.json);
+      }
+    });
+
+  // state pull
+  state
+    .command('pull')
+    .description('Refresh state from Discord (updates all resource attributes)')
+    .option('-g, --guild <id>', 'Discord guild/server ID (required)')
+    .option('-w, --workspace <name>', 'Override current workspace')
+    .option('--json', 'Output result as JSON')
+    .action(async (options) => {
+      try {
+        const { statePullCommand } = await import('./state.js');
+        const globalOpts = parent.optsWithGlobals();
+        await statePullCommand({ ...options, quiet: globalOpts.quiet });
+      } catch (error) {
+        handleError(error, options.json);
+      }
+    });
+}
+
+/**
  * Registers the 'lock-status' subcommand
  *
  * Shows the current lock status for a workspace.
@@ -383,6 +518,49 @@ function registerForceUnlockCommand(parent: Command): void {
         const { forceUnlockCommand } = await import('./force-unlock.js');
         const globalOpts = parent.optsWithGlobals();
         await forceUnlockCommand({ ...options, quiet: globalOpts.quiet });
+      } catch (error) {
+        handleError(error, options.json);
+      }
+    });
+}
+
+/**
+ * Registers the 'theme' subcommand group
+ *
+ * Commands for listing and inspecting themes.
+ *
+ * @see Sprint 100: Theme System
+ */
+function registerThemeCommand(parent: Command): void {
+  const theme = parent
+    .command('theme')
+    .description('Manage Discord server themes');
+
+  // theme list
+  theme
+    .command('list')
+    .description('List available themes')
+    .option('--json', 'Output result as JSON')
+    .action(async (options) => {
+      try {
+        const { themeListCommand } = await import('./theme.js');
+        const globalOpts = parent.optsWithGlobals();
+        await themeListCommand({ ...options, quiet: globalOpts.quiet });
+      } catch (error) {
+        handleError(error, options.json);
+      }
+    });
+
+  // theme info
+  theme
+    .command('info <name>')
+    .description('Show detailed information about a theme')
+    .option('--json', 'Output result as JSON')
+    .action(async (name, options) => {
+      try {
+        const { themeInfoCommand } = await import('./theme.js');
+        const globalOpts = parent.optsWithGlobals();
+        await themeInfoCommand(name, { ...options, quiet: globalOpts.quiet });
       } catch (error) {
         handleError(error, options.json);
       }

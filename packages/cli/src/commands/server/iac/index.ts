@@ -15,12 +15,15 @@
 export {
   parseConfigFile,
   parseConfigString,
+  parseConfigWithTheme,
+  parseConfigFileWithTheme,
   validateConfig,
   createEmptyConfig,
   serializeConfig,
   ConfigError,
   ConfigErrorCode,
   type ParseOptions,
+  type ParseWithThemeOptions,
   type ParseResult,
   type ConfigErrorDetail,
 } from './ConfigParser.js';
@@ -37,6 +40,7 @@ export {
   PermissionOverwriteSchema,
   ChannelPermissionsSchema,
   ServerMetadataSchema,
+  ThemeConfigSchema,
   PERMISSION_FLAGS,
   CHANNEL_TYPES,
   MANAGED_MARKER,
@@ -54,6 +58,7 @@ export {
   type PermissionOverwrite,
   type ChannelPermissions,
   type ServerMetadata,
+  type ThemeConfig,
 } from './schemas.js';
 
 // Internal state types
@@ -95,6 +100,8 @@ export {
   mapChannelType,
   type DiscordClientOptions,
   type RawGuildData,
+  type ResourceType,
+  type FetchedResource,
 } from './DiscordClient.js';
 
 // State reading
@@ -241,3 +248,97 @@ export {
   withBackend,
   withLock,
 } from './backends/index.js';
+
+// Error hierarchy (Sprint 101)
+export {
+  // Error codes
+  ErrorCodes,
+  type ErrorCode,
+
+  // Base error
+  GaibError,
+
+  // Configuration errors
+  ConfigError as GaibConfigError,
+  ConfigNotFoundError,
+  ConfigValidationError,
+
+  // State errors
+  StateError,
+  StateLockError as GaibStateLockError,
+  StateResourceNotFoundError,
+
+  // Discord API errors
+  DiscordApiError as GaibDiscordApiError,
+  RateLimitError,
+  MissingPermissionsError,
+  InvalidTokenError,
+
+  // Validation errors
+  ValidationError,
+  InvalidGuildIdError,
+  InvalidAddressError,
+
+  // Workspace errors
+  WorkspaceError as GaibWorkspaceError,
+  WorkspaceNotFoundError,
+  WorkspaceExistsError,
+
+  // Utilities
+  isGaibError,
+  isRecoverableError,
+  toGaibError,
+  getErrorCode,
+} from './errors.js';
+
+// Error recovery (Sprint 101)
+export {
+  ErrorRecovery,
+  createErrorRecovery,
+  getHelpfulMessage,
+  shouldRetry,
+  calculateRetryDelay,
+  rateLimitStrategy,
+  stateLockStrategy,
+  networkErrorStrategy,
+  configErrorStrategy,
+  type RecoveryContext,
+  type RecoveryAction,
+  type RecoveryStrategy,
+} from './ErrorRecovery.js';
+
+// Output formatters (Sprint 101)
+export {
+  // Symbols and colors
+  Symbols,
+  getOperationSymbol,
+  colorByOperation,
+
+  // Plan formatting
+  formatPlan,
+  formatPlanSummary,
+  formatResourceChange,
+  formatPermissionChange,
+
+  // Result formatting
+  formatApplyResult as formatApplyResultPretty,
+  formatDestroyResult,
+  formatStateList,
+
+  // Progress indicators
+  Spinner,
+  createSpinner,
+
+  // Utilities
+  formatTimestamp,
+  formatDuration,
+  formatBytes,
+  truncate,
+  center,
+  box,
+
+  // JSON helpers
+  formatJson,
+  jsonSuccess,
+  jsonError,
+} from './formatters.js';

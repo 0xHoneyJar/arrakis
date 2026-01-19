@@ -2,6 +2,7 @@
  * Server Init Command
  *
  * Sprint 93: Discord Infrastructure-as-Code - CLI Commands & Polish
+ * Sprint 100: Theme System Integration
  *
  * Initializes a new server configuration file.
  *
@@ -12,6 +13,7 @@
 
 import {
   generateDefaultConfig,
+  generateThemedConfig,
   writeConfigFile,
   configExists,
   resolveConfigPath,
@@ -22,6 +24,7 @@ import {
   getDiscordToken,
 } from './utils.js';
 import { createClientFromEnv, readServerState } from './iac/index.js';
+import { ThemeLoader, ThemeError, findThemePath } from './themes/index.js';
 
 /**
  * Options for the init command
@@ -29,6 +32,7 @@ import { createClientFromEnv, readServerState } from './iac/index.js';
 export interface InitOptions {
   guild?: string;
   file: string;
+  theme?: string;
   force?: boolean;
   json?: boolean;
   quiet?: boolean;
@@ -100,8 +104,74 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
   }
 
-  // Generate and write config
-  const config = generateDefaultConfig(guildId, serverName);
+  // Generate config (with or without theme)
+  let config: string;
+  let themeName: string | undefined;
+
+  if (options.theme) {
+    // Validate theme exists
+    const themePath = findThemePath(options.theme);
+    if (!themePath) {
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            {
+              success: false,
+              error: {
+                message: `Theme "${options.theme}" not found`,
+                code: 'THEME_NOT_FOUND',
+                hint: 'Run "gaib server theme list" to see available themes.',
+              },
+            },
+            null,
+            2
+          )
+        );
+        process.exit(1);
+      }
+      throw new Error(
+        `Theme "${options.theme}" not found.\n` +
+          'Run "gaib server theme list" to see available themes.'
+      );
+    }
+
+    // Load theme to validate it
+    const loader = new ThemeLoader();
+    try {
+      await loader.load(options.theme);
+      themeName = options.theme;
+      if (!options.quiet) {
+        formatInfo(`Using theme: ${options.theme}`);
+      }
+    } catch (error) {
+      if (error instanceof ThemeError) {
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              {
+                success: false,
+                error: {
+                  message: `Failed to load theme: ${error.message}`,
+                  code: error.code,
+                  details: error.details,
+                },
+              },
+              null,
+              2
+            )
+          );
+          process.exit(1);
+        }
+        throw new Error(`Failed to load theme: ${error.message}`);
+      }
+      throw error;
+    }
+
+    config = generateThemedConfig(guildId, serverName, themeName);
+  } else {
+    config = generateDefaultConfig(guildId, serverName);
+  }
+
   writeConfigFile(filePath, config, options.force);
 
   formatSuccess(`Created configuration file: ${fullPath}`, undefined, options.json);
@@ -109,9 +179,15 @@ export async function initCommand(options: InitOptions): Promise<void> {
   if (!options.quiet && !options.json) {
     console.log('');
     console.log('Next steps:');
-    console.log('  1. Edit the configuration file to define your server structure');
-    console.log('  2. Run "gaib server plan" to preview changes');
-    console.log('  3. Run "gaib server apply" to apply changes to Discord');
+    if (themeName) {
+      console.log(`  1. Review and customize the theme variables in ${filePath}`);
+      console.log('  2. Run "gaib server plan" to preview changes');
+      console.log('  3. Run "gaib server apply" to apply changes to Discord');
+    } else {
+      console.log('  1. Edit the configuration file to define your server structure');
+      console.log('  2. Run "gaib server plan" to preview changes');
+      console.log('  3. Run "gaib server apply" to apply changes to Discord');
+    }
     console.log('');
   }
 }
