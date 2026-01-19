@@ -34,3 +34,9 @@ export { boostRouter } from './boost.routes.js';
 // =============================================================================
 export { createVerifyRouter, createVerifyIntegration } from './routes/index.js';
 export type { VerifyRouter, VerificationIntegrationDeps, VerifyIntegration } from './routes/index.js';
+
+// =============================================================================
+// Simulation Routes (Sprint 110 - QA Sandbox Testing)
+// =============================================================================
+export { createSimulationRouter } from './routes/index.js';
+export type { SimulationRouterDeps } from './routes/index.js';
