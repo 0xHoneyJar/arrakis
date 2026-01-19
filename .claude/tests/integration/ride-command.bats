@@ -127,16 +127,16 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
-@test "/ride creates Beads tasks for Ghost Features (if bd installed)" {
+@test "/ride creates Beads tasks for Ghost Features (if br installed)" {
     skip "Requires full /ride implementation and Beads"
     cd "${TEST_TMPDIR}"
 
-    if command -v bd >/dev/null 2>&1; then
+    if command -v br >/dev/null 2>&1; then
         # Check for Beads tasks created
         [ -d ".beads" ]
 
         # Check for liability tracking
-        run bd list --type liability
+        run br list --type liability
         [ "$status" -eq 0 ]
     fi
 }
