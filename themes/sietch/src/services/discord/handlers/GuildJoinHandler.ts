@@ -30,10 +30,7 @@ import {
   type OnboardingMode,
   type ModeSelectionResult,
 } from './ModeSelector.js';
-import {
-  IncumbentDetector,
-  createIncumbentDetector,
-} from '../../../packages/adapters/coexistence/IncumbentDetector.js';
+import { createIncumbentDetector } from '../../../packages/adapters/coexistence/IncumbentDetector.js';
 import type { ICoexistenceStorage } from '../../../packages/core/ports/ICoexistenceStorage.js';
 
 // =============================================================================

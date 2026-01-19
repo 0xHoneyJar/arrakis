@@ -25,10 +25,9 @@ import {
   recordReactionReceived,
 } from '../../activity.js';
 import { handleInteraction } from './InteractionHandler.js';
-import {
-  createGuildJoinHandler,
-  type OnboardingResult,
-} from './GuildJoinHandler.js';
+// Sprint 102: Import ready for full integration when storage adapter is wired
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { createGuildJoinHandler, type OnboardingResult } from './GuildJoinHandler.js';
 
 /**
  * Set up Discord client event handlers
