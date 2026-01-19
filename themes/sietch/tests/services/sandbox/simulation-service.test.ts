@@ -17,6 +17,9 @@ import {
   buildContextKey,
   SIMULATION_KEY_PREFIX,
   SIMULATION_KEY_PATTERN,
+  sanitizeRedisKeySegment,
+  KeyValidationError,
+  MAX_KEY_SEGMENT_LENGTH,
 } from '../../../src/services/sandbox/simulation-service.js';
 import {
   createSimulationContext,
@@ -196,11 +199,27 @@ describe('SimulationService', () => {
         expect(key).toBe(`${SIMULATION_KEY_PREFIX}:sandbox-123:user-456`);
       });
 
-      it('should handle special characters', () => {
-        const key = buildContextKey('sandbox_with-special.chars', '12345');
+      it('should handle alphanumeric characters with hyphens and underscores', () => {
+        const key = buildContextKey('sandbox_with-hyphens', '12345');
 
-        expect(key).toContain('sandbox_with-special.chars');
+        expect(key).toContain('sandbox_with-hyphens');
         expect(key).toContain('12345');
+      });
+
+      it('should reject sandboxId with wildcard', () => {
+        expect(() => buildContextKey('sandbox*', 'user-123')).toThrow(KeyValidationError);
+      });
+
+      it('should reject sandboxId with colon', () => {
+        expect(() => buildContextKey('sandbox:evil', 'user-123')).toThrow(KeyValidationError);
+      });
+
+      it('should reject userId with wildcard', () => {
+        expect(() => buildContextKey('sandbox-123', 'user*')).toThrow(KeyValidationError);
+      });
+
+      it('should reject userId with colon', () => {
+        expect(() => buildContextKey('sandbox-123', 'user:evil')).toThrow(KeyValidationError);
       });
     });
 
@@ -209,6 +228,162 @@ describe('SimulationService', () => {
         const pattern = SIMULATION_KEY_PATTERN('sandbox-123');
 
         expect(pattern).toBe(`${SIMULATION_KEY_PREFIX}:sandbox-123:*`);
+      });
+
+      it('should reject sandboxId with wildcard', () => {
+        expect(() => SIMULATION_KEY_PATTERN('sandbox*')).toThrow(KeyValidationError);
+      });
+
+      it('should reject sandboxId with colon', () => {
+        expect(() => SIMULATION_KEY_PATTERN('sandbox:evil')).toThrow(KeyValidationError);
+      });
+    });
+
+    // =========================================================================
+    // Redis Key Sanitization Tests (CRITICAL-001)
+    // =========================================================================
+
+    describe('sanitizeRedisKeySegment (CRITICAL-001)', () => {
+      describe('valid inputs', () => {
+        it('should accept alphanumeric strings', () => {
+          expect(sanitizeRedisKeySegment('abc123', 'sandboxId')).toBe('abc123');
+        });
+
+        it('should accept strings with hyphens', () => {
+          expect(sanitizeRedisKeySegment('sandbox-123', 'sandboxId')).toBe('sandbox-123');
+        });
+
+        it('should accept strings with underscores', () => {
+          expect(sanitizeRedisKeySegment('sandbox_123', 'sandboxId')).toBe('sandbox_123');
+        });
+
+        it('should accept valid Discord user IDs (numeric strings)', () => {
+          expect(sanitizeRedisKeySegment('123456789012345678', 'userId')).toBe('123456789012345678');
+        });
+
+        it('should accept mixed alphanumeric with hyphens and underscores', () => {
+          expect(sanitizeRedisKeySegment('Test_Sandbox-123_abc', 'sandboxId')).toBe('Test_Sandbox-123_abc');
+        });
+
+        it('should accept maximum length segment', () => {
+          const maxLengthSegment = 'a'.repeat(MAX_KEY_SEGMENT_LENGTH);
+          expect(sanitizeRedisKeySegment(maxLengthSegment, 'sandboxId')).toBe(maxLengthSegment);
+        });
+      });
+
+      describe('wildcard injection prevention', () => {
+        it('should reject wildcard character (*)', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox*', 'sandboxId')).toThrow(KeyValidationError);
+          expect(() => sanitizeRedisKeySegment('*', 'sandboxId')).toThrow(KeyValidationError);
+          expect(() => sanitizeRedisKeySegment('a*b', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject question mark wildcard (?)', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox?', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject bracket wildcards ([)', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox[0-9]', 'sandboxId')).toThrow(KeyValidationError);
+        });
+      });
+
+      describe('delimiter injection prevention', () => {
+        it('should reject colon delimiter (:)', () => {
+          expect(() => sanitizeRedisKeySegment('a:b', 'sandboxId')).toThrow(KeyValidationError);
+          expect(() => sanitizeRedisKeySegment('a:b:c', 'userId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject colon at start', () => {
+          expect(() => sanitizeRedisKeySegment(':sandbox', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject colon at end', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox:', 'sandboxId')).toThrow(KeyValidationError);
+        });
+      });
+
+      describe('other unsafe characters', () => {
+        it('should reject spaces', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox 123', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject dots', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox.123', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject forward slashes', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox/123', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject backslashes', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox\\123', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject newlines', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox\n123', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject null bytes', () => {
+          expect(() => sanitizeRedisKeySegment('sandbox\x00123', 'sandboxId')).toThrow(KeyValidationError);
+        });
+      });
+
+      describe('length validation', () => {
+        it('should reject oversized segments', () => {
+          const oversizedSegment = 'a'.repeat(MAX_KEY_SEGMENT_LENGTH + 1);
+          expect(() => sanitizeRedisKeySegment(oversizedSegment, 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should include segment name in error', () => {
+          const oversizedSegment = 'a'.repeat(MAX_KEY_SEGMENT_LENGTH + 1);
+          try {
+            sanitizeRedisKeySegment(oversizedSegment, 'sandboxId');
+            fail('Expected KeyValidationError');
+          } catch (error) {
+            expect(error).toBeInstanceOf(KeyValidationError);
+            expect((error as KeyValidationError).segment).toBe('sandboxId');
+            expect((error as KeyValidationError).message).toContain('sandboxId');
+          }
+        });
+      });
+
+      describe('empty/null input validation', () => {
+        it('should reject empty string', () => {
+          expect(() => sanitizeRedisKeySegment('', 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject null', () => {
+          expect(() => sanitizeRedisKeySegment(null as any, 'sandboxId')).toThrow(KeyValidationError);
+        });
+
+        it('should reject undefined', () => {
+          expect(() => sanitizeRedisKeySegment(undefined as any, 'sandboxId')).toThrow(KeyValidationError);
+        });
+      });
+
+      describe('error details', () => {
+        it('should not include user input in error message (prevent info leakage)', () => {
+          const maliciousInput = 'a:*malicious*:payload';
+          try {
+            sanitizeRedisKeySegment(maliciousInput, 'sandboxId');
+            fail('Expected KeyValidationError');
+          } catch (error) {
+            expect(error).toBeInstanceOf(KeyValidationError);
+            // Error message should describe the problem but not echo back the malicious input
+            expect((error as KeyValidationError).message).not.toContain(maliciousInput);
+            expect((error as KeyValidationError).message).toContain('unsafe characters');
+          }
+        });
+
+        it('should identify segment name in KeyValidationError', () => {
+          try {
+            sanitizeRedisKeySegment('bad*input', 'userId');
+            fail('Expected KeyValidationError');
+          } catch (error) {
+            expect(error).toBeInstanceOf(KeyValidationError);
+            expect((error as KeyValidationError).segment).toBe('userId');
+          }
+        });
       });
     });
   });

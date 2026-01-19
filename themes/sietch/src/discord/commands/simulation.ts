@@ -24,7 +24,9 @@
 import {
   SlashCommandBuilder,
   EmbedBuilder,
+  PermissionFlagsBits,
   type ChatInputCommandInteraction,
+  type GuildMember,
 } from 'discord.js';
 import { logger } from '../../utils/logger.js';
 import {
@@ -35,6 +37,261 @@ import {
   SimulationService,
   SimulationErrorCode,
 } from '../../services/sandbox/index.js';
+
+// =============================================================================
+// RBAC Configuration (Sprint 112 - HIGH-001 Fix)
+// =============================================================================
+
+/**
+ * Permission levels for simulation command operations
+ */
+export enum QAPermissionLevel {
+  NONE = 0,
+  SELF_ONLY = 1,      // Can manage own context
+  QA_TESTER = 2,      // Can manage any context in sandbox
+  QA_ADMIN = 3,       // Can modify thresholds and clear any context
+}
+
+/**
+ * Role name patterns that grant QA permissions
+ * These are case-insensitive and support partial matching
+ */
+const QA_ADMIN_ROLE_PATTERNS = [
+  'qa admin',
+  'qa-admin',
+  'qaadmin',
+  'admin',
+];
+
+const QA_TESTER_ROLE_PATTERNS = [
+  'qa tester',
+  'qa-tester',
+  'qatester',
+  'tester',
+  'qa',
+];
+
+/**
+ * Environment variable to override role patterns
+ * Format: "admin_pattern1,admin_pattern2|tester_pattern1,tester_pattern2"
+ */
+function loadRolePatterns(): { admin: string[]; tester: string[] } {
+  const envPatterns = process.env.SIMULATION_QA_ROLES;
+  if (!envPatterns) {
+    return {
+      admin: QA_ADMIN_ROLE_PATTERNS,
+      tester: QA_TESTER_ROLE_PATTERNS,
+    };
+  }
+
+  const [adminStr, testerStr] = envPatterns.split('|');
+  return {
+    admin: adminStr?.split(',').filter(Boolean) || QA_ADMIN_ROLE_PATTERNS,
+    tester: testerStr?.split(',').filter(Boolean) || QA_TESTER_ROLE_PATTERNS,
+  };
+}
+
+const rolePatterns = loadRolePatterns();
+
+/**
+ * Get the QA permission level for a guild member
+ *
+ * @param member - Discord guild member (or null for DMs)
+ * @returns Permission level for the member
+ */
+export function getQAPermissionLevel(
+  member: GuildMember | null | undefined
+): QAPermissionLevel {
+  if (!member) {
+    return QAPermissionLevel.NONE;
+  }
+
+  // Server administrators always get full access
+  if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return QAPermissionLevel.QA_ADMIN;
+  }
+
+  // Check member roles
+  const memberRoleNames = member.roles.cache.map((r) => r.name.toLowerCase());
+
+  // Check for QA Admin roles first (highest privilege)
+  const hasAdminRole = rolePatterns.admin.some((pattern) =>
+    memberRoleNames.some((roleName) => roleName.includes(pattern.toLowerCase()))
+  );
+  if (hasAdminRole) {
+    return QAPermissionLevel.QA_ADMIN;
+  }
+
+  // Check for QA Tester roles
+  const hasTesterRole = rolePatterns.tester.some((pattern) =>
+    memberRoleNames.some((roleName) => roleName.includes(pattern.toLowerCase()))
+  );
+  if (hasTesterRole) {
+    return QAPermissionLevel.QA_TESTER;
+  }
+
+  // Default: can only manage own context
+  return QAPermissionLevel.SELF_ONLY;
+}
+
+/**
+ * Check if a member has permission for a specific operation
+ *
+ * @param member - Discord guild member
+ * @param requiredLevel - Required permission level
+ * @param targetUserId - Target user ID (for self-context check)
+ * @param callerId - ID of the user invoking the command
+ * @returns true if operation is allowed
+ */
+export function hasPermission(
+  member: GuildMember | null | undefined,
+  requiredLevel: QAPermissionLevel,
+  targetUserId: string | null,
+  callerId: string
+): boolean {
+  const memberLevel = getQAPermissionLevel(member);
+
+  // QA Admin can do everything
+  if (memberLevel >= QAPermissionLevel.QA_ADMIN) {
+    return true;
+  }
+
+  // QA Tester can do anything except admin-level operations
+  if (memberLevel >= QAPermissionLevel.QA_TESTER && requiredLevel <= QAPermissionLevel.QA_TESTER) {
+    return true;
+  }
+
+  // Self-only: can manage own context for self-only level operations
+  if (memberLevel >= QAPermissionLevel.SELF_ONLY && requiredLevel <= QAPermissionLevel.SELF_ONLY) {
+    // If there's no target user, or target is self, allow
+    if (!targetUserId || targetUserId === callerId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Get a user-friendly error message for permission denial
+ */
+function getPermissionDenialMessage(
+  requiredLevel: QAPermissionLevel,
+  isSelfAllowed: boolean
+): string {
+  switch (requiredLevel) {
+    case QAPermissionLevel.QA_ADMIN:
+      return '❌ This operation requires QA Admin permissions.';
+    case QAPermissionLevel.QA_TESTER:
+      if (isSelfAllowed) {
+        return '❌ You can only modify your own simulation context. QA Tester role required to modify others.';
+      }
+      return '❌ This operation requires QA Tester permissions.';
+    default:
+      return '❌ You do not have permission to perform this operation.';
+  }
+}
+
+// =============================================================================
+// Command Cooldowns (Sprint 112 - HIGH-002 Fix)
+// =============================================================================
+
+/**
+ * Per-subcommand cooldown durations in milliseconds
+ *
+ * These prevent rapid-fire abuse of simulation commands.
+ * Adjust based on operation cost and abuse potential.
+ */
+export const COMMAND_COOLDOWNS: Record<string, number> = {
+  assume: 5000,      // 5 seconds - prevents rapid tier switching
+  whoami: 2000,      // 2 seconds - low cost operation
+  set: 3000,         // 3 seconds - state modification
+  reset: 10000,      // 10 seconds - destructive operation
+  access: 5000,      // 5 seconds - expensive permission check
+  feature: 5000,     // 5 seconds - expensive permission check
+  tier: 5000,        // 5 seconds - tier calculation
+  badges: 5000,      // 5 seconds - badge evaluation
+  thresholds: 10000, // 10 seconds - admin-only operation
+};
+
+/**
+ * Default cooldown for commands not explicitly configured
+ */
+const DEFAULT_COOLDOWN = 3000;
+
+/**
+ * Cooldown tracker: Map<commandKey, Map<userId, lastUseTimestamp>>
+ * Key format: "simulation:{subcommand}" or "simulation:check:{subcommand}"
+ */
+const cooldownTracker = new Map<string, Map<string, number>>();
+
+/**
+ * Check if a user is on cooldown for a subcommand
+ *
+ * @param userId - Discord user ID
+ * @param subcommand - The subcommand being executed
+ * @param subcommandGroup - Optional subcommand group (e.g., "check")
+ * @returns null if not on cooldown, or seconds remaining if on cooldown
+ */
+export function checkCooldown(
+  userId: string,
+  subcommand: string,
+  subcommandGroup: string | null = null
+): number | null {
+  // Build cooldown key
+  const cooldownKey = subcommandGroup
+    ? `simulation:${subcommandGroup}:${subcommand}`
+    : `simulation:${subcommand}`;
+
+  // Get cooldown duration for this subcommand
+  const cooldownMs = COMMAND_COOLDOWNS[subcommand] ?? DEFAULT_COOLDOWN;
+
+  // Get or create user map for this command
+  if (!cooldownTracker.has(cooldownKey)) {
+    cooldownTracker.set(cooldownKey, new Map());
+  }
+  const userCooldowns = cooldownTracker.get(cooldownKey)!;
+
+  // Check if user has existing cooldown
+  const lastUse = userCooldowns.get(userId);
+  if (lastUse) {
+    const expiresAt = lastUse + cooldownMs;
+    const now = Date.now();
+
+    if (now < expiresAt) {
+      // Still on cooldown - return seconds remaining
+      return Math.ceil((expiresAt - now) / 1000);
+    }
+  }
+
+  // Not on cooldown - record this use
+  userCooldowns.set(userId, Date.now());
+
+  // Schedule cleanup
+  setTimeout(() => {
+    userCooldowns.delete(userId);
+  }, cooldownMs);
+
+  return null;
+}
+
+/**
+ * Clear cooldown for a user (for testing)
+ */
+export function clearCooldown(userId: string, subcommand: string): void {
+  const cooldownKey = `simulation:${subcommand}`;
+  const userCooldowns = cooldownTracker.get(cooldownKey);
+  if (userCooldowns) {
+    userCooldowns.delete(userId);
+  }
+}
+
+/**
+ * Clear all cooldowns (for testing)
+ */
+export function clearAllCooldowns(): void {
+  cooldownTracker.clear();
+}
 
 // =============================================================================
 // State Attribute Definitions
@@ -259,6 +516,9 @@ export const simulationCommand = new SlashCommandBuilder()
 
 /**
  * Handle /simulation command execution
+ *
+ * Sprint 112 (HIGH-001): Added RBAC permission checks
+ * Sprint 112 (HIGH-002): Added cooldown enforcement
  */
 export async function handleSimulationCommand(
   interaction: ChatInputCommandInteraction
@@ -287,6 +547,19 @@ export async function handleSimulationCommand(
     return;
   }
 
+  // Check cooldown (Sprint 112 - HIGH-002)
+  const cooldownRemaining = checkCooldown(userId, subcommand, subcommandGroup);
+  if (cooldownRemaining !== null) {
+    await interaction.reply({
+      content: `⏳ Please wait ${cooldownRemaining} second${cooldownRemaining === 1 ? '' : 's'} before using \`/simulation ${subcommandGroup ? `${subcommandGroup} ` : ''}${subcommand}\` again.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  // Get member for RBAC checks
+  const member = interaction.member as GuildMember | null;
+
   try {
     // Get sandbox ID for this guild
     const sandboxId = await dependencies.getSandboxIdForGuild(guildId);
@@ -305,7 +578,17 @@ export async function handleSimulationCommand(
     const service = new SimulationService(dependencies.redis);
 
     // Handle check subcommand group
+    // Check operations are SELF_ONLY - users can check their own simulation state
     if (subcommandGroup === 'check') {
+      // All check subcommands use the caller's own context
+      if (!hasPermission(member, QAPermissionLevel.SELF_ONLY, userId, userId)) {
+        await interaction.reply({
+          content: getPermissionDenialMessage(QAPermissionLevel.SELF_ONLY, true),
+          ephemeral: true,
+        });
+        return;
+      }
+
       switch (subcommand) {
         case 'access':
           await handleCheckAccessSubcommand(interaction, service, sandboxId, userId);
@@ -328,26 +611,75 @@ export async function handleSimulationCommand(
       return;
     }
 
-    // Handle top-level subcommands
+    // Handle top-level subcommands with RBAC
     switch (subcommand) {
       case 'assume':
+        // Assume operates on self - SELF_ONLY level
+        if (!hasPermission(member, QAPermissionLevel.SELF_ONLY, userId, userId)) {
+          await interaction.reply({
+            content: getPermissionDenialMessage(QAPermissionLevel.SELF_ONLY, true),
+            ephemeral: true,
+          });
+          return;
+        }
         await handleAssumeSubcommand(interaction, service, sandboxId, userId);
         break;
+
       case 'whoami':
+        // Whoami operates on self - SELF_ONLY level
+        if (!hasPermission(member, QAPermissionLevel.SELF_ONLY, userId, userId)) {
+          await interaction.reply({
+            content: getPermissionDenialMessage(QAPermissionLevel.SELF_ONLY, true),
+            ephemeral: true,
+          });
+          return;
+        }
         await handleWhoamiSubcommand(interaction, service, sandboxId, userId);
         break;
+
       case 'set':
+        // Set operates on self - SELF_ONLY level
+        if (!hasPermission(member, QAPermissionLevel.SELF_ONLY, userId, userId)) {
+          await interaction.reply({
+            content: getPermissionDenialMessage(QAPermissionLevel.SELF_ONLY, true),
+            ephemeral: true,
+          });
+          return;
+        }
         await handleSetSubcommand(interaction, service, sandboxId, userId);
         break;
+
       case 'reset':
+        // Reset operates on self - SELF_ONLY level
+        if (!hasPermission(member, QAPermissionLevel.SELF_ONLY, userId, userId)) {
+          await interaction.reply({
+            content: getPermissionDenialMessage(QAPermissionLevel.SELF_ONLY, true),
+            ephemeral: true,
+          });
+          return;
+        }
         await handleResetSubcommand(interaction, service, sandboxId, userId);
         break;
+
       default:
         await interaction.reply({
           content: 'Unknown subcommand.',
           ephemeral: true,
         });
     }
+
+    // Log successful command with permission level for audit
+    const permissionLevel = getQAPermissionLevel(member);
+    logger.debug(
+      {
+        sandboxId,
+        userId,
+        subcommand,
+        subcommandGroup,
+        permissionLevel: QAPermissionLevel[permissionLevel],
+      },
+      'Simulation command executed with RBAC'
+    );
   } catch (error) {
     logger.error({ error, subcommand, userId, guildId }, 'Error handling /simulation command');
 

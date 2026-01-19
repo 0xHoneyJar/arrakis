@@ -47,16 +47,102 @@ import {
 export const SIMULATION_KEY_PREFIX = 'sandbox:simulation';
 
 /**
- * Redis key pattern for listing all contexts in a sandbox
+ * Maximum length for a Redis key segment
+ * Prevents memory exhaustion and keeps keys manageable
  */
-export const SIMULATION_KEY_PATTERN = (sandboxId: string) =>
-  `${SIMULATION_KEY_PREFIX}:${sandboxId}:*`;
+export const MAX_KEY_SEGMENT_LENGTH = 64;
+
+/**
+ * Pattern for valid Redis key segments
+ * Allows alphanumeric characters, hyphens, and underscores only
+ * Prevents injection via wildcards (*), delimiters (:), or other patterns
+ */
+export const VALID_KEY_SEGMENT_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 /**
  * Default TTL for simulation contexts (matches sandbox TTL)
  * 24 hours in seconds
  */
 export const DEFAULT_CONTEXT_TTL_SECONDS = 24 * 60 * 60;
+
+// =============================================================================
+// Key Sanitization (CRITICAL-001 Fix)
+// =============================================================================
+
+/**
+ * Error thrown when key segment validation fails
+ */
+export class KeyValidationError extends Error {
+  constructor(
+    public readonly segment: 'sandboxId' | 'userId',
+    message: string
+  ) {
+    super(message);
+    this.name = 'KeyValidationError';
+  }
+}
+
+/**
+ * Sanitize a Redis key segment to prevent injection attacks
+ *
+ * Validates that the segment:
+ * - Contains only safe characters (alphanumeric, hyphens, underscores)
+ * - Does not exceed maximum length
+ * - Does not contain wildcards, delimiters, or other dangerous patterns
+ *
+ * @param segment - The key segment to validate
+ * @param segmentName - Name of the segment for error messages ('sandboxId' or 'userId')
+ * @returns The validated segment (unchanged if valid)
+ * @throws KeyValidationError if segment is invalid
+ *
+ * @example
+ * sanitizeRedisKeySegment('user123', 'userId');     // Returns 'user123'
+ * sanitizeRedisKeySegment('a*b', 'sandboxId');      // Throws KeyValidationError
+ * sanitizeRedisKeySegment('a:b:c', 'userId');       // Throws KeyValidationError
+ */
+export function sanitizeRedisKeySegment(
+  segment: string,
+  segmentName: 'sandboxId' | 'userId'
+): string {
+  // Check for empty or non-string input
+  if (!segment || typeof segment !== 'string') {
+    throw new KeyValidationError(
+      segmentName,
+      `Invalid ${segmentName}: must be a non-empty string`
+    );
+  }
+
+  // Check length
+  if (segment.length > MAX_KEY_SEGMENT_LENGTH) {
+    throw new KeyValidationError(
+      segmentName,
+      `Invalid ${segmentName}: exceeds maximum length of ${MAX_KEY_SEGMENT_LENGTH} characters`
+    );
+  }
+
+  // Check for safe characters only
+  if (!VALID_KEY_SEGMENT_PATTERN.test(segment)) {
+    throw new KeyValidationError(
+      segmentName,
+      `Invalid ${segmentName}: contains unsafe characters (only alphanumeric, hyphens, underscores allowed)`
+    );
+  }
+
+  return segment;
+}
+
+/**
+ * Redis key pattern for listing all contexts in a sandbox
+ * Sanitizes sandboxId before constructing pattern
+ *
+ * @param sandboxId - The sandbox ID to create pattern for
+ * @returns Redis key pattern for KEYS command
+ * @throws KeyValidationError if sandboxId is invalid
+ */
+export function SIMULATION_KEY_PATTERN(sandboxId: string): string {
+  const safeSandboxId = sanitizeRedisKeySegment(sandboxId, 'sandboxId');
+  return `${SIMULATION_KEY_PREFIX}:${safeSandboxId}:*`;
+}
 
 // =============================================================================
 // Types
@@ -276,12 +362,17 @@ export function deserializeContext(json: string): SimulationContext {
 /**
  * Build Redis key for a simulation context
  *
+ * Sanitizes both sandboxId and userId to prevent key injection attacks.
+ *
  * @param sandboxId - The sandbox ID
  * @param userId - The user ID
  * @returns Redis key string
+ * @throws KeyValidationError if sandboxId or userId contains unsafe characters
  */
 export function buildContextKey(sandboxId: string, userId: string): string {
-  return `${SIMULATION_KEY_PREFIX}:${sandboxId}:${userId}`;
+  const safeSandboxId = sanitizeRedisKeySegment(sandboxId, 'sandboxId');
+  const safeUserId = sanitizeRedisKeySegment(userId, 'userId');
+  return `${SIMULATION_KEY_PREFIX}:${safeSandboxId}:${safeUserId}`;
 }
 
 // =============================================================================
@@ -661,7 +752,7 @@ export class SimulationService {
    * @param sandboxId - The sandbox ID
    * @param userId - The Discord user ID
    * @param tierId - The tier to assume
-   * @param options - Optional role configuration
+   * @param options - Optional role configuration including expected version for optimistic locking
    * @returns SimulationResult with updated context
    */
   async assumeRole(
@@ -672,6 +763,7 @@ export class SimulationService {
       rank?: number;
       badges?: BadgeId[];
       note?: string;
+      expectedVersion?: number;
     }
   ): Promise<SimulationResult<SimulationContext>> {
     // Validate tier ID
@@ -723,7 +815,9 @@ export class SimulationService {
       assumedRole,
     };
 
-    const updateResult = await this.updateContext(updatedContext);
+    const updateResult = await this.updateContext(updatedContext, {
+      expectedVersion: options?.expectedVersion,
+    });
 
     if (updateResult.success) {
       this.logger.info('Role assumed', {
@@ -890,12 +984,14 @@ export class SimulationService {
    * @param sandboxId - The sandbox ID
    * @param userId - The Discord user ID
    * @param updates - Partial member state updates
+   * @param options - Optional configuration including expected version for optimistic locking
    * @returns SimulationResult with StateUpdateResult
    */
   async setState(
     sandboxId: string,
     userId: string,
-    updates: Partial<SimulatedMemberState>
+    updates: Partial<SimulatedMemberState>,
+    options?: SimulationContextOptions
   ): Promise<SimulationResult<StateUpdateResult>> {
     // Track which fields are being updated
     const updatedFields = Object.keys(updates).filter(
@@ -903,7 +999,7 @@ export class SimulationService {
     );
 
     // Use updateMemberState for validation and storage
-    const result = await this.updateMemberState(sandboxId, userId, updates);
+    const result = await this.updateMemberState(sandboxId, userId, updates, options);
     if (!result.success || !result.data) {
       return result as SimulationResult<StateUpdateResult>;
     }
@@ -944,12 +1040,14 @@ export class SimulationService {
    * @param sandboxId - The sandbox ID
    * @param userId - The Discord user ID
    * @param updates - Partial member state updates
+   * @param options - Optional configuration including expected version for optimistic locking
    * @returns SimulationResult with updated context
    */
   async updateMemberState(
     sandboxId: string,
     userId: string,
-    updates: Partial<SimulatedMemberState>
+    updates: Partial<SimulatedMemberState>,
+    options?: SimulationContextOptions
   ): Promise<SimulationResult<SimulationContext>> {
     // Validate engagement stage if provided
     if (updates.engagementStage && !isValidEngagementStage(updates.engagementStage)) {
@@ -996,7 +1094,7 @@ export class SimulationService {
       },
     };
 
-    const updateResult = await this.updateContext(updatedContext);
+    const updateResult = await this.updateContext(updatedContext, options);
 
     if (updateResult.success) {
       this.logger.debug('Member state updated', {
@@ -1093,12 +1191,14 @@ export class SimulationService {
    * @param sandboxId - The sandbox ID
    * @param userId - The Discord user ID
    * @param overrides - Threshold overrides to apply
+   * @param options - Optional configuration including expected version for optimistic locking
    * @returns SimulationResult with updated context
    */
   async setThresholdOverrides(
     sandboxId: string,
     userId: string,
-    overrides: ThresholdOverrides
+    overrides: ThresholdOverrides,
+    options?: SimulationContextOptions
   ): Promise<SimulationResult<SimulationContext>> {
     // Validate all thresholds are positive
     for (const [key, value] of Object.entries(overrides)) {
@@ -1128,7 +1228,7 @@ export class SimulationService {
       thresholdOverrides: overrides,
     };
 
-    const updateResult = await this.updateContext(updatedContext);
+    const updateResult = await this.updateContext(updatedContext, options);
 
     if (updateResult.success) {
       this.logger.info('Threshold overrides set', {

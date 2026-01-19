@@ -2,9 +2,17 @@
  * Simulation Routes Module
  *
  * Sprint 110: REST API for QA Sandbox Testing System
+ * Sprint 111: Security Remediation (CRITICAL-002 - Authentication)
+ * Sprint 112: Security Remediation (HIGH-002 - Rate Limiting)
  *
  * Provides REST endpoints for simulation operations within sandbox environments.
  * All routes are scoped to a specific sandbox and user.
+ *
+ * Security:
+ * - All routes require authentication via API key or Bearer token
+ * - Sandbox access is verified for each request
+ * - User operations require self-or-admin authorization
+ * - Rate limiting applied to prevent abuse
  *
  * @module api/routes/simulation
  */
@@ -20,17 +28,32 @@ import {
 } from '../../services/sandbox/index.js';
 import { isValidTierId } from '../../services/sandbox/simulation-context.js';
 import type { MinimalRedis } from '../../../../../packages/sandbox/src/types.js';
+import {
+  requireAuth,
+  requireSandboxAccess,
+  requireSelfOrAdmin,
+  requireQARole,
+  type AuthenticatedRequest,
+} from '../middleware/auth.js';
+import {
+  generalRateLimiter,
+  writeRateLimiter,
+  expensiveRateLimiter,
+} from '../middleware/rate-limit.js';
+import {
+  sanitizeAndLogError,
+  sanitizeValidationErrors,
+} from '../utils/error-sanitizer.js';
 
 // =============================================================================
 // Types
 // =============================================================================
 
 /**
- * Extended request with simulation context
+ * Extended request with simulation context and authentication
  */
-interface SimulationRequest extends Request {
+interface SimulationRequest extends AuthenticatedRequest {
   simulationService?: SimulationService;
-  sandboxId?: string;
 }
 
 /**
@@ -45,6 +68,9 @@ export interface SimulationRouterDeps {
 // Validation Schemas
 // =============================================================================
 
+/**
+ * Sprint 112 (HIGH-003): Schemas now require version for optimistic locking
+ */
 const assumeRoleSchema = z.object({
   tierId: z.string().refine((val) => isValidTierId(val as TierId), {
     message: 'Invalid tier ID',
@@ -52,6 +78,7 @@ const assumeRoleSchema = z.object({
   rank: z.number().int().min(1).max(10000).optional(),
   badges: z.array(z.string()).optional(),
   note: z.string().max(200).optional(),
+  version: z.number().int().min(0).optional(), // Required for existing contexts
 });
 
 const updateStateSchema = z.object({
@@ -62,6 +89,7 @@ const updateStateSchema = z.object({
   convictionScore: z.number().min(0).optional(),
   tenureDays: z.number().min(0).optional(),
   isVerified: z.boolean().optional(),
+  version: z.number().int().min(0), // Required for optimistic locking
 });
 
 const checkSchema = z.object({
@@ -79,6 +107,7 @@ const thresholdOverridesSchema = z.object({
   qanat: z.number().positive().optional(),
   ichwan: z.number().positive().optional(),
   hajra: z.number().positive().optional(),
+  version: z.number().int().min(0), // Required for optimistic locking
 });
 
 // =============================================================================
@@ -130,15 +159,31 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   const service = createSimulationService(deps.redis, logger);
 
   // ===========================================================================
-  // Middleware
+  // Middleware (Sprint 111 - CRITICAL-002 Security, Sprint 112 - HIGH-002 Rate Limiting)
   // ===========================================================================
 
   /**
-   * Extract and validate sandbox/user from params
+   * Authentication - all routes require valid credentials
+   */
+  router.use(requireAuth);
+
+  /**
+   * Sandbox access - verify caller has access to requested sandbox
+   * Applied to all routes with :sandboxId parameter
+   */
+  router.use(requireSandboxAccess);
+
+  /**
+   * General rate limiting - 60 requests per minute per user
+   * Applied to all routes as baseline protection
+   */
+  router.use(generalRateLimiter);
+
+  /**
+   * Attach simulation service to request
    */
   router.use((req: SimulationRequest, _res: Response, next: NextFunction) => {
     req.simulationService = service;
-    req.sandboxId = req.params.sandboxId;
     next();
   });
 
@@ -149,9 +194,14 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * POST /sandbox/:sandboxId/simulation/:userId/assume
    * Assume a role within the simulation
+   *
+   * Security: Requires self-or-admin authorization
+   * Rate limit: 20 write operations per minute
    */
   router.post(
     '/:userId/assume',
+    requireSelfOrAdmin,
+    writeRateLimiter,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -160,18 +210,18 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
       if (!parseResult.success) {
         res.status(400).json({
           error: 'Validation error',
-          details: parseResult.error.issues,
+          details: sanitizeValidationErrors(parseResult.error.issues),
         });
         return;
       }
 
-      const { tierId, rank, badges, note } = parseResult.data;
+      const { tierId, rank, badges, note, version } = parseResult.data;
 
       const result = await simulationService!.assumeRole(
         sandboxId!,
         userId,
         tierId as TierId,
-        { rank, badges, note }
+        { rank, badges, note, expectedVersion: version }
       );
 
       if (!result.success) {
@@ -198,9 +248,14 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * DELETE /sandbox/:sandboxId/simulation/:userId/assume
    * Clear assumed role
+   *
+   * Security: Requires self-or-admin authorization
+   * Rate limit: 20 write operations per minute
    */
   router.delete(
     '/:userId/assume',
+    requireSelfOrAdmin,
+    writeRateLimiter,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -233,9 +288,12 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * GET /sandbox/:sandboxId/simulation/:userId/whoami
    * Get full simulation status
+   *
+   * Security: Requires self-or-admin authorization
    */
   router.get(
     '/:userId/whoami',
+    requireSelfOrAdmin,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -261,9 +319,12 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * GET /sandbox/:sandboxId/simulation/:userId/state
    * Get current member state
+   *
+   * Security: Requires self-or-admin authorization
    */
   router.get(
     '/:userId/state',
+    requireSelfOrAdmin,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -289,9 +350,14 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * PATCH /sandbox/:sandboxId/simulation/:userId/state
    * Update member state
+   *
+   * Security: Requires self-or-admin authorization
+   * Rate limit: 20 write operations per minute
    */
   router.patch(
     '/:userId/state',
+    requireSelfOrAdmin,
+    writeRateLimiter,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -300,15 +366,19 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
       if (!parseResult.success) {
         res.status(400).json({
           error: 'Validation error',
-          details: parseResult.error.issues,
+          details: sanitizeValidationErrors(parseResult.error.issues),
         });
         return;
       }
 
+      // Extract version for optimistic locking
+      const { version, ...stateUpdates } = parseResult.data;
+
       const result = await simulationService!.setState(
         sandboxId!,
         userId,
-        parseResult.data
+        stateUpdates,
+        { expectedVersion: version }
       );
 
       if (!result.success) {
@@ -335,9 +405,14 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * DELETE /sandbox/:sandboxId/simulation/:userId
    * Reset/delete simulation context
+   *
+   * Security: Requires self-or-admin authorization
+   * Rate limit: 20 write operations per minute
    */
   router.delete(
     '/:userId',
+    requireSelfOrAdmin,
+    writeRateLimiter,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -369,9 +444,14 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * POST /sandbox/:sandboxId/simulation/:userId/check
    * Check permissions, tier, or badges
+   *
+   * Security: Requires self-or-admin authorization
+   * Rate limit: 10 expensive operations per minute (tier calculations)
    */
   router.post(
     '/:userId/check',
+    requireSelfOrAdmin,
+    expensiveRateLimiter,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -380,7 +460,7 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
       if (!parseResult.success) {
         res.status(400).json({
           error: 'Validation error',
-          details: parseResult.error.issues,
+          details: sanitizeValidationErrors(parseResult.error.issues),
         });
         return;
       }
@@ -459,9 +539,12 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * GET /sandbox/:sandboxId/simulation/:userId/thresholds
    * Get current threshold overrides
+   *
+   * Security: Requires self-or-admin authorization
    */
   router.get(
     '/:userId/thresholds',
+    requireSelfOrAdmin,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -491,9 +574,15 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * PATCH /sandbox/:sandboxId/simulation/:userId/thresholds
    * Set threshold overrides
+   *
+   * Security: Requires self-or-admin authorization AND QA role
+   * Rate limit: 20 write operations per minute
    */
   router.patch(
     '/:userId/thresholds',
+    requireSelfOrAdmin,
+    requireQARole,
+    writeRateLimiter,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -502,15 +591,19 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
       if (!parseResult.success) {
         res.status(400).json({
           error: 'Validation error',
-          details: parseResult.error.issues,
+          details: sanitizeValidationErrors(parseResult.error.issues),
         });
         return;
       }
 
+      // Extract version for optimistic locking
+      const { version, ...thresholdOverrides } = parseResult.data;
+
       const result = await simulationService!.setThresholdOverrides(
         sandboxId!,
         userId,
-        parseResult.data
+        thresholdOverrides,
+        { expectedVersion: version }
       );
 
       if (!result.success) {
@@ -538,9 +631,15 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   /**
    * DELETE /sandbox/:sandboxId/simulation/:userId/thresholds
    * Clear threshold overrides (revert to defaults)
+   *
+   * Security: Requires self-or-admin authorization AND QA role
+   * Rate limit: 20 write operations per minute
    */
   router.delete(
     '/:userId/thresholds',
+    requireSelfOrAdmin,
+    requireQARole,
+    writeRateLimiter,
     asyncHandler(async (req: SimulationRequest, res: Response) => {
       const { sandboxId, simulationService } = req;
       const { userId } = req.params;
@@ -570,16 +669,25 @@ export function createSimulationRouter(deps: SimulationRouterDeps): Router {
   );
 
   // ===========================================================================
-  // Error Handler
+  // Error Handler (Sprint 113 - HIGH-004 Security: Error Sanitization)
   // ===========================================================================
 
   router.use(
-    (err: Error, _req: Request, res: Response, _next: NextFunction) => {
-      logger.error({ error: err.message, stack: err.stack }, 'Simulation API error');
+    (err: Error, req: Request, res: Response, _next: NextFunction) => {
+      const authReq = req as SimulationRequest;
 
-      res.status(500).json({
-        error: 'Internal server error',
-        message: err.message,
+      // Sanitize error and log with full details
+      const sanitizedResponse = sanitizeAndLogError(err, {
+        path: req.path,
+        method: req.method,
+        userId: authReq.caller?.userId,
+      });
+
+      // Send sanitized response to client
+      res.status(sanitizedResponse.status).json({
+        error: sanitizedResponse.error,
+        errorRef: sanitizedResponse.errorRef,
+        ...(sanitizedResponse.details && { details: sanitizedResponse.details }),
       });
     }
   );
