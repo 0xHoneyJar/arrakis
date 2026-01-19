@@ -286,10 +286,6 @@ export async function applyCommand(options: ApplyOptions): Promise<void> {
 
     process.exit(applyResult.success ? ExitCodes.SUCCESS : ExitCodes.PARTIAL_FAILURE);
   } catch (error) {
-    // Check if it's a lock error
-    if (error instanceof Error && error.message.includes('lock')) {
-      handleError(error, options.json);
-    }
     handleError(error, options.json);
   } finally {
     await backend.close();

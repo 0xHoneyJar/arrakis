@@ -42,7 +42,14 @@ export interface DestroyOptions {
 }
 
 /**
- * Prompts user for confirmation with workspace name
+ * Prompts user for two-stage confirmation for destroy operations
+ *
+ * Stage 1: Type the workspace name exactly
+ * Stage 2: Answer "Are you ABSOLUTELY sure?" with "yes"
+ *
+ * @param workspace - The workspace name that must be typed to confirm
+ * @param resourceCount - Number of resources that will be destroyed
+ * @returns Promise resolving to true only if both confirmations pass
  */
 async function confirmDestroy(workspace: string, resourceCount: number): Promise<boolean> {
   const rl = readline.createInterface({
@@ -50,7 +57,8 @@ async function confirmDestroy(workspace: string, resourceCount: number): Promise
     output: process.stdout,
   });
 
-  return new Promise((resolve) => {
+  // Stage 1: Type workspace name
+  const workspaceConfirmed = await new Promise<boolean>((resolve) => {
     console.log(
       chalk.red.bold('\n⚠️  WARNING: This will permanently delete all managed resources!\n')
     );
@@ -60,11 +68,31 @@ async function confirmDestroy(workspace: string, resourceCount: number): Promise
     rl.question(
       chalk.red(`To confirm, type the workspace name "${workspace}": `),
       (answer) => {
-        rl.close();
         resolve(answer === workspace);
       }
     );
   });
+
+  if (!workspaceConfirmed) {
+    rl.close();
+    return false;
+  }
+
+  // Stage 2: Are you ABSOLUTELY sure?
+  const absolutelySure = await new Promise<boolean>((resolve) => {
+    console.log(
+      chalk.red.bold('\n🚨 This action is IRREVERSIBLE. All resources will be permanently deleted.\n')
+    );
+    rl.question(
+      chalk.red.bold('Are you ABSOLUTELY sure? ') + chalk.dim('Only "yes" will be accepted: '),
+      (answer) => {
+        rl.close();
+        resolve(answer.toLowerCase() === 'yes');
+      }
+    );
+  });
+
+  return absolutelySure;
 }
 
 /**
