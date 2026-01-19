@@ -867,6 +867,34 @@ function validateStartupConfig(cfg: typeof parsedConfig): void {
   }
 
   // ==========================================================================
+  // Sprint 137: Redis Session Store Startup Validation (MED-001)
+  // ==========================================================================
+  // Dashboard sessions require Redis in production to prevent in-memory fallback
+  // which would cause session loss on restarts and security issues with scaling
+
+  if (isProduction && cfg.features.redisEnabled) {
+    // Validate Redis URL is configured when Redis is enabled
+    if (!cfg.redis.url) {
+      logger.fatal('REDIS_URL is required when FEATURE_REDIS_ENABLED=true in production');
+      throw new Error(
+        'SECURITY ERROR: Redis is enabled (FEATURE_REDIS_ENABLED=true) but REDIS_URL is not configured. ' +
+          'Redis is required for secure session management in production. ' +
+          'Set REDIS_URL or disable Redis with FEATURE_REDIS_ENABLED=false (not recommended for dashboard).'
+      );
+    }
+    logger.info('Sprint 137 (MED-001): Redis session store configuration validated');
+  }
+
+  // Sprint 137: Warn if Redis is NOT enabled in production (recommended for dashboard)
+  if (isProduction && !cfg.features.redisEnabled) {
+    logger.warn(
+      'SECURITY WARNING: Redis is disabled in production. Dashboard sessions will use in-memory storage ' +
+        'which does not persist across restarts and cannot scale across multiple instances. ' +
+        'Set FEATURE_REDIS_ENABLED=true and configure REDIS_URL for production deployments.'
+    );
+  }
+
+  // ==========================================================================
   // Sprint 81: Security Configuration Validation
   // ==========================================================================
 
