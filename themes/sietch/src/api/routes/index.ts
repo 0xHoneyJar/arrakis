@@ -72,3 +72,10 @@ export { createVerifyRouter } from './verify.routes.js';
 export { createVerifyIntegration } from './verify.integration.js';
 export type { VerifyRouter } from './verify.routes.js';
 export type { VerificationIntegrationDeps, VerifyIntegration } from './verify.integration.js';
+
+/**
+ * Simulation routes (Sprint 110 - QA Sandbox Testing)
+ * Factory function that requires Redis dependency injection
+ */
+export { createSimulationRouter } from './simulation.routes.js';
+export type { SimulationRouterDeps } from './simulation.routes.js';
