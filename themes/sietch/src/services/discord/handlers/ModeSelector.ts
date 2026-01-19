@@ -12,8 +12,7 @@
  * @see SDD §2.1 Component Design
  */
 
-import type { Logger } from 'pino';
-import { createLogger } from '../../../utils/logger.js';
+import { createLogger, type ILogger } from '../../../packages/infrastructure/logging/index.js';
 
 // =============================================================================
 // Types
@@ -88,10 +87,10 @@ export const MODE_THRESHOLDS = {
  * 4. Small servers (< 10 members) with incumbent → HYBRID
  */
 export class ModeSelector {
-  private readonly log: Logger;
+  private readonly log: ILogger;
 
-  constructor(logger?: Logger) {
-    this.log = logger ?? createLogger().child({ component: 'ModeSelector' });
+  constructor(logger?: ILogger) {
+    this.log = logger ?? createLogger({ service: 'ModeSelector' });
   }
 
   /**
@@ -276,7 +275,7 @@ export class ModeSelector {
 /**
  * Create a ModeSelector instance.
  */
-export function createModeSelector(logger?: Logger): ModeSelector {
+export function createModeSelector(logger?: ILogger): ModeSelector {
   return new ModeSelector(logger);
 }
 

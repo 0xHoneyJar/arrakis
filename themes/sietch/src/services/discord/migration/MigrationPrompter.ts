@@ -14,7 +14,7 @@
  * @module services/discord/migration/MigrationPrompter
  */
 
-import { createLogger, type ILogger } from '../../../utils/logger.js';
+import { createLogger, type ILogger } from '../../../packages/infrastructure/logging/index.js';
 
 // =============================================================================
 // Constants

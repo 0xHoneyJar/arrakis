@@ -23,8 +23,7 @@
  */
 
 import type { Guild, Client } from 'discord.js';
-import type { Logger } from 'pino';
-import { createLogger } from '../../../utils/logger.js';
+import { createLogger, type ILogger } from '../../../packages/infrastructure/logging/index.js';
 import {
   ModeSelector,
   createModeSelector,
@@ -91,16 +90,16 @@ const DEFAULT_OPTIONS: Required<GuildJoinHandlerOptions> = {
  * Handles guild join events for intelligent onboarding.
  */
 export class GuildJoinHandler {
-  private readonly log: Logger;
+  private readonly log: ILogger;
   private readonly modeSelector: ModeSelector;
 
   constructor(
     private readonly coexistenceStorage: ICoexistenceStorage,
     private readonly discordClient: Client,
     private readonly options: GuildJoinHandlerOptions = {},
-    logger?: Logger
+    logger?: ILogger
   ) {
-    this.log = logger ?? createLogger().child({ component: 'GuildJoinHandler' });
+    this.log = logger ?? createLogger({ service: 'GuildJoinHandler' });
     this.modeSelector = createModeSelector(this.log);
   }
 
@@ -327,7 +326,7 @@ export function createGuildJoinHandler(
   coexistenceStorage: ICoexistenceStorage,
   discordClient: Client,
   options?: GuildJoinHandlerOptions,
-  logger?: Logger
+  logger?: ILogger
 ): GuildJoinHandler {
   return new GuildJoinHandler(coexistenceStorage, discordClient, options, logger);
 }

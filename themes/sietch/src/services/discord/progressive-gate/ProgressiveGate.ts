@@ -11,7 +11,7 @@
  * @module services/discord/progressive-gate/ProgressiveGate
  */
 
-import { createLogger, type ILogger } from '../../../utils/logger.js';
+import { createLogger, type ILogger } from '../../../packages/infrastructure/logging/index.js';
 
 // =============================================================================
 // Constants
@@ -221,7 +221,7 @@ export class ProgressiveGate {
     }
 
     // Calculate base points for this activity
-    let points = ACTIVITY_POINTS[activityType] ?? 0;
+    let points: number = ACTIVITY_POINTS[activityType] ?? 0;
 
     // Apply repeated action penalty
     const sameTypeCount = recentActivities.filter(a => a.type === activityType).length;
