@@ -18,6 +18,7 @@ import {
   handleError,
   isInteractive,
   showNextStep,
+  createSilentLogger,
 } from './utils.js';
 import {
   isValidGuildId,
@@ -46,7 +47,8 @@ export async function registerCommand(
     : null;
 
   try {
-    const manager = getSandboxManager();
+    const logger = createSilentLogger();
+    const manager = getSandboxManager(logger);
     const user = getCurrentUser();
 
     // Get sandbox first to validate it exists
@@ -151,8 +153,8 @@ export async function registerCommand(
 
       // Sprint 148: Next-step suggestion
       showNextStep(
-        `gaib sandbox env ${sandboxName}`,
-        'Get connection environment variables',
+        `gaib sandbox status ${sandboxName}`,
+        'Check sandbox status and health',
         options
       );
     }

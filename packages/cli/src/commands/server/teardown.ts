@@ -1,16 +1,20 @@
 /**
  * Server Teardown Command
  *
+ * Sprint 149: Checkpoint Hooks (Sietch Vault CS1)
+ *
  * DANGEROUS: Destroys ALL Discord server resources (roles, categories, channels).
  * This command is designed for resetting test/sandbox servers only.
  *
  * Safety measures:
- * 1. Explicit --confirm-teardown flag required
- * 2. Server name must be typed exactly
- * 3. Random 6-digit confirmation code must be entered
- * 4. Final "TEARDOWN" keyword confirmation
+ * 1. Automatic checkpoint creation (Sprint 149) - blocks if fails
+ * 2. Explicit --confirm-teardown flag required
+ * 3. Server name must be typed exactly
+ * 4. Random 6-digit confirmation code must be entered
+ * 5. Final "TEARDOWN" keyword confirmation
  *
  * @see SDD §6.0 CLI Commands
+ * @see SDD §15.3.3 Teardown Command Hook
  * @module packages/cli/commands/server/teardown
  */
 
@@ -27,6 +31,7 @@ import {
 } from './utils.js';
 import { createClientFromEnv, DiscordClient } from './iac/index.js';
 import type { Snowflake } from './iac/types.js';
+import { CheckpointService, CheckpointError } from '../../services/checkpoint.js';
 
 /**
  * Options for the teardown command
@@ -40,6 +45,11 @@ export interface TeardownOptions {
   preserveCategories?: string[];
   /** Skip interactive prompts (requires --confirm-teardown and --json) */
   force?: boolean;
+  /**
+   * Skip checkpoint creation before teardown (DANGEROUS)
+   * Sprint 149: Checkpoint Hooks
+   */
+  skipCheckpoint?: boolean;
 }
 
 /**
@@ -414,6 +424,63 @@ export async function teardownCommand(options: TeardownOptions): Promise<void> {
       process.exit(ExitCodes.SUCCESS);
     }
 
+    // === SIETCH VAULT: Pre-destructive checkpoint (Sprint 149) ===
+    let checkpointId: string | null = null;
+
+    if (!options.skipCheckpoint && !options.dryRun) {
+      const checkpointService = new CheckpointService();
+
+      try {
+        if (!options.quiet && !options.json) {
+          formatInfo('Creating safety checkpoint before teardown...');
+        }
+
+        const checkpoint = await checkpointService.create({
+          serverId: guildId,
+          triggerCommand: 'teardown',
+          reason: `Pre-teardown checkpoint for server ${resources.serverName}`,
+        });
+
+        checkpointId = checkpoint.checkpointId;
+
+        if (!options.quiet && !options.json) {
+          console.log(chalk.green(`  ✓ Checkpoint created: ${checkpointId}`));
+          console.log(chalk.dim(`    Expires: ${checkpoint.expiresAt.toISOString()}`));
+          console.log(chalk.dim(`    To restore: gaib restore exec ${checkpointId}\n`));
+        }
+      } catch (error) {
+        // Fail-safe: checkpoint failure blocks the destructive operation
+        if (error instanceof CheckpointError) {
+          if (options.json) {
+            console.log(
+              JSON.stringify(
+                {
+                  success: false,
+                  error: 'Failed to create safety checkpoint',
+                  message: error.message,
+                  code: error.code,
+                  blocked: true,
+                  hint: 'Use --skip-checkpoint to bypass (DANGEROUS)',
+                },
+                null,
+                2
+              )
+            );
+          } else {
+            console.error(chalk.red('\n✗ Failed to create safety checkpoint'));
+            console.error(chalk.red(`  Error: ${error.message}`));
+            console.error(chalk.yellow('\n  Teardown operation blocked for safety.'));
+            console.error(chalk.dim('  Use --skip-checkpoint to bypass (DANGEROUS)'));
+          }
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        throw error;
+      }
+    } else if (!options.dryRun && !options.quiet && !options.json) {
+      formatWarning('Skipping checkpoint creation (--skip-checkpoint)');
+    }
+    // === END SIETCH VAULT ===
+
     // Require confirmation (unless --force with --json and --confirm-teardown)
     const skipInteractive = options.force && options.json && options.confirmTeardown;
 
@@ -459,6 +526,7 @@ export async function teardownCommand(options: TeardownOptions): Promise<void> {
             success: result.success,
             guildId,
             serverName: resources.serverName,
+            checkpointId: checkpointId ?? undefined,
             dryRun: options.dryRun ?? false,
             deleted: result.deleted,
             failed: result.failed,

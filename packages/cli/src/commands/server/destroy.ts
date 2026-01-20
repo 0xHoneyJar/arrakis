@@ -2,11 +2,16 @@
  * Server Destroy Command
  *
  * Sprint 98: Apply & Destroy Operations
+ * Sprint 149: Checkpoint Hooks (Sietch Vault CS1)
  *
  * Destroys all managed resources in a workspace.
  * Similar to `terraform destroy`.
  *
+ * SAFETY: Creates automatic checkpoint before destruction (Sprint 149).
+ * If checkpoint creation fails, the destroy operation is blocked.
+ *
  * @see SDD §6.0 CLI Commands
+ * @see SDD §15.3.2 Destroy Command Hook
  * @module packages/cli/commands/server/destroy
  */
 
@@ -26,6 +31,7 @@ import { createWorkspaceManager } from './iac/WorkspaceManager.js';
 import { DestroyEngine } from './iac/DestroyEngine.js';
 import { BackendFactory } from './iac/backends/BackendFactory.js';
 import type { ApplyResult } from './iac/types.js';
+import { CheckpointService, CheckpointError } from '../../services/checkpoint.js';
 
 /**
  * Options for the destroy command
@@ -38,6 +44,11 @@ export interface DestroyOptions {
   autoApprove?: boolean;
   dryRun?: boolean;
   targetTypes?: string[];
+  /**
+   * Skip checkpoint creation before destroy (DANGEROUS)
+   * Sprint 149: Checkpoint Hooks
+   */
+  skipCheckpoint?: boolean;
 }
 
 /**
@@ -235,6 +246,63 @@ export async function destroyCommand(options: DestroyOptions): Promise<void> {
       process.exit(ExitCodes.SUCCESS);
     }
 
+    // === SIETCH VAULT: Pre-destructive checkpoint (Sprint 149) ===
+    let checkpointId: string | null = null;
+
+    if (!options.skipCheckpoint) {
+      const checkpointService = new CheckpointService();
+
+      try {
+        if (!options.quiet && !options.json) {
+          formatInfo('Creating safety checkpoint before destroy...');
+        }
+
+        const checkpoint = await checkpointService.create({
+          serverId: guildId,
+          triggerCommand: 'destroy',
+          reason: `Pre-destroy checkpoint for workspace ${workspace}`,
+        });
+
+        checkpointId = checkpoint.checkpointId;
+
+        if (!options.quiet && !options.json) {
+          console.log(chalk.green(`  ✓ Checkpoint created: ${checkpointId}`));
+          console.log(chalk.dim(`    Expires: ${checkpoint.expiresAt.toISOString()}`));
+          console.log(chalk.dim(`    To restore: gaib restore exec ${checkpointId}\n`));
+        }
+      } catch (error) {
+        // Fail-safe: checkpoint failure blocks the destructive operation
+        if (error instanceof CheckpointError) {
+          if (options.json) {
+            console.log(
+              JSON.stringify(
+                {
+                  success: false,
+                  error: 'Failed to create safety checkpoint',
+                  message: error.message,
+                  code: error.code,
+                  blocked: true,
+                  hint: 'Use --skip-checkpoint to bypass (DANGEROUS)',
+                },
+                null,
+                2
+              )
+            );
+          } else {
+            console.error(chalk.red('\n✗ Failed to create safety checkpoint'));
+            console.error(chalk.red(`  Error: ${error.message}`));
+            console.error(chalk.yellow('\n  Destroy operation blocked for safety.'));
+            console.error(chalk.dim('  Use --skip-checkpoint to bypass (DANGEROUS)'));
+          }
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        throw error;
+      }
+    } else if (!options.quiet && !options.json) {
+      formatWarning('Skipping checkpoint creation (--skip-checkpoint)');
+    }
+    // === END SIETCH VAULT ===
+
     // Confirm unless auto-approve
     if (!options.autoApprove && !options.json) {
       const confirmed = await confirmDestroy(workspace, preview.resources.length);
@@ -263,6 +331,7 @@ export async function destroyCommand(options: DestroyOptions): Promise<void> {
             success: destroyResult.success,
             workspace,
             guildId,
+            checkpointId: checkpointId ?? undefined,
             stateUpdated: destroyResult.stateUpdated,
             newSerial: destroyResult.newSerial,
             resourcesDestroyed: destroyResult.resourcesDestroyed,

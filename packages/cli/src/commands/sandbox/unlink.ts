@@ -17,6 +17,7 @@ import {
   getCurrentUser,
   handleError,
   isInteractive,
+  createSilentLogger,
 } from './utils.js';
 
 /**
@@ -41,7 +42,8 @@ export async function unregisterCommand(
     : null;
 
   try {
-    const manager = getSandboxManager();
+    const logger = createSilentLogger();
+    const manager = getSandboxManager(logger);
     const user = getCurrentUser();
 
     // Get sandbox first to validate it exists

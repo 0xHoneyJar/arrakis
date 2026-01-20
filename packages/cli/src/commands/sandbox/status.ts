@@ -3,6 +3,7 @@
  *
  * Sprint 87: Discord Server Sandboxes - Cleanup & Polish
  * Sprint 90: CLI Rename (bd → gaib)
+ * Sprint 148: Type alignment with @arrakis/sandbox SandboxHealthStatus
  *
  * Displays detailed status and health information for a sandbox.
  *
@@ -13,12 +14,10 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import Table from 'cli-table3';
-import type { SandboxHealthStatus, HealthLevel } from '@arrakis/sandbox';
+import type { SandboxHealthStatus, HealthLevel, Sandbox } from '@arrakis/sandbox';
 import {
   getSandboxManager,
   formatDate,
-  formatDuration,
-  timeUntil,
   handleError,
   createSilentLogger,
   isInteractive,
@@ -53,17 +52,20 @@ function getHealthColor(level: HealthLevel): (text: string) => string {
 /**
  * Formats health check result for display
  */
-function formatHealthCheck(check: { name: string; healthy: boolean; message: string; latencyMs?: number }): string {
-  const icon = check.healthy ? chalk.green('✓') : chalk.red('✗');
-  const latency = check.latencyMs !== undefined ? chalk.dim(` (${check.latencyMs}ms)`) : '';
-  return `${icon} ${check.name}: ${check.message}${latency}`;
+function formatHealthCheckItem(name: string, status: string): string {
+  const healthy = status === 'ok';
+  const icon = healthy ? chalk.green('✓') : chalk.red('✗');
+  return `${icon} ${name}: ${status}`;
 }
 
 /**
  * Displays status in terminal format
+ *
+ * @param health - Health status from the manager
+ * @param sandbox - Full sandbox entity for additional details
  */
-function displayTerminalStatus(health: SandboxHealthStatus): void {
-  const healthColor = getHealthColor(health.overallHealth);
+function displayTerminalStatus(health: SandboxHealthStatus, sandbox: Sandbox): void {
+  const healthColor = getHealthColor(health.health);
 
   console.log();
   console.log(chalk.bold('Sandbox Status'));
@@ -76,11 +78,11 @@ function displayTerminalStatus(health: SandboxHealthStatus): void {
   });
 
   infoTable.push(
-    [chalk.bold('Name:'), chalk.cyan(health.sandbox.name)],
-    [chalk.bold('ID:'), chalk.dim(health.sandbox.id)],
-    [chalk.bold('Status:'), healthColor(health.sandbox.status)],
-    [chalk.bold('Owner:'), health.sandbox.owner],
-    [chalk.bold('Schema:'), chalk.dim(health.sandbox.schemaName)]
+    [chalk.bold('Name:'), chalk.cyan(sandbox.name)],
+    [chalk.bold('ID:'), chalk.dim(sandbox.id)],
+    [chalk.bold('Status:'), healthColor(health.status)],
+    [chalk.bold('Owner:'), sandbox.owner],
+    [chalk.bold('Schema:'), chalk.dim(sandbox.schemaName)]
   );
 
   console.log(infoTable.toString());
@@ -95,29 +97,24 @@ function displayTerminalStatus(health: SandboxHealthStatus): void {
     colWidths: [20, 35],
   });
 
-  const expiresIn = timeUntil(health.sandbox.expiresAt);
-  const expiresDisplay = expiresIn < 0
-    ? chalk.red('EXPIRED')
-    : chalk.green(formatDuration(expiresIn));
-
   timingTable.push(
-    [chalk.bold('Created:'), formatDate(health.sandbox.createdAt)],
-    [chalk.bold('Expires:'), formatDate(health.sandbox.expiresAt)],
-    [chalk.bold('Time Left:'), expiresDisplay]
+    [chalk.bold('Created:'), formatDate(sandbox.createdAt)],
+    [chalk.bold('Expires:'), formatDate(sandbox.expiresAt)],
+    [chalk.bold('Time Left:'), health.expiresIn.startsWith('-') ? chalk.red('EXPIRED') : chalk.green(health.expiresIn)]
   );
 
-  if (health.sandbox.lastActivityAt) {
-    timingTable.push([chalk.bold('Last Activity:'), formatDate(health.sandbox.lastActivityAt)]);
+  if (health.lastActivity) {
+    timingTable.push([chalk.bold('Last Activity:'), formatDate(health.lastActivity)]);
   }
 
   console.log(timingTable.toString());
 
   // Guild mappings
-  if (health.sandbox.guildIds.length > 0) {
+  if (sandbox.guildIds.length > 0) {
     console.log();
     console.log(chalk.bold('Registered Guilds'));
     console.log(chalk.dim('─'.repeat(50)));
-    for (const guildId of health.sandbox.guildIds) {
+    for (const guildId of sandbox.guildIds) {
       console.log(`  ${chalk.cyan('•')} ${guildId}`);
     }
   }
@@ -127,19 +124,16 @@ function displayTerminalStatus(health: SandboxHealthStatus): void {
   console.log(chalk.bold('Health Checks'));
   console.log(chalk.dim('─'.repeat(50)));
 
-  for (const check of health.checks) {
-    console.log(`  ${formatHealthCheck(check)}`);
-  }
+  console.log(`  ${formatHealthCheckItem('Schema', health.checks.schema)}`);
+  console.log(`  ${formatHealthCheckItem('Redis', health.checks.redis)}`);
+  console.log(`  ${formatHealthCheckItem('Routing', health.checks.routing)}`);
 
   // Overall health
   console.log();
   console.log(
     chalk.bold('Overall Health: ') +
-    healthColor(health.overallHealth.toUpperCase())
+    healthColor(health.health.toUpperCase())
   );
-
-  // Check time
-  console.log(chalk.dim(`\nChecked at: ${formatDate(health.checkedAt)}`));
 }
 
 /**
@@ -188,20 +182,23 @@ export async function statusCommand(
       console.log(JSON.stringify({
         success: true,
         health: {
-          overallHealth: health.overallHealth,
-          sandbox: {
-            id: health.sandbox.id,
-            name: health.sandbox.name,
-            owner: health.sandbox.owner,
-            status: health.sandbox.status,
-            schemaName: health.sandbox.schemaName,
-            createdAt: health.sandbox.createdAt.toISOString(),
-            expiresAt: health.sandbox.expiresAt.toISOString(),
-            lastActivityAt: health.sandbox.lastActivityAt?.toISOString() ?? null,
-            guildIds: health.sandbox.guildIds,
-          },
+          sandboxId: health.sandboxId,
+          status: health.status,
+          health: health.health,
           checks: health.checks,
-          checkedAt: health.checkedAt.toISOString(),
+          lastActivity: health.lastActivity?.toISOString() ?? null,
+          expiresIn: health.expiresIn,
+        },
+        sandbox: {
+          id: sandbox.id,
+          name: sandbox.name,
+          owner: sandbox.owner,
+          status: sandbox.status,
+          schemaName: sandbox.schemaName,
+          createdAt: sandbox.createdAt.toISOString(),
+          expiresAt: sandbox.expiresAt.toISOString(),
+          lastActivityAt: sandbox.lastActivityAt?.toISOString() ?? null,
+          guildIds: sandbox.guildIds,
         },
       }, null, 2));
       return;
@@ -209,11 +206,11 @@ export async function statusCommand(
 
     // Sprint 88: Quiet mode - just output health status
     if (options.quiet) {
-      console.log(`${health.sandbox.name}: ${health.overallHealth}`);
+      console.log(`${sandbox.name}: ${health.health}`);
       return;
     }
 
-    displayTerminalStatus(health);
+    displayTerminalStatus(health, sandbox);
 
     // Watch mode
     if (options.watch) {
@@ -223,8 +220,16 @@ export async function statusCommand(
       const watchInterval = setInterval(async () => {
         try {
           const updatedHealth = await manager.getHealth(sandbox.id);
+          // Re-fetch sandbox in case it changed
+          const updatedSandbox = await manager.getByName(name);
+          if (!updatedSandbox) {
+            clearInterval(watchInterval);
+            console.log(chalk.yellow('\nSandbox no longer available.'));
+            process.exit(0);
+            return;
+          }
           console.clear();
-          displayTerminalStatus(updatedHealth);
+          displayTerminalStatus(updatedHealth, updatedSandbox);
           console.log(chalk.dim(`\nRefreshing every ${interval}s. Press Ctrl+C to stop.`));
         } catch {
           // Sandbox may have been destroyed

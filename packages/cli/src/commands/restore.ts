@@ -2,20 +2,27 @@
  * CLI Restore Commands
  *
  * Sprint 126: Restore API & CLI
+ * Sprint 150: CLI Restore Wiring (Sietch Vault CS2)
  *
  * CLI commands for listing, previewing, and executing configuration restores.
- * Integrates with the Sietch dashboard API.
+ * Uses CheckpointService to integrate with the Sietch dashboard API.
  *
  * Usage:
- *   arrakis restore list [options]
- *   arrakis restore <checkpointId> [options]
- *   arrakis restore --preview <checkpointId> [options]
+ *   gaib restore ls [options]              List checkpoints
+ *   gaib restore preview <id> [options]    Impact analysis
+ *   gaib restore exec <id> [options]       Execute restore
  *
+ * @see SDD §15.3.4 Restore CLI Commands
  * @module packages/cli/commands/restore
  */
 
 import chalk from 'chalk';
 import readline from 'readline';
+import {
+  CheckpointService,
+  CheckpointError,
+  type ImpactAnalysis,
+} from '../services/checkpoint.js';
 
 // =============================================================================
 // Types
@@ -44,137 +51,17 @@ export interface RestoreExecuteOptions {
   autoApprove?: boolean;
 }
 
-interface CheckpointInfo {
-  id: string;
-  createdAt: string;
-  triggerCommand: string;
-  userId: string;
-}
-
-interface RestorePreviewResponse {
-  serverId: string;
-  analyzedAt: string;
-  isHighImpact: boolean;
-  summary: {
-    totalChanges: number;
-    thresholdChanges: number;
-    featureChanges: number;
-    roleChanges: number;
-    estimatedUsersAffected: number;
-  };
-  humanReadableSummary: string;
-  warnings: string[];
-  confirmationCode: string | null;
-  confirmationRequired: boolean;
-}
-
-// =============================================================================
-// Mock API Client (would be replaced with actual API calls)
-// =============================================================================
-
-/**
- * Fetch checkpoints from the API
- * In production, this would call the actual dashboard API
- */
-async function fetchCheckpoints(
-  serverId: string,
-  limit: number = 50
-): Promise<{ checkpoints: CheckpointInfo[]; total: number }> {
-  // Mock implementation - in production would call:
-  // GET /api/servers/{serverId}/restore/checkpoints
-  console.error(
-    chalk.yellow('Note: API integration pending - using mock data')
-  );
-
-  return {
-    checkpoints: [
-      {
-        id: 'cp-001',
-        createdAt: new Date(Date.now() - 86400000).toISOString(),
-        triggerCommand: 'teardown',
-        userId: 'user-123',
-      },
-      {
-        id: 'cp-002',
-        createdAt: new Date(Date.now() - 172800000).toISOString(),
-        triggerCommand: 'apply',
-        userId: 'user-456',
-      },
-    ],
-    total: 2,
-  };
-}
-
-/**
- * Preview a restore operation
- */
-async function previewRestore(
-  serverId: string,
-  checkpointId: string
-): Promise<RestorePreviewResponse> {
-  // Mock implementation - in production would call:
-  // POST /api/servers/{serverId}/restore/preview
-  console.error(
-    chalk.yellow('Note: API integration pending - using mock data')
-  );
-
-  return {
-    serverId,
-    analyzedAt: new Date().toISOString(),
-    isHighImpact: false,
-    summary: {
-      totalChanges: 5,
-      thresholdChanges: 2,
-      featureChanges: 1,
-      roleChanges: 2,
-      estimatedUsersAffected: 8,
-    },
-    humanReadableSummary: `**Restore Impact Summary**
-
-Total changes: 5
-- Threshold changes: 2
-- Feature gate changes: 1
-- Role mapping changes: 2
-
-**User Impact (Estimated)**
-- Users gaining access: ~5
-- Users losing access: ~3
-- Affected tiers: tier-1, tier-2`,
-    warnings: [],
-    confirmationCode: null,
-    confirmationRequired: false,
-  };
-}
-
-/**
- * Execute a restore operation
- */
-async function executeRestore(
-  serverId: string,
-  checkpointId: string,
-  confirmationCode: string
-): Promise<{ success: boolean; message: string }> {
-  // Mock implementation - in production would call:
-  // POST /api/servers/{serverId}/restore/execute
-  console.error(
-    chalk.yellow('Note: API integration pending - using mock data')
-  );
-
-  return {
-    success: true,
-    message: `Configuration restored from checkpoint ${checkpointId}`,
-  };
-}
-
 // =============================================================================
 // CLI Commands
 // =============================================================================
 
 /**
  * List available checkpoints
+ *
+ * Sprint 150.2: Implement restore ls using API
  */
 export async function restoreListCommand(options: RestoreListOptions): Promise<void> {
-  const { serverId, json, quiet, limit = 50 } = options;
+  const { serverId, json, quiet } = options;
 
   if (!serverId) {
     if (json) {
@@ -187,10 +74,21 @@ export async function restoreListCommand(options: RestoreListOptions): Promise<v
   }
 
   try {
-    const { checkpoints, total } = await fetchCheckpoints(serverId, limit);
+    const checkpointService = new CheckpointService();
+    const checkpoints = await checkpointService.list(serverId);
 
     if (json) {
-      console.log(JSON.stringify({ serverId, checkpoints, total }, null, 2));
+      console.log(JSON.stringify({
+        serverId,
+        checkpoints: checkpoints.map(cp => ({
+          id: cp.id,
+          createdAt: cp.createdAt.toISOString(),
+          expiresAt: cp.expiresAt.toISOString(),
+          triggerCommand: cp.triggerCommand,
+          schemaVersion: cp.schemaVersion,
+        })),
+        total: checkpoints.length,
+      }, null, 2));
       return;
     }
 
@@ -205,35 +103,33 @@ export async function restoreListCommand(options: RestoreListOptions): Promise<v
       console.log(chalk.bold(`\nAvailable Checkpoints for ${serverId}\n`));
     }
 
-    console.log(chalk.dim('ID'.padEnd(20) + 'Created'.padEnd(25) + 'Trigger'.padEnd(15) + 'User'));
-    console.log(chalk.dim('-'.repeat(75)));
+    console.log(chalk.dim('ID'.padEnd(30) + 'Created'.padEnd(25) + 'Trigger'.padEnd(12) + 'Expires'));
+    console.log(chalk.dim('-'.repeat(85)));
 
     for (const cp of checkpoints) {
-      const createdAt = new Date(cp.createdAt).toLocaleString();
+      const createdAt = cp.createdAt.toLocaleString();
+      const expiresAt = cp.expiresAt.toLocaleString();
       console.log(
-        cp.id.padEnd(20) +
+        cp.id.padEnd(30) +
           createdAt.padEnd(25) +
-          cp.triggerCommand.padEnd(15) +
-          cp.userId
+          cp.triggerCommand.padEnd(12) +
+          expiresAt
       );
     }
 
     if (!quiet) {
-      console.log(chalk.dim(`\nShowing ${checkpoints.length} of ${total} checkpoints`));
+      console.log(chalk.dim(`\nShowing ${checkpoints.length} checkpoint(s)`));
+      console.log(chalk.dim('\nTo restore: gaib restore exec <checkpoint-id> --server-id <server-id>'));
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (json) {
-      console.log(JSON.stringify({ error: errorMessage }));
-    } else {
-      console.error(chalk.red(`Error: ${errorMessage}`));
-    }
-    process.exitCode = 1;
+    handleError(error, json ?? false);
   }
 }
 
 /**
  * Preview restore impact
+ *
+ * Sprint 150.3: Implement restore preview using API
  */
 export async function restorePreviewCommand(options: RestorePreviewOptions): Promise<void> {
   const { serverId, checkpointId, json, quiet } = options;
@@ -248,59 +144,36 @@ export async function restorePreviewCommand(options: RestorePreviewOptions): Pro
     return;
   }
 
+  if (!checkpointId) {
+    if (json) {
+      console.log(JSON.stringify({ error: 'Checkpoint ID is required' }));
+    } else {
+      console.error(chalk.red('Error: Checkpoint ID is required'));
+    }
+    process.exitCode = 1;
+    return;
+  }
+
   try {
-    const preview = await previewRestore(serverId, checkpointId);
+    const checkpointService = new CheckpointService();
+    const preview = await checkpointService.preview(serverId, checkpointId);
 
     if (json) {
       console.log(JSON.stringify(preview, null, 2));
       return;
     }
 
-    if (!quiet) {
-      console.log(chalk.bold('\nRestore Preview\n'));
-    }
-
-    if (preview.isHighImpact) {
-      console.log(chalk.red.bold('⚠️  HIGH IMPACT RESTORE'));
-      console.log(chalk.red('This restore will affect more than 10 users.\n'));
-    }
-
-    // Print human-readable summary
-    const lines = preview.humanReadableSummary.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('**')) {
-        console.log(chalk.bold(line.replace(/\*\*/g, '')));
-      } else if (line.startsWith('⚠️')) {
-        console.log(chalk.yellow(line));
-      } else {
-        console.log(line);
-      }
-    }
-
-    // Print warnings
-    if (preview.warnings.length > 0) {
-      console.log(chalk.yellow('\nWarnings:'));
-      for (const warning of preview.warnings) {
-        console.log(chalk.yellow(`  • ${warning}`));
-      }
-    }
-
-    if (preview.confirmationRequired) {
-      console.log(chalk.cyan(`\nConfirmation code for execution: ${preview.confirmationCode}`));
-    }
+    displayImpactAnalysis(preview, quiet ?? false);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (json) {
-      console.log(JSON.stringify({ error: errorMessage }));
-    } else {
-      console.error(chalk.red(`Error: ${errorMessage}`));
-    }
-    process.exitCode = 1;
+    handleError(error, json ?? false);
   }
 }
 
 /**
  * Execute restore
+ *
+ * Sprint 150.4: Implement restore exec using API
+ * Sprint 150.5: Add confirmation code handling
  */
 export async function restoreExecuteCommand(options: RestoreExecuteOptions): Promise<void> {
   const { serverId, checkpointId, preview, json, quiet, autoApprove } = options;
@@ -315,6 +188,16 @@ export async function restoreExecuteCommand(options: RestoreExecuteOptions): Pro
     return;
   }
 
+  if (!checkpointId) {
+    if (json) {
+      console.log(JSON.stringify({ error: 'Checkpoint ID is required' }));
+    } else {
+      console.error(chalk.red('Error: Checkpoint ID is required'));
+    }
+    process.exitCode = 1;
+    return;
+  }
+
   // If preview flag is set, just show preview
   if (preview) {
     await restorePreviewCommand({ serverId, checkpointId, json, quiet });
@@ -322,44 +205,36 @@ export async function restoreExecuteCommand(options: RestoreExecuteOptions): Pro
   }
 
   try {
-    // First, get preview to check if confirmation is needed
-    const previewResult = await previewRestore(serverId, checkpointId);
+    const checkpointService = new CheckpointService();
 
+    // First, get preview to check if confirmation is needed
+    const previewResult = await checkpointService.preview(serverId, checkpointId);
+
+    // JSON mode - execute with minimal interaction
     if (json) {
-      // In JSON mode, just execute
-      const result = await executeRestore(
+      const result = await checkpointService.restore(
         serverId,
         checkpointId,
-        previewResult.confirmationCode || ''
+        previewResult.confirmationCode
       );
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify({
+        success: result.success,
+        restoredAt: result.restoredAt.toISOString(),
+        summary: result.summary,
+      }, null, 2));
       return;
     }
 
     // Show preview
     if (!quiet) {
-      console.log(chalk.bold('\nRestore Preview\n'));
-
-      if (previewResult.isHighImpact) {
-        console.log(chalk.red.bold('⚠️  HIGH IMPACT RESTORE'));
-        console.log(chalk.red('This restore will affect more than 10 users.\n'));
-      }
-
-      console.log(previewResult.humanReadableSummary);
-
-      if (previewResult.warnings.length > 0) {
-        console.log(chalk.yellow('\nWarnings:'));
-        for (const warning of previewResult.warnings) {
-          console.log(chalk.yellow(`  • ${warning}`));
-        }
-      }
+      displayImpactAnalysis(previewResult, quiet ?? false);
     }
 
-    // Get confirmation
+    // Get confirmation (Sprint 150.5: High-impact confirmation flow)
     if (!autoApprove) {
       const confirmed = await promptConfirmation(
         previewResult.confirmationRequired,
-        previewResult.confirmationCode
+        previewResult.confirmationCode ?? null
       );
 
       if (!confirmed) {
@@ -373,26 +248,24 @@ export async function restoreExecuteCommand(options: RestoreExecuteOptions): Pro
       console.log(chalk.cyan('\nExecuting restore...'));
     }
 
-    const result = await executeRestore(
+    const result = await checkpointService.restore(
       serverId,
       checkpointId,
-      previewResult.confirmationCode || 'auto'
+      previewResult.confirmationCode
     );
 
     if (result.success) {
-      console.log(chalk.green(`\n✓ ${result.message}`));
+      console.log(chalk.green('\n✓ Configuration restored successfully!'));
+      console.log(chalk.dim(`  Restored at: ${result.restoredAt.toISOString()}`));
+      console.log(chalk.dim(`  Thresholds: ${result.summary.thresholdsRestored}`));
+      console.log(chalk.dim(`  Feature gates: ${result.summary.featureGatesRestored}`));
+      console.log(chalk.dim(`  Role mappings: ${result.summary.roleMapsRestored}`));
     } else {
-      console.error(chalk.red(`\n✗ Restore failed: ${result.message}`));
+      console.error(chalk.red('\n✗ Restore failed'));
       process.exitCode = 1;
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (json) {
-      console.log(JSON.stringify({ error: errorMessage }));
-    } else {
-      console.error(chalk.red(`Error: ${errorMessage}`));
-    }
-    process.exitCode = 1;
+    handleError(error, json ?? false);
   }
 }
 
@@ -401,7 +274,70 @@ export async function restoreExecuteCommand(options: RestoreExecuteOptions): Pro
 // =============================================================================
 
 /**
+ * Display impact analysis in human-readable format
+ */
+function displayImpactAnalysis(preview: ImpactAnalysis, quiet: boolean): void {
+  if (!quiet) {
+    console.log(chalk.bold('\nRestore Impact Analysis\n'));
+  }
+
+  // High impact warning
+  if (preview.isHighImpact) {
+    console.log(chalk.red.bold('⚠️  HIGH IMPACT RESTORE'));
+    console.log(chalk.red(`This restore will affect ${preview.affectedUsers} users.\n`));
+  }
+
+  // Summary
+  console.log(chalk.bold('Changes:'));
+  console.log(`  Thresholds:     ${preview.thresholdChanges.length}`);
+  console.log(`  Feature gates:  ${preview.featureGateChanges.length}`);
+  console.log(`  Role mappings:  ${preview.roleMapChanges.length}`);
+  console.log(`  Users affected: ${preview.affectedUsers}`);
+
+  // Detail threshold changes
+  if (preview.thresholdChanges.length > 0) {
+    console.log(chalk.bold('\nThreshold Changes:'));
+    for (const change of preview.thresholdChanges) {
+      console.log(chalk.dim(`  ${change.name}: ${change.oldValue} → ${change.newValue}`));
+    }
+  }
+
+  // Detail feature gate changes
+  if (preview.featureGateChanges.length > 0) {
+    console.log(chalk.bold('\nFeature Gate Changes:'));
+    for (const change of preview.featureGateChanges) {
+      const oldState = change.oldEnabled ? 'enabled' : 'disabled';
+      const newState = change.newEnabled ? 'enabled' : 'disabled';
+      console.log(chalk.dim(`  ${change.name}: ${oldState} → ${newState}`));
+    }
+  }
+
+  // Detail role mapping changes
+  if (preview.roleMapChanges.length > 0) {
+    console.log(chalk.bold('\nRole Mapping Changes:'));
+    for (const change of preview.roleMapChanges) {
+      console.log(chalk.dim(`  ${change.tier}: ${change.oldRoleId || 'none'} → ${change.newRoleId || 'none'}`));
+    }
+  }
+
+  // Warnings
+  if (preview.warnings.length > 0) {
+    console.log(chalk.yellow('\nWarnings:'));
+    for (const warning of preview.warnings) {
+      console.log(chalk.yellow(`  • ${warning}`));
+    }
+  }
+
+  // Confirmation code hint
+  if (preview.confirmationRequired && preview.confirmationCode) {
+    console.log(chalk.cyan(`\nConfirmation code required: ${preview.confirmationCode}`));
+  }
+}
+
+/**
  * Prompt user for confirmation
+ *
+ * Sprint 150.5: High-impact restore confirmation flow
  */
 async function promptConfirmation(
   requireCode: boolean,
@@ -414,18 +350,47 @@ async function promptConfirmation(
 
   return new Promise((resolve) => {
     if (requireCode && expectedCode) {
+      // High-impact: require confirmation code
       rl.question(
-        chalk.cyan(`\nEnter confirmation code (${expectedCode}) to proceed: `),
+        chalk.cyan(`\nEnter confirmation code to proceed: `),
         (answer) => {
           rl.close();
-          resolve(answer === expectedCode);
+          if (answer === expectedCode) {
+            resolve(true);
+          } else {
+            console.log(chalk.red('Incorrect confirmation code.'));
+            resolve(false);
+          }
         }
       );
     } else {
+      // Standard: yes/no confirmation
       rl.question(chalk.cyan('\nProceed with restore? (y/N): '), (answer) => {
         rl.close();
         resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
       });
     }
   });
+}
+
+/**
+ * Handle errors from CheckpointService
+ */
+function handleError(error: unknown, json: boolean): void {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorCode = error instanceof CheckpointError ? error.code : 'UNKNOWN_ERROR';
+
+  if (json) {
+    console.log(JSON.stringify({
+      success: false,
+      error: errorMessage,
+      code: errorCode,
+    }));
+  } else {
+    console.error(chalk.red(`Error: ${errorMessage}`));
+    if (error instanceof CheckpointError && error.statusCode) {
+      console.error(chalk.dim(`  Status: ${error.statusCode}`));
+    }
+  }
+  process.exitCode = 1;
 }
