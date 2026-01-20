@@ -1066,7 +1066,7 @@ function getApiKeyService(): AdminApiKeyService {
  */
 // Sprint 83 (LOW-1): Legacy API key sunset tracking
 // Sunset date: 90 days from January 14, 2026 = April 14, 2026
-const LEGACY_KEY_SUNSET_DATE = '2026-04-14';
+export const LEGACY_KEY_SUNSET_DATE = '2026-04-14';
 let legacyKeyUsageCount = 0;
 
 /**
