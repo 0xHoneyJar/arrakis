@@ -19,6 +19,10 @@ import {
   isInteractive,
   showNextStep,
 } from './utils.js';
+import {
+  isValidGuildId,
+  getDiscordIdHelpMessage,
+} from '../../utils/discord-validators.js';
 
 /**
  * Options for register command
@@ -92,8 +96,8 @@ export async function registerCommand(
       process.exit(1);
     }
 
-    // Validate guild ID format
-    if (!/^\d{17,20}$/.test(guildId)) {
+    // Validate guild ID format (Sprint 149 M-4: Use shared validator)
+    if (!isValidGuildId(guildId)) {
       if (options.json) {
         console.log(
           JSON.stringify(
@@ -110,7 +114,7 @@ export async function registerCommand(
         );
       } else {
         spinner?.fail(chalk.red(`Invalid guild ID format: ${guildId}`));
-        console.error(chalk.yellow('\nGuild IDs are 17-20 digit numbers'));
+        console.error(chalk.yellow(`\n${getDiscordIdHelpMessage('guild')}`));
       }
       process.exit(1);
     }
@@ -166,7 +170,7 @@ export function createRegisterCommand(): Command {
     .alias('reg')
     .description('Register a Discord guild to route events to a sandbox')
     .argument('<sandbox>', 'Sandbox name or ID')
-    .argument('<guildId>', 'Discord guild ID (17-20 digit number)')
+    .argument('<guildId>', 'Discord guild ID (17-19 digit number)')
     .option('--json', 'Output as JSON')
     .addHelpText(
       'after',

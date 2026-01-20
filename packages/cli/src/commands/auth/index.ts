@@ -12,6 +12,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { validateServerUrl, ServerUrlError } from '../../utils/index.js';
 
 // =============================================================================
 // Constants
@@ -63,6 +64,21 @@ export function createAuthCommand(): Command {
       const opts = thisCommand.optsWithGlobals();
       if (opts.noColor || !shouldUseColor()) {
         chalk.level = 0;
+      }
+    })
+    .hook('preSubcommand', (_thisCommand, subcommand) => {
+      // Validate server URL before any subcommand executes
+      const opts = subcommand.optsWithGlobals();
+      if (opts.server) {
+        try {
+          validateServerUrl(opts.server);
+        } catch (error) {
+          if (error instanceof ServerUrlError) {
+            console.error(chalk.red(`Error: ${error.message}`));
+            process.exit(1);
+          }
+          throw error;
+        }
       }
     })
     .addHelpText(

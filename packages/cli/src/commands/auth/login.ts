@@ -18,6 +18,11 @@ import {
   isSessionExpired,
   getCredentialsPath,
 } from './credentials.js';
+import {
+  checkLoginRateLimit,
+  recordLoginFailure,
+  recordLoginSuccess,
+} from '../../utils/index.js';
 
 // =============================================================================
 // Types
@@ -57,6 +62,22 @@ interface LoginResponse {
  */
 export async function loginCommand(options: LoginOptions): Promise<void> {
   const { server, json, quiet } = options;
+
+  // Check rate limit before proceeding
+  const rateLimit = checkLoginRateLimit(server);
+  if (!rateLimit.allowed) {
+    if (json) {
+      console.log(JSON.stringify({
+        success: false,
+        error: 'Too many failed login attempts',
+        retryAfter: rateLimit.retryAfter,
+        isLocked: true,
+      }));
+    } else {
+      console.error(chalk.red(rateLimit.message || 'Too many failed login attempts'));
+    }
+    process.exit(1);
+  }
 
   // Check if already logged in
   const existing = await loadCredentials();
@@ -127,28 +148,42 @@ export async function loginCommand(options: LoginOptions): Promise<void> {
       if (!response.ok || !data.success) {
         spinner?.fail('Authentication failed');
 
+        // Record failure for rate limiting
+        const failureResult = recordLoginFailure(server);
+
         if (json) {
           console.log(JSON.stringify({
             success: false,
             error: data.error || 'Invalid credentials',
-            remainingAttempts: data.remainingAttempts,
+            remainingAttempts: data.remainingAttempts ?? (failureResult.isLocked ? 0 : undefined),
             lockedUntil: data.lockedUntil,
+            clientLocked: failureResult.isLocked,
+            clientRetryAfter: failureResult.retryAfter,
           }));
         } else {
           console.error(chalk.red(data.error || 'Invalid credentials'));
 
+          // Show server-side remaining attempts if available
           if (data.remainingAttempts !== undefined && data.remainingAttempts > 0) {
             console.error(chalk.yellow(`${data.remainingAttempts} attempt${data.remainingAttempts !== 1 ? 's' : ''} remaining`));
+          } else if (failureResult.message && !failureResult.isLocked) {
+            // Fall back to client-side tracking
+            console.error(chalk.yellow(failureResult.message));
           }
 
           if (data.lockedUntil) {
             const lockTime = new Date(data.lockedUntil);
             console.error(chalk.red(`Account locked until ${lockTime.toLocaleString()}`));
+          } else if (failureResult.isLocked) {
+            console.error(chalk.red(failureResult.message || 'Too many failed attempts. Please try again later.'));
           }
         }
 
         process.exit(1);
       }
+
+      // Record successful login (clears rate limit counter)
+      recordLoginSuccess(server);
 
       // Store credentials
       await storeCredentials({

@@ -13,6 +13,7 @@ import chalk from 'chalk';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import type { ServerDiff, ResourceChange, PermissionChange } from './iac/types.js';
+import { isValidGuildId } from '../../utils/discord-validators.js';
 
 // =============================================================================
 // Environment & Configuration
@@ -37,19 +38,10 @@ export function getDiscordToken(): string {
 }
 
 /**
- * Discord Snowflake ID validation regex
- * Discord IDs are 17-19 digit integers (snowflakes)
- *
- * Sprint 94 (H-3): Input validation to prevent SSRF and injection attacks
- *
- * @see https://discord.com/developers/docs/reference#snowflakes
- */
-const GUILD_ID_REGEX = /^\d{17,19}$/;
-
-/**
  * CLI error codes for sanitized error messages
  *
  * Sprint 94 (H-3): Use error codes instead of detailed messages
+ * Sprint 149: Consolidated with shared validators
  */
 export const GuildValidationErrors = {
   INVALID_FORMAT: 'E1001',
@@ -63,6 +55,7 @@ export const GuildValidationErrors = {
  * Valid snowflakes are 17-19 digits long.
  *
  * Sprint 94 (H-3): Guild ID validation to prevent SSRF and injection
+ * Sprint 149 (M-4): Consolidated to use shared validators
  *
  * @param guildId - The guild ID to validate
  * @returns true if valid, false otherwise
@@ -74,7 +67,7 @@ export const GuildValidationErrors = {
  * validateGuildId('123-456')             // false (invalid characters)
  */
 export function validateGuildId(guildId: string): boolean {
-  return GUILD_ID_REGEX.test(guildId);
+  return isValidGuildId(guildId);
 }
 
 /**
