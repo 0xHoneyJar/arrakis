@@ -38,6 +38,7 @@ class TestValidatePhaseCommand:
             "/validate",
             "/ledger",
             "/run sprint-1",
+            "/run sprint-plan",
             "/run-status",
             "/run-halt",
             "/run-resume",
