@@ -1,9 +1,18 @@
 # Simstim local configuration (contains user-specific settings)
 simstim.toml
+*.toml.local
+.simstim.pid
 
 # Audit logs (may contain sensitive data)
 *.audit.jsonl
+*-audit.jsonl
+simstim-audit.jsonl
 audit/
+
+# Environment files (credentials)
+.env
+.env.*
+*.env
 
 # Python
 __pycache__/

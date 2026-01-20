@@ -177,3 +177,15 @@ app/ecosystem.config.js
 
 # GTM grimoire (go-to-market state, similar to loa)
 grimoires/gtm/
+
+# =============================================================================
+# SIMSTIM (Telegram bridge - contains credentials)
+# =============================================================================
+# Config files contain bot tokens and chat IDs
+simstim/simstim.toml
+simstim/*.toml.local
+simstim/.simstim.pid
+
+# Audit logs may contain sensitive command output
+simstim/*-audit.jsonl
+simstim/audit/
