@@ -28,102 +28,290 @@ npm run build
 npm link
 ```
 
-## Commands
+## Command Groups
 
-### gaib sandbox
+The CLI is organized into four command groups:
 
-Manage Discord server sandboxes for isolated testing environments.
+| Group | Description |
+|-------|-------------|
+| `gaib auth` | CLI session management (login/logout/whoami) |
+| `gaib user` | User account management (admin only) |
+| `gaib sandbox` | Sandbox environment management |
+| `gaib server` | Discord Infrastructure-as-Code |
 
-```bash
-gaib sandbox <command> [options]
-```
+---
 
-#### Global Options
+## gaib auth
+
+Authentication management for local user accounts.
+
+### Global Options
 
 | Option | Description |
 |--------|-------------|
 | `--no-color` | Disable colored output |
 | `-q, --quiet` | Suppress non-essential output |
-| `--json` | Output as JSON (machine-readable) |
+| `--server <url>` | API server URL |
+
+### gaib auth login
+
+Log in with username and password.
+
+```bash
+gaib auth login [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-u, --username <username>` | Username (prompts if not provided) |
+| `--server <url>` | API server URL |
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# Interactive login
+gaib auth login
+
+# Login with specified username
+gaib auth login -u testuser
+
+# Use custom server
+gaib auth login --server https://api.example.com
+```
+
+### gaib auth logout
+
+Log out and clear stored credentials.
+
+```bash
+gaib auth logout [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+### gaib auth whoami
+
+Display current authentication status.
+
+```bash
+gaib auth whoami [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
 
 ---
 
-### gaib sandbox create
+## gaib user
+
+User account management (requires `admin` or `qa_admin` role).
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `--no-color` | Disable colored output |
+| `-q, --quiet` | Suppress non-essential output |
+| `--server <url>` | API server URL |
+
+### gaib user create
+
+Create a new user account.
+
+```bash
+gaib user create [options]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--username <username>` | Username (required, 3-32 alphanumeric/underscore) | - |
+| `--roles <roles>` | Comma-separated roles | `qa_tester` |
+| `--display-name <name>` | Display name | - |
+| `--sandbox-access <ids>` | Comma-separated sandbox IDs | - |
+| `--json` | Output as JSON | - |
+
+**Examples:**
+
+```bash
+# Create QA tester
+gaib user create --username testuser --roles qa_tester
+
+# Create admin with display name
+gaib user create --username admin --roles admin --display-name "Admin User"
+
+# Create user with sandbox access
+gaib user create --username qa1 --roles qa_tester --sandbox-access sb_123,sb_456
+```
+
+### gaib user ls
+
+List users.
+
+```bash
+gaib user ls [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--role <role>` | Filter by role (qa_tester, qa_admin, admin) |
+| `--active` | Show only active users |
+| `--inactive` | Show only inactive users |
+| `--search <query>` | Search by username |
+| `--limit <number>` | Maximum results (default: 20) |
+| `--offset <number>` | Skip first N results |
+| `--json` | Output as JSON |
+
+### gaib user show
+
+Show user details.
+
+```bash
+gaib user show <user-id> [options]
+```
+
+### gaib user set
+
+Update user properties.
+
+```bash
+gaib user set <user-id> [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--roles <roles>` | Comma-separated roles |
+| `--display-name <name>` | Display name |
+| `--sandbox-access <ids>` | Comma-separated sandbox IDs (replaces existing) |
+| `--json` | Output as JSON |
+
+### gaib user off
+
+Disable a user account.
+
+```bash
+gaib user off <user-id> [options]
+```
+
+### gaib user on
+
+Enable a user account.
+
+```bash
+gaib user on <user-id> [options]
+```
+
+### gaib user rm
+
+Delete a user account (admin only).
+
+```bash
+gaib user rm <user-id> [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Skip confirmation prompt |
+| `--json` | Output as JSON |
+
+### gaib user passwd
+
+Reset user password (generates new password).
+
+```bash
+gaib user passwd <user-id> [options]
+```
+
+### gaib user access
+
+List user's sandbox access.
+
+```bash
+gaib user access <user-id> [options]
+```
+
+### gaib user grant
+
+Grant user access to a sandbox.
+
+```bash
+gaib user grant <user-id> <sandbox-id> [options]
+```
+
+### gaib user revoke
+
+Revoke user access from a sandbox.
+
+```bash
+gaib user revoke <user-id> <sandbox-id> [options]
+```
+
+---
+
+## gaib sandbox
+
+Manage Discord server sandboxes for isolated testing environments.
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `--no-color` | Disable colored output |
+| `-q, --quiet` | Suppress non-essential output |
+
+### gaib sandbox new
 
 Create a new sandbox environment with isolated PostgreSQL schema, Redis namespace, and NATS subjects.
 
 ```bash
-gaib sandbox create [name] [options]
+gaib sandbox new [name] [options]
 ```
-
-#### Arguments
-
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `name` | Sandbox name (alphanumeric, hyphens) | Auto-generated |
-
-#### Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-t, --ttl <duration>` | Time-to-live (e.g., `24h`, `48h`, `7d`) | `24h` |
 | `-g, --guild <id>` | Discord guild ID to register immediately | - |
 | `--json` | Output as JSON | - |
+| `-n, --dry-run` | Show what would be created | - |
 
-#### Examples
+**Examples:**
 
 ```bash
 # Create with defaults (24h TTL, auto-generated name)
-gaib sandbox create
+gaib sandbox new
 
 # Create with custom name
-gaib sandbox create my-feature-test
+gaib sandbox new my-feature-test
 
 # Create with longer TTL
-gaib sandbox create my-sandbox --ttl 48h
+gaib sandbox new my-sandbox --ttl 48h
 
 # Create and register a guild in one command
-gaib sandbox create my-sandbox --guild 123456789012345678
+gaib sandbox new my-sandbox --guild 123456789012345678
 
 # JSON output for scripting
-gaib sandbox create --json
+gaib sandbox new --json
 ```
 
-#### Output
-
-```
-✓ Sandbox 'my-sandbox' created successfully
-
-  ID:      sb_abc123def456
-  Name:    my-sandbox
-  Schema:  sandbox_abc123def456
-  TTL:     24h
-  Expires: 2026-01-19T12:00:00Z
-
-  Next steps:
-    gaib sandbox register-guild my-sandbox <guild-id>
-    eval $(gaib sandbox connect my-sandbox)
-```
-
----
-
-### gaib sandbox list
+### gaib sandbox ls
 
 List sandboxes with their status.
 
 ```bash
-gaib sandbox list [options]
+gaib sandbox ls [options]
 ```
 
-#### Options
+| Option | Description |
+|--------|-------------|
+| `-o, --owner <username>` | Filter by owner |
+| `-s, --status <status>` | Filter by status |
+| `-a, --all` | Include destroyed sandboxes |
+| `--json` | Output as JSON |
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--all` | Include destroyed sandboxes | Running only |
-| `--status <status>` | Filter by status | - |
-| `--json` | Output as JSON | - |
-
-#### Status Values
+**Status Values:**
 
 | Status | Description |
 |--------|-------------|
@@ -132,249 +320,143 @@ gaib sandbox list [options]
 | `destroyed` | Cleaned up |
 | `error` | Creation or operation failed |
 
-#### Examples
-
-```bash
-# List your running sandboxes
-gaib sandbox list
-
-# Include all statuses
-gaib sandbox list --all
-
-# Filter by status
-gaib sandbox list --status expired
-
-# JSON output
-gaib sandbox list --json
-```
-
----
-
 ### gaib sandbox status
 
 Show detailed status and health information for a sandbox.
 
 ```bash
-gaib sandbox status <sandbox> [options]
+gaib sandbox status <name> [options]
 ```
-
-#### Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `sandbox` | Sandbox name or ID |
-
-#### Options
 
 | Option | Description |
 |--------|-------------|
-| `--watch` | Live updates (refreshes every 2s) |
+| `-w, --watch` | Live updates (refreshes periodically) |
+| `-i, --interval <seconds>` | Refresh interval (default: 5) |
 | `--json` | Output as JSON |
 
-#### Examples
-
-```bash
-# Show status
-gaib sandbox status my-sandbox
-
-# Watch status in real-time
-gaib sandbox status my-sandbox --watch
-
-# JSON output
-gaib sandbox status my-sandbox --json
-```
-
-#### Output
-
-```
-Sandbox: my-sandbox (sb_abc123def456)
-Status:  running
-Created: 2026-01-18T12:00:00Z
-Expires: 2026-01-19T12:00:00Z
-Owner:   developer@example.com
-
-Health Checks:
-  ✓ PostgreSQL schema: healthy
-  ✓ Redis namespace: healthy
-  ✓ NATS subjects: healthy
-
-Registered Guilds:
-  • 123456789012345678 (registered 2h ago)
-  • 987654321098765432 (registered 1h ago)
-
-Resource Usage:
-  Database rows: 1,234
-  Redis keys: 56
-  Events processed: 10,432
-```
-
----
-
-### gaib sandbox connect
-
-Get connection environment variables for a sandbox.
-
-```bash
-gaib sandbox connect <sandbox> [options]
-```
-
-#### Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `sandbox` | Sandbox name or ID |
-
-#### Options
-
-| Option | Description |
-|--------|-------------|
-| `--json` | Output as JSON |
-
-#### Examples
-
-```bash
-# Print environment variables
-gaib sandbox connect my-sandbox
-
-# Export to current shell
-eval $(gaib sandbox connect my-sandbox)
-
-# JSON output
-gaib sandbox connect my-sandbox --json
-```
-
-#### Output
-
-```bash
-export SANDBOX_ID="sb_abc123def456"
-export SANDBOX_NAME="my-sandbox"
-export SANDBOX_SCHEMA="sandbox_abc123def456"
-export SANDBOX_REDIS_PREFIX="sandbox:abc123def456:"
-export SANDBOX_NATS_PREFIX="sandbox.abc123def456."
-```
-
----
-
-### gaib sandbox register-guild
-
-Register a Discord guild to route events to a sandbox.
-
-```bash
-gaib sandbox register-guild <sandbox> <guildId> [options]
-```
-
-#### Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `sandbox` | Sandbox name or ID |
-| `guildId` | Discord guild ID (17-20 digit number) |
-
-#### Options
-
-| Option | Description |
-|--------|-------------|
-| `--json` | Output as JSON |
-
-#### Notes
-
-- Guild IDs are found in Discord: Right-click server → Copy Server ID
-- Requires Developer Mode enabled in Discord settings
-- A guild can only be registered to one sandbox at a time
-- Events from the guild will route to the sandbox instead of production
-
-#### Examples
-
-```bash
-# Register a guild
-gaib sandbox register-guild my-sandbox 123456789012345678
-
-# With alias
-gaib sandbox reg my-sandbox 123456789012345678
-
-# JSON output
-gaib sandbox register-guild my-sandbox 123456789012345678 --json
-```
-
----
-
-### gaib sandbox unregister-guild
-
-Unregister a Discord guild from a sandbox.
-
-```bash
-gaib sandbox unregister-guild <sandbox> <guildId> [options]
-```
-
-#### Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `sandbox` | Sandbox name or ID |
-| `guildId` | Discord guild ID |
-
-#### Options
-
-| Option | Description |
-|--------|-------------|
-| `--json` | Output as JSON |
-
-#### Notes
-
-- After unregistering, events from the guild route to production
-- The guild can be registered to a different sandbox afterward
-
-#### Examples
-
-```bash
-# Unregister a guild
-gaib sandbox unregister-guild my-sandbox 123456789012345678
-
-# With alias
-gaib sandbox unreg my-sandbox 123456789012345678
-```
-
----
-
-### gaib sandbox destroy
+### gaib sandbox rm
 
 Destroy a sandbox and clean up all resources.
 
 ```bash
-gaib sandbox destroy <sandbox> [options]
+gaib sandbox rm <name> [options]
 ```
-
-#### Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `sandbox` | Sandbox name or ID |
-
-#### Options
 
 | Option | Description |
 |--------|-------------|
-| `--force` | Skip confirmation prompt |
+| `-y, --yes` | Skip confirmation prompt |
+| `-n, --dry-run` | Show what would be destroyed |
 | `--json` | Output as JSON |
 
-#### What Gets Cleaned Up
+**What Gets Cleaned Up:**
 
 - PostgreSQL schema and all tables
 - Redis keys with sandbox prefix
 - NATS consumer subscriptions
 - Guild routing mappings
 
-#### Examples
+### gaib sandbox env
+
+Get connection environment variables for a sandbox.
 
 ```bash
-# Destroy with confirmation
-gaib sandbox destroy my-sandbox
+gaib sandbox env <name> [options]
+```
 
-# Skip confirmation
-gaib sandbox destroy my-sandbox --force
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON instead of shell exports |
+
+**Examples:**
+
+```bash
+# Print environment variables
+gaib sandbox env my-sandbox
+
+# Export to current shell
+eval $(gaib sandbox env my-sandbox)
 
 # JSON output
-gaib sandbox destroy my-sandbox --json
+gaib sandbox env my-sandbox --json
+```
+
+**Output:**
+
+```bash
+export SANDBOX_ID="sb_abc123def456"
+export SANDBOX_SCHEMA="sandbox_abc123def456"
+export SANDBOX_REDIS_PREFIX="sandbox:abc123def456:"
+export SANDBOX_NATS_PREFIX="sandbox.abc123def456."
+```
+
+### gaib sandbox link
+
+Register a Discord guild to route events to a sandbox.
+
+```bash
+gaib sandbox link <sandbox> <guildId> [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+**Notes:**
+
+- Guild IDs are found in Discord: Right-click server → Copy Server ID
+- Requires Developer Mode enabled in Discord settings
+- A guild can only be registered to one sandbox at a time
+- Events from the guild will route to the sandbox instead of production
+
+### gaib sandbox unlink
+
+Unregister a Discord guild from a sandbox.
+
+```bash
+gaib sandbox unlink <sandbox> <guildId> [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+
+---
+
+## gaib server
+
+Infrastructure-as-Code for Discord servers (Terraform-like workflow).
+
+See [Infrastructure-as-Code Guide](./iac.md) for detailed documentation.
+
+### Quick Reference
+
+```bash
+# Initialize and apply
+gaib server init --theme sietch --guild <id>
+gaib server plan
+gaib server apply
+
+# Workspace management
+gaib server ws ls
+gaib server ws new staging
+gaib server ws use staging
+gaib server ws rm staging
+
+# State management
+gaib server import <address> <id>
+gaib server st ls
+gaib server st show <address>
+gaib server st rm <address>
+gaib server st mv <src> <dest>
+gaib server st pull
+
+# Lock management
+gaib server locks
+gaib server unlock
+
+# Theme management
+gaib server th ls
+gaib server th info <name>
 ```
 
 ---
@@ -385,8 +467,9 @@ gaib sandbox destroy my-sandbox --json
 |----------|-------------|
 | `NO_COLOR` | Disable colored output (standard) |
 | `FORCE_COLOR` | Force colored output |
-| `GAIB_API_URL` | API endpoint for sandbox management |
-| `GAIB_TOKEN` | Authentication token |
+| `GAIB_API_URL` | API endpoint for sandbox/auth management |
+| `DISCORD_BOT_TOKEN` | Discord bot authentication token |
+| `DISCORD_GUILD_ID` | Default guild ID for server commands |
 
 ## Exit Codes
 
@@ -412,18 +495,26 @@ The `gaib` CLI follows [clig.dev](https://clig.dev) guidelines:
 ## Quick Reference
 
 ```bash
-# Create and setup
-gaib sandbox create my-sandbox --ttl 48h
-gaib sandbox register-guild my-sandbox <guild-id>
-eval $(gaib sandbox connect my-sandbox)
+# Authentication
+gaib auth login
+gaib auth whoami
 
-# Monitor
-gaib sandbox list
+# User management (admin)
+gaib user create --username testuser --roles qa_tester
+gaib user ls --active
+gaib user passwd <user-id>
+
+# Sandbox workflow
+gaib sandbox new my-sandbox --ttl 48h
+gaib sandbox link my-sandbox <guild-id>
+eval $(gaib sandbox env my-sandbox)
 gaib sandbox status my-sandbox --watch
+gaib sandbox rm my-sandbox
 
-# Cleanup
-gaib sandbox unregister-guild my-sandbox <guild-id>
-gaib sandbox destroy my-sandbox
+# Server IaC workflow
+gaib server init --theme sietch --guild <id>
+gaib server plan
+gaib server apply
 ```
 
 ## See Also
@@ -431,4 +522,3 @@ gaib sandbox destroy my-sandbox
 - [Infrastructure-as-Code Guide](./iac.md) - Manage Discord server configuration with `gaib server` commands
 - [Discord Test Server Setup](./discord-test-server-setup.md) - Create a test server with proper permissions
 - [Sandbox Operations Runbook](./sandbox-runbook.md) - Operational procedures and troubleshooting
-- [Gateway Proxy Architecture](./architecture/gateway-proxy.md) - Event routing details

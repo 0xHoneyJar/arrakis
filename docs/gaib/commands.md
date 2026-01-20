@@ -8,9 +8,13 @@ These options are available for all commands:
 
 | Option | Description |
 |--------|-------------|
+| `--no-color` | Disable colored output |
+| `-q, --quiet` | Suppress non-essential output |
 | `--json` | Output in JSON format for machine parsing |
 | `--help` | Show help for the command |
 | `--version` | Show version information |
+
+---
 
 ## Server Commands
 
@@ -28,10 +32,11 @@ gaib server init [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--guild <id>` | Discord guild ID | `$DISCORD_GUILD_ID` |
-| `--theme <name>` | Use a theme template | none |
-| `--output <file>` | Output file path | `discord-server.yaml` |
+| `-g, --guild <id>` | Discord guild ID | `$DISCORD_GUILD_ID` |
+| `-t, --theme <name>` | Use a theme template | none |
+| `-f, --file <path>` | Output file path | `discord-server.yaml` |
 | `--force` | Overwrite existing file | false |
+| `--json` | Output as JSON | false |
 
 **Examples:**
 
@@ -43,7 +48,7 @@ gaib server init --theme sietch --guild 123456789012345678
 gaib server init --guild 123456789012345678
 
 # Custom output file
-gaib server init --guild 123456789012345678 --output my-server.yaml
+gaib server init --guild 123456789012345678 --file my-server.yaml
 ```
 
 ### gaib server plan
@@ -58,10 +63,10 @@ gaib server plan [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--config <file>` | Configuration file | `discord-server.yaml` |
-| `--workspace <name>` | Use specific workspace | `default` |
+| `-f, --file <path>` | Configuration file | `discord-server.yaml` |
+| `-g, --guild <id>` | Override guild ID from config | - |
+| `-w, --workspace <name>` | Use specific workspace | `default` |
 | `--managed-only` | Only show managed resources | true |
-| `--dry-run` | Validate config without Discord API | false |
 | `--json` | Output in JSON format | false |
 
 **Examples:**
@@ -70,30 +75,31 @@ gaib server plan [options]
 # Show plan
 gaib server plan
 
-# Validate config without connecting to Discord
-gaib server plan --dry-run
+# Use specific config file
+gaib server plan -f config.yaml
 
 # JSON output for CI/CD
 gaib server plan --json
 ```
 
-**Output Format:**
+### gaib server diff
 
+Show detailed diff between config and current state.
+
+```bash
+gaib server diff [options]
 ```
-🔍 Execution Plan
 
-  The following changes would be applied:
+**Options:**
 
-  3 to create, 1 to update, 0 to delete
-
-Roles:
-  + role: VIP [managed-by:arrakis-iac]
-
-Channels:
-  + channel: vip-lounge
-  ~ channel: general
-      topic: "Old topic" → "New topic"
-```
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-f, --file <path>` | Configuration file | `discord-server.yaml` |
+| `-g, --guild <id>` | Override guild ID from config | - |
+| `-w, --workspace <name>` | Use specific workspace | `default` |
+| `--no-permissions` | Exclude permission changes | false |
+| `--managed-only` | Only show managed resources | true |
+| `--json` | Output diff as JSON | false |
 
 ### gaib server apply
 
@@ -107,10 +113,11 @@ gaib server apply [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--config <file>` | Configuration file | `discord-server.yaml` |
-| `--workspace <name>` | Use specific workspace | `default` |
+| `-f, --file <path>` | Configuration file | `discord-server.yaml` |
+| `-g, --guild <id>` | Override guild ID from config | - |
+| `-w, --workspace <name>` | Use specific workspace | `default` |
 | `--auto-approve` | Skip confirmation prompt | false |
-| `--parallelism <n>` | Parallel operations | 5 |
+| `--dry-run` | Show what would be applied | false |
 | `--managed-only` | Only modify managed resources | true |
 | `--json` | Output in JSON format | false |
 
@@ -123,23 +130,8 @@ gaib server apply
 # Apply without confirmation (CI/CD)
 gaib server apply --auto-approve
 
-# Slower apply to avoid rate limits
-gaib server apply --parallelism 1
-
 # JSON output
 gaib server apply --json --auto-approve
-```
-
-**Output Format:**
-
-```
-✓ Apply Complete!
-
-  3 created
-  1 updated
-  0 deleted
-
-  Duration: 2.34s
 ```
 
 ### gaib server destroy
@@ -154,22 +146,53 @@ gaib server destroy [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--config <file>` | Configuration file | `discord-server.yaml` |
-| `--workspace <name>` | Use specific workspace | `default` |
+| `-g, --guild <id>` | Discord guild/server ID (required) | - |
+| `-w, --workspace <name>` | Use specific workspace | `default` |
 | `--auto-approve` | Skip confirmation prompt | false |
+| `--dry-run` | Show what would be destroyed | false |
+| `-t, --target <types...>` | Target specific resource types | all |
 | `--json` | Output in JSON format | false |
+
+**Warning:** This command removes all resources marked with `[managed-by:arrakis-iac]` from your Discord server.
+
+### gaib server teardown
+
+**DANGEROUS:** Delete ALL server resources (not just managed ones).
+
+```bash
+gaib server teardown [options]
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-g, --guild <id>` | Discord guild/server ID (required) | - |
+| `--confirm-teardown` | Required flag to enable teardown | false |
+| `--dry-run` | Show what would be deleted | false |
+| `--preserve-categories <names...>` | Categories to preserve | none |
+| `--force` | Skip interactive prompts | false |
+| `--json` | Output in JSON format | false |
+
+**Safety Requirements:**
+
+1. You MUST pass `--confirm-teardown` flag
+2. You MUST type the server name exactly
+3. You MUST enter a random 6-digit confirmation code
+4. You MUST type "TEARDOWN" to execute
 
 **Examples:**
 
 ```bash
-# Destroy with confirmation
-gaib server destroy
+# Preview what would be deleted
+gaib server teardown --guild 123456789 --dry-run
 
-# Destroy without confirmation
-gaib server destroy --auto-approve
+# Execute teardown
+gaib server teardown --guild 123456789 --confirm-teardown
+
+# Preserve specific categories
+gaib server teardown --guild 123456789 --confirm-teardown --preserve-categories "archived"
 ```
-
-**Warning:** This command removes all resources marked with `[managed-by:arrakis-iac]` from your Discord server.
 
 ### gaib server export
 
@@ -183,75 +206,116 @@ gaib server export [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--guild <id>` | Discord guild ID | `$DISCORD_GUILD_ID` |
-| `--output <file>` | Output file path | stdout |
-| `--managed-only` | Only export managed resources | false |
-| `--json` | Output in JSON format | false |
+| `-g, --guild <id>` | Discord guild/server ID | `$DISCORD_GUILD_ID` |
+| `-o, --output <path>` | Output file path | stdout |
+| `--include-unmanaged` | Include unmanaged resources | false |
+| `--json` | Output as JSON instead of YAML | false |
+
+---
+
+## Workspace Commands
+
+Workspace management commands are under `gaib server ws`.
+
+### gaib server ws ls
+
+List all workspaces.
+
+```bash
+gaib server ws ls [options]
+```
+
+### gaib server ws new
+
+Create a new workspace and switch to it.
+
+```bash
+gaib server ws new <name> [options]
+```
 
 **Examples:**
 
 ```bash
-# Export to file
-gaib server export --output current-state.yaml
-
-# Export only managed resources
-gaib server export --managed-only --output managed.yaml
-
-# Export to stdout
-gaib server export
+# Create staging workspace
+gaib server ws new staging
 ```
+
+### gaib server ws use
+
+Switch to a workspace.
+
+```bash
+gaib server ws use <name> [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-c, --create` | Create workspace if it doesn't exist |
+| `--json` | Output as JSON |
+
+**Examples:**
+
+```bash
+# Switch to staging
+gaib server ws use staging
+
+# Switch or create
+gaib server ws use staging --create
+```
+
+### gaib server ws show
+
+Show workspace details (defaults to current workspace).
+
+```bash
+gaib server ws show [name] [options]
+```
+
+### gaib server ws rm
+
+Delete a workspace.
+
+```bash
+gaib server ws rm <name> [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-f, --force` | Delete without confirmation |
+| `-y, --yes` | Skip confirmation prompt |
+| `--json` | Output as JSON |
+
+---
 
 ## State Commands
 
-Commands for managing Gaib state.
+State management commands are under `gaib server st`.
 
-### gaib server state list
+### gaib server st ls
 
 List all resources in state.
 
 ```bash
-gaib server state list [options]
+gaib server st ls [options]
 ```
 
 **Options:**
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--workspace <name>` | Use specific workspace | `default` |
+| `-w, --workspace <name>` | Use specific workspace | `default` |
 | `--json` | Output in JSON format | false |
 
-**Examples:**
+### gaib server st show
+
+Show detailed information about a resource.
 
 ```bash
-# List resources
-gaib server state list
-
-# JSON output
-gaib server state list --json
-```
-
-**Output Format:**
-
-```
-ℹ Workspace: default
-  State serial: 5
-
-  role:
-  Admin [managed-by:arrakis-iac]  1234567890  Admin [managed-by:arrakis-iac]
-  Member [managed-by:arrakis-iac] 1234567891  Member [managed-by:arrakis-iac]
-
-  channel:
-  general                         1234567892  general
-
-Total: 3 resource(s)
-```
-
-### gaib server state show
-
-Show details for a specific resource.
-
-```bash
-gaib server state show <address> [options]
+gaib server st show <address> [options]
 ```
 
 **Arguments:**
@@ -260,218 +324,150 @@ gaib server state show <address> [options]
 |----------|-------------|
 | `address` | Resource address (e.g., `role.Admin`) |
 
-**Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--workspace <name>` | Use specific workspace | `default` |
-| `--json` | Output in JSON format | false |
-
 **Examples:**
 
 ```bash
 # Show role details
-gaib server state show "role.Admin [managed-by:arrakis-iac]"
+gaib server st show "role.Admin [managed-by:arrakis-iac]"
 
 # Show channel details
-gaib server state show channel.general
+gaib server st show channel.general
 ```
 
-### gaib server state rm
+### gaib server st rm
 
 Remove a resource from state (does not delete from Discord).
 
 ```bash
-gaib server state rm <address> [options]
+gaib server st rm <address> [options]
 ```
-
-**Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `address` | Resource address to remove |
 
 **Options:**
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--workspace <name>` | Use specific workspace | `default` |
-| `--json` | Output in JSON format | false |
+| Option | Description |
+|--------|-------------|
+| `-w, --workspace <name>` | Use specific workspace |
+| `-y, --yes` | Skip confirmation prompt |
+| `--json` | Output as JSON |
 
-**Examples:**
+### gaib server st mv
+
+Move/rename a resource address in state.
 
 ```bash
-# Remove a resource from tracking
-gaib server state rm channel.old-channel
+gaib server st mv <source> <destination> [options]
 ```
 
-### gaib server state import
+### gaib server st pull
+
+Refresh state from Discord (updates all resource attributes).
+
+```bash
+gaib server st pull [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-g, --guild <id>` | Discord guild/server ID (required) |
+| `-w, --workspace <name>` | Use specific workspace |
+| `--json` | Output as JSON |
+
+---
+
+## Import Command
+
+### gaib server import
 
 Import an existing Discord resource into state.
 
 ```bash
-gaib server state import <type> <discord_id> <name> [options]
+gaib server import <address> <id> [options]
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `type` | Resource type (role, category, channel) |
-| `discord_id` | Discord snowflake ID |
-| `name` | Name for the resource in state |
+| `address` | Resource address (e.g., `role.Admin`) |
+| `id` | Discord snowflake ID |
 
 **Options:**
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--workspace <name>` | Use specific workspace | `default` |
-| `--json` | Output in JSON format | false |
+| Option | Description |
+|--------|-------------|
+| `-g, --guild <id>` | Discord guild/server ID (required) |
+| `-w, --workspace <name>` | Use specific workspace |
+| `--json` | Output as JSON |
 
 **Examples:**
 
 ```bash
 # Import an existing role
-gaib server state import role 1234567890 "Admin [managed-by:arrakis-iac]"
+gaib server import role.Admin 1234567890 --guild 123456789
 ```
 
-## Workspace Commands
-
-Commands for managing workspaces.
-
-### gaib server workspace list
-
-List all workspaces.
-
-```bash
-gaib server workspace list [options]
-```
-
-**Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--json` | Output in JSON format | false |
-
-### gaib server workspace new
-
-Create a new workspace.
-
-```bash
-gaib server workspace new <name> [options]
-```
-
-**Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `name` | Name for the new workspace |
-
-**Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--json` | Output in JSON format | false |
-
-**Examples:**
-
-```bash
-# Create staging workspace
-gaib server workspace new staging
-```
-
-### gaib server workspace select
-
-Switch to a workspace.
-
-```bash
-gaib server workspace select <name> [options]
-```
-
-**Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `name` | Workspace name to select |
-
-**Examples:**
-
-```bash
-# Switch to staging
-gaib server workspace select staging
-```
-
-### gaib server workspace show
-
-Show current workspace.
-
-```bash
-gaib server workspace show [options]
-```
-
-**Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--json` | Output in JSON format | false |
-
-### gaib server workspace delete
-
-Delete a workspace.
-
-```bash
-gaib server workspace delete <name> [options]
-```
-
-**Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `name` | Workspace name to delete |
-
-**Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--force` | Delete without confirmation | false |
-| `--json` | Output in JSON format | false |
+---
 
 ## Lock Commands
 
-Commands for managing state locks.
+### gaib server locks
 
-### gaib server lock-status
-
-Check if state is locked.
+Show lock status for the current workspace.
 
 ```bash
-gaib server lock-status [options]
+gaib server locks [options]
 ```
 
 **Options:**
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--workspace <name>` | Use specific workspace | `default` |
-| `--json` | Output in JSON format | false |
+| Option | Description |
+|--------|-------------|
+| `-w, --workspace <name>` | Use specific workspace |
+| `--json` | Output as JSON |
 
-### gaib server force-unlock
+### gaib server unlock
 
-Force unlock a stuck state lock.
+Force release a stuck state lock.
 
 ```bash
-gaib server force-unlock [options]
+gaib server unlock [options]
 ```
 
 **Options:**
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--workspace <name>` | Use specific workspace | `default` |
-| `--lock-id <id>` | Specific lock ID to release | current lock |
-| `--json` | Output in JSON format | false |
+| Option | Description |
+|--------|-------------|
+| `-w, --workspace <name>` | Use specific workspace |
+| `-y, --yes` | Skip confirmation prompt |
+| `--json` | Output as JSON |
 
 **Warning:** Only use this if you're certain no other operation is running.
+
+---
+
+## Theme Commands
+
+Theme management commands are under `gaib server th`.
+
+### gaib server th ls
+
+List available themes.
+
+```bash
+gaib server th ls [options]
+```
+
+### gaib server th info
+
+Show detailed information about a theme.
+
+```bash
+gaib server th info <name> [options]
+```
+
+---
 
 ## Exit Codes
 
