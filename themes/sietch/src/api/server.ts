@@ -12,6 +12,7 @@ import { telegramRouter } from './telegram.routes.js';
 import { adminRouter as billingAdminRouter } from './admin.routes.js';
 import { docsRouter } from './docs/swagger.js';
 import { createVerifyIntegration } from './routes/verify.integration.js';
+import { createAuthRouter, addApiKeyVerifyRoute } from './routes/auth.routes.js';
 import {
   errorHandler,
   notFoundHandler,
@@ -181,8 +182,18 @@ function createApp(): Application {
     },
   }));
 
-  // JSON body parsing
-  expressApp.use(express.json({ limit: '10kb' }));
+  // ==========================================================================
+  // Input Size Limits (Sprint 10 - HIGH-7 Security Hardening)
+  // ==========================================================================
+  // Prevents DoS attacks via large payloads.
+  // Different limits for different content types:
+  // - General JSON: 1MB (default)
+  // - Theme data: 500KB (validated separately)
+  // - Component props: 100KB (validated separately)
+  //
+  // @security HIGH-7: Allocation of Resources Without Limits (CWE-770)
+  expressApp.use(express.json({ limit: '1mb' }));
+  expressApp.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   // Public routes
   expressApp.use('/', publicRouter);
@@ -262,6 +273,14 @@ function createApp(): Application {
 
   // API Documentation (v5.1 - Sprint 52)
   expressApp.use('/docs', docsRouter);
+
+  // ==========================================================================
+  // Authentication Routes (Sprint 9 - CRIT-3 Frontend Auth)
+  // ==========================================================================
+  const authRouter = createAuthRouter();
+  addApiKeyVerifyRoute(authRouter); // Add /api/auth/verify for frontend auth
+  expressApp.use('/api/auth', authRouter);
+  logger.info('Auth routes mounted at /api/auth');
 
   // 404 handler
   expressApp.use(notFoundHandler);
