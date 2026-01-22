@@ -2,7 +2,7 @@ name: Melange Discord Notification
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [opened]
 
 jobs:
   notify:
@@ -43,14 +43,53 @@ jobs:
               }
             }
 
-            const fromConstruct = context.repo.repo;
+            // Extract intent from labels or body
+            let intent = 'request';
+            const intentLabel = labels.find(l => l.startsWith('intent:'));
+            if (intentLabel) {
+              intent = intentLabel.replace('intent:', '');
+            } else {
+              const intentMatch = body.match(/### Intent\s*\n\n(\w+)/i);
+              if (intentMatch) {
+                intent = intentMatch[1].toLowerCase();
+              }
+            }
+
+            // Extract from operator
+            let fromOperator = context.repo.repo;
+            const fromMatch = body.match(/### From \(Your Construct \+ Operator\)\s*\n\n(.+)/i);
+            if (fromMatch) {
+              fromOperator = fromMatch[1].trim();
+            }
+
+            // Extract experience summary (first 200 chars)
+            let experience = '';
+            const expMatch = body.match(/### What are you experiencing\?\s*\n\n([\s\S]*?)(?=\n###|$)/i);
+            if (expMatch) {
+              experience = expMatch[1].trim().substring(0, 200);
+              if (expMatch[1].trim().length > 200) experience += '...';
+            }
+
+            // Extract request
+            let request = '';
+            const reqMatch = body.match(/### What would help\?\s*\n\n([\s\S]*?)(?=\n###|$)/i);
+            if (reqMatch) {
+              request = reqMatch[1].trim().substring(0, 150);
+              if (reqMatch[1].trim().length > 150) request += '...';
+            }
+
+            const fromRepo = context.repo.repo;
 
             core.setOutput('to', toConstruct);
-            core.setOutput('from', fromConstruct);
+            core.setOutput('from_repo', fromRepo);
+            core.setOutput('from_operator', fromOperator);
             core.setOutput('impact', impact);
-            core.setOutput('title', issue.title);
+            core.setOutput('intent', intent);
+            core.setOutput('title', issue.title.replace('[Melange] ', ''));
             core.setOutput('url', issue.html_url);
             core.setOutput('number', issue.number);
+            core.setOutput('experience', experience);
+            core.setOutput('request', request);
 
       - name: Auto-apply routing label
         if: "!contains(github.event.issue.labels.*.name, 'to:')"
@@ -62,7 +101,7 @@ jobs:
 
             if (toMatch) {
               const toConstruct = toMatch[1].toLowerCase();
-              const validConstructs = ['sigil', 'loa', 'registry'];
+              const validConstructs = ['sigil', 'loa', 'registry', 'loa-constructs'];
 
               if (validConstructs.includes(toConstruct)) {
                 await github.rest.issues.addLabels({
@@ -96,25 +135,96 @@ jobs:
               }
             }
 
-      - name: Send Notification (game-changing)
+      - name: Send Discord Embed (game-changing)
         if: steps.parse.outputs.impact == 'game-changing'
         env:
           DISCORD_WEBHOOK: ${{ secrets.MELANGE_DISCORD_WEBHOOK }}
         run: |
           if [ -n "$DISCORD_WEBHOOK" ]; then
             curl -H "Content-Type: application/json" \
-              -d "{\"content\": \"🔴 **[game-changing] ${{ steps.parse.outputs.from }} → ${{ steps.parse.outputs.to }}**\n\n${{ steps.parse.outputs.title }}\n\n${{ steps.parse.outputs.url }}\n\n@here\"}" \
+              -d '{
+                "content": "@here",
+                "embeds": [{
+                  "title": "🔴 ${{ steps.parse.outputs.title }}",
+                  "url": "${{ steps.parse.outputs.url }}",
+                  "color": 15158332,
+                  "fields": [
+                    {
+                      "name": "From",
+                      "value": "${{ steps.parse.outputs.from_operator }}",
+                      "inline": true
+                    },
+                    {
+                      "name": "To",
+                      "value": "${{ steps.parse.outputs.to }}",
+                      "inline": true
+                    },
+                    {
+                      "name": "Intent",
+                      "value": "${{ steps.parse.outputs.intent }}",
+                      "inline": true
+                    },
+                    {
+                      "name": "Experience",
+                      "value": "${{ steps.parse.outputs.experience }}"
+                    },
+                    {
+                      "name": "Request",
+                      "value": "${{ steps.parse.outputs.request }}"
+                    }
+                  ],
+                  "footer": {
+                    "text": "Melange Protocol • ${{ steps.parse.outputs.from_repo }}#${{ steps.parse.outputs.number }}"
+                  },
+                  "timestamp": "${{ github.event.issue.created_at }}"
+                }]
+              }' \
               "$DISCORD_WEBHOOK"
           fi
 
-      - name: Send Notification (important)
+      - name: Send Discord Embed (important)
         if: steps.parse.outputs.impact == 'important'
         env:
           DISCORD_WEBHOOK: ${{ secrets.MELANGE_DISCORD_WEBHOOK }}
         run: |
           if [ -n "$DISCORD_WEBHOOK" ]; then
             curl -H "Content-Type: application/json" \
-              -d "{\"content\": \"🟡 **[important] ${{ steps.parse.outputs.from }} → ${{ steps.parse.outputs.to }}**\n\n${{ steps.parse.outputs.title }}\n\n${{ steps.parse.outputs.url }}\"}" \
+              -d '{
+                "embeds": [{
+                  "title": "🟡 ${{ steps.parse.outputs.title }}",
+                  "url": "${{ steps.parse.outputs.url }}",
+                  "color": 16776960,
+                  "fields": [
+                    {
+                      "name": "From",
+                      "value": "${{ steps.parse.outputs.from_operator }}",
+                      "inline": true
+                    },
+                    {
+                      "name": "To",
+                      "value": "${{ steps.parse.outputs.to }}",
+                      "inline": true
+                    },
+                    {
+                      "name": "Intent",
+                      "value": "${{ steps.parse.outputs.intent }}",
+                      "inline": true
+                    },
+                    {
+                      "name": "Experience",
+                      "value": "${{ steps.parse.outputs.experience }}"
+                    },
+                    {
+                      "name": "Request",
+                      "value": "${{ steps.parse.outputs.request }}"
+                    }
+                  ],
+                  "footer": {
+                    "text": "Melange Protocol • ${{ steps.parse.outputs.from_repo }}#${{ steps.parse.outputs.number }}"
+                  },
+                  "timestamp": "${{ github.event.issue.created_at }}"
+                }]
+              }' \
               "$DISCORD_WEBHOOK"
           fi
 
