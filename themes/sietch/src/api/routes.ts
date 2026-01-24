@@ -20,6 +20,8 @@ export {
   naibRouter,
   thresholdRouter,
   notificationRouter,
+  componentRouter,
+  themeRouter,
 } from './routes/index.js';
 
 // =============================================================================

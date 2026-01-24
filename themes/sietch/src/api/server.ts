@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { config, hasLegacyKeys, LEGACY_KEY_SUNSET_DATE } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { initDatabase, closeDatabase } from '../db/index.js';
-import { publicRouter, adminRouter, memberRouter, billingRouter, cryptoBillingRouter, badgeRouter, boostRouter } from './routes.js';
+import { publicRouter, adminRouter, memberRouter, billingRouter, cryptoBillingRouter, badgeRouter, boostRouter, componentRouter, themeRouter } from './routes.js';
 import { telegramRouter } from './telegram.routes.js';
 import { adminRouter as billingAdminRouter } from './admin.routes.js';
 import { docsRouter } from './docs/swagger.js';
@@ -222,6 +222,12 @@ function createApp(): Application {
 
   // Boost routes (v4.0 - Sprint 28)
   expressApp.use('/api/boosts', boostRouter);
+
+  // Component routes (Sprint 5 - WYSIWYG Theme Builder)
+  expressApp.use('/api/components', componentRouter);
+
+  // Theme routes (Sprint 1 - WYSIWYG Theme Builder)
+  expressApp.use('/api/themes', themeRouter);
 
   // Telegram routes (v4.1 - Sprint 30)
   expressApp.use('/telegram', telegramRouter);
