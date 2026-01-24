@@ -5,6 +5,23 @@ All notable changes to Loa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-01-24 — Template Cleanup
+
+### Fixed
+
+- **Template Pollution** - Removed 9 Loa-specific PRD/SDD/sprint documents that were accidentally committed in v1.6.0 and v1.7.0:
+  - `prd-ck-migration.md`, `sdd-ck-migration.md`, `sprint-ck-migration.md`
+  - `prd-ride-before-plan.md`, `sdd-ride-before-plan.md`, `sprint-ride-before-plan.md`
+  - `prd-goal-traceability.md`, `sdd-goal-traceability.md`, `sprint-goal-traceability.md`
+
+- **Improved .gitignore** - Updated patterns from exact filenames (`prd.md`) to globs (`prd*.md`) to prevent future pollution from feature-variant documents
+
+### Notes
+
+Fresh installs of v1.6.0 or v1.7.0 would have included these development documents in the `grimoires/loa/` directory. Users can safely delete them - they are Loa framework development artifacts, not project templates.
+
+---
+
 ## [1.7.0] - 2026-01-24 — Goal Traceability & Guided Workflow
 
 ### Why This Release
