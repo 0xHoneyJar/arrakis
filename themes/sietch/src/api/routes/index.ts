@@ -17,6 +17,7 @@ import { billingRouter } from '../billing.routes.js';
 import { badgeRouter } from '../badge.routes.js';
 import { boostRouter } from '../boost.routes.js';
 import { themeRouter } from './theme.routes.js';
+import { componentRouter } from './component.routes.js';
 
 /**
  * Combined API router that mounts all sub-routers
@@ -53,6 +54,9 @@ apiRouter.use('/boost', boostRouter);
 // Mount theme builder routes at /themes (Sprint 1 - WYSIWYG Theme Builder)
 apiRouter.use('/themes', themeRouter);
 
+// Mount component routes at /components (Sprint 5 - Component Registry)
+apiRouter.use('/components', componentRouter);
+
 /**
  * Re-export individual routers for backward compatibility and direct access
  */
@@ -67,6 +71,7 @@ export {
   badgeRouter,
   boostRouter,
   themeRouter,
+  componentRouter,
 };
 
 /**

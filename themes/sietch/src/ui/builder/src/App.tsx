@@ -16,7 +16,7 @@ import { BrandingEditor } from '@components/branding';
 import { PreviewPanel } from '@components/preview';
 import { EditorToolbar } from '@components/toolbar';
 import { LoginPage } from '@components/auth';
-import { useAuth } from '../hooks/useAuth.js';
+import { useAuth } from '@hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 
 /**
