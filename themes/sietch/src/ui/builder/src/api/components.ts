@@ -2,7 +2,8 @@ import { apiClient } from './client';
 import type { ComponentDefinition } from '@types';
 
 interface ComponentsResponse {
-  components: ComponentDefinition[];
+  success: boolean;
+  data: ComponentDefinition[];
   count: number;
 }
 
@@ -16,7 +17,7 @@ interface ValidationResponse {
 
 export async function fetchComponents(): Promise<ComponentDefinition[]> {
   const response = await apiClient.get<ComponentsResponse>('/components');
-  return response.components;
+  return response.data;
 }
 
 export async function fetchComponentByType(type: string): Promise<ComponentDefinition> {

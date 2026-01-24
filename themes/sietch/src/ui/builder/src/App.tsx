@@ -7,7 +7,19 @@
  * @see grimoires/loa/a2a/audits/2026-01-21/SECURITY-AUDIT-REPORT.md
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+  DragOverlay,
+} from '@dnd-kit/core';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { useEditorStore, useThemeStore } from '@stores';
 import { ComponentPalette } from '@components/palette';
 import { Canvas } from '@components/canvas';
@@ -38,10 +50,34 @@ function LoadingScreen() {
  */
 function ThemeEditor() {
   const [showBranding, setShowBranding] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const setTheme = useThemeStore((s) => s.setTheme);
   const setActivePage = useEditorStore((s) => s.setActivePage);
   const isPreviewMode = useEditorStore((s) => s.isPreviewMode);
+  const setDragging = useEditorStore((s) => s.setDragging);
+
+  // DnD sensors - must be at this level to allow dragging from palette to canvas
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+    setDragging(true);
+  }, [setDragging]);
+
+  const handleDragEnd = useCallback((_event: DragEndEvent) => {
+    setActiveId(null);
+    setDragging(false);
+  }, [setDragging]);
 
   // Load mock theme for development
   useEffect(() => {
@@ -120,20 +156,36 @@ function ThemeEditor() {
         showBranding={showBranding}
       />
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Component Palette */}
-        {!isPreviewMode && <ComponentPalette />}
-
-        {/* Main Area: Canvas or Preview */}
-        {isPreviewMode ? (
+      {isPreviewMode ? (
+        <div className="flex-1 flex overflow-hidden">
           <PreviewPanel />
-        ) : (
-          <Canvas />
-        )}
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left Panel: Component Palette */}
+            <ComponentPalette />
 
-        {/* Right Panel: Properties or Branding */}
-        {getRightPanel()}
-      </div>
+            {/* Main Area: Canvas */}
+            <Canvas />
+
+            {/* Right Panel: Properties or Branding */}
+            {getRightPanel()}
+          </div>
+          <DragOverlay>
+            {activeId ? (
+              <div className="p-3 bg-white rounded-lg border-2 border-primary-400 shadow-lg opacity-90">
+                <span className="text-sm font-medium">Dragging component...</span>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      )}
     </div>
   );
 }

@@ -1,18 +1,11 @@
 import { useCallback } from 'react';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
+  useDndMonitor,
   useDroppable,
-  DragStartEvent,
   DragEndEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
-  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { clsx } from 'clsx';
@@ -43,91 +36,76 @@ export function Canvas() {
   const activePageId = useEditorStore((s) => s.activePageId);
   const viewport = useEditorStore((s) => s.viewport);
   const setViewport = useEditorStore((s) => s.setViewport);
-  const setDragging = useEditorStore((s) => s.setDragging);
   const selectComponent = useEditorStore((s) => s.selectComponent);
 
   const addComponent = useThemeStore((s) => s.addComponent);
   const deleteComponent = useThemeStore((s) => s.deleteComponent);
   const reorderComponents = useThemeStore((s) => s.reorderComponents);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
   // Get current page
   const currentPage = theme?.pages.find((p) => p.id === activePageId) ||
     theme?.pages[0];
 
-  const handleDragStart = useCallback((_event: DragStartEvent) => {
-    setDragging(true);
-  }, [setDragging]);
+  // Listen for drag events from parent DndContext
+  useDndMonitor({
+    onDragEnd: useCallback(
+      (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || !currentPage) return;
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      setDragging(false);
+        const activeData = active.data.current;
+        const overData = over.data.current;
 
-      const { active, over } = event;
-      if (!over || !currentPage) return;
+        // New component from palette
+        if (activeData?.type === 'new-component') {
+          const definition = activeData.definition;
+          const newComponent: ComponentInstance = {
+            id: generateId(),
+            type: definition.type,
+            props: { ...definition.defaultProps },
+          };
 
-      const activeData = active.data.current;
-      const overData = over.data.current;
+          let insertIndex = currentPage.components.length;
 
-      // New component from palette
-      if (activeData?.type === 'new-component') {
-        const definition = activeData.definition;
-        const newComponent: ComponentInstance = {
-          id: generateId(),
-          type: definition.type,
-          props: { ...definition.defaultProps },
-        };
+          // If dropping on a drop zone, insert at that position
+          if (overData?.type === 'drop-zone') {
+            insertIndex = overData.index;
+          }
+          // If dropping on an existing component, insert after it
+          else if (overData?.type === 'existing-component') {
+            const existingIndex = currentPage.components.findIndex(
+              (c) => c.id === over.id
+            );
+            insertIndex = existingIndex + 1;
+          }
 
-        let insertIndex = currentPage.components.length;
-
-        // If dropping on a drop zone, insert at that position
-        if (overData?.type === 'drop-zone') {
-          insertIndex = overData.index;
+          addComponent(currentPage.id, newComponent, insertIndex);
+          selectComponent(newComponent.id);
+          return;
         }
-        // If dropping on an existing component, insert after it
-        else if (overData?.type === 'existing-component') {
-          const existingIndex = currentPage.components.findIndex(
-            (c) => c.id === over.id
+
+        // Reordering existing components
+        if (activeData?.type === 'existing-component' && active.id !== over.id) {
+          const oldIndex = currentPage.components.findIndex(
+            (c) => c.id === active.id
           );
-          insertIndex = existingIndex + 1;
+          let newIndex: number;
+
+          if (overData?.type === 'drop-zone') {
+            newIndex = overData.index;
+            if (newIndex > oldIndex) newIndex--;
+          } else {
+            newIndex = currentPage.components.findIndex((c) => c.id === over.id);
+          }
+
+          if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+            reorderComponents(currentPage.id, oldIndex, newIndex);
+          }
         }
-
-        addComponent(currentPage.id, newComponent, insertIndex);
-        selectComponent(newComponent.id);
-        return;
-      }
-
-      // Reordering existing components
-      if (activeData?.type === 'existing-component' && active.id !== over.id) {
-        const oldIndex = currentPage.components.findIndex(
-          (c) => c.id === active.id
-        );
-        let newIndex: number;
-
-        if (overData?.type === 'drop-zone') {
-          newIndex = overData.index;
-          if (newIndex > oldIndex) newIndex--;
-        } else {
-          newIndex = currentPage.components.findIndex((c) => c.id === over.id);
-        }
-
-        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-          reorderComponents(currentPage.id, oldIndex, newIndex);
-        }
-      }
-    },
-    [currentPage, addComponent, reorderComponents, selectComponent, setDragging]
-  );
+      },
+      [currentPage, addComponent, reorderComponents, selectComponent]
+    ),
+  });
 
   const handleDelete = useCallback(
     (componentId: string) => {
@@ -232,38 +210,31 @@ export function Canvas() {
           </div>
 
           {/* Components */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
-            <div className="p-4 min-h-[400px]">
-              {currentPage.components.length === 0 ? (
-                <EmptyCanvas />
-              ) : (
-                <SortableContext
-                  items={currentPage.components.map((c) => c.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-4">
-                    <DropZone id="drop-0" index={0} />
-                    {currentPage.components.map((component, index) => (
-                      <div key={component.id}>
-                        <CanvasComponent
-                          instance={component}
-                          pageId={currentPage.id}
-                          onDelete={handleDelete}
-                          onDuplicate={handleDuplicate}
-                        />
-                        <DropZone id={`drop-${index + 1}`} index={index + 1} />
-                      </div>
-                    ))}
-                  </div>
-                </SortableContext>
-              )}
-            </div>
-          </DndContext>
+          <div className="p-4 min-h-[400px]">
+            {currentPage.components.length === 0 ? (
+              <EmptyCanvas />
+            ) : (
+              <SortableContext
+                items={currentPage.components.map((c) => c.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-4">
+                  <DropZone id="drop-0" index={0} />
+                  {currentPage.components.map((component, index) => (
+                    <div key={component.id}>
+                      <CanvasComponent
+                        instance={component}
+                        pageId={currentPage.id}
+                        onDelete={handleDelete}
+                        onDuplicate={handleDuplicate}
+                      />
+                      <DropZone id={`drop-${index + 1}`} index={index + 1} />
+                    </div>
+                  ))}
+                </div>
+              </SortableContext>
+            )}
+          </div>
         </div>
       </div>
     </div>
