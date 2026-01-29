@@ -1,6 +1,12 @@
 import type { Address } from 'viem';
 import { logger } from '../utils/logger.js';
-import { getActiveAdminOverrides, logAuditEvent } from '../db/index.js';
+import {
+  getActiveAdminOverrides,
+  logAuditEvent,
+  // PostgreSQL queries (Sprint 175)
+  isEligibilityPgDbInitialized,
+  getActiveAdminOverridesPg,
+} from '../db/index.js';
 import type { EligibilityEntry, EligibilityDiff, AdminOverride } from '../types/index.js';
 
 /**
@@ -154,11 +160,19 @@ class EligibilityService {
    * - Add addresses to eligibility (action: 'add')
    * - Remove addresses from eligibility (action: 'remove')
    *
+   * Sprint 175: Uses PostgreSQL if initialized, otherwise falls back to SQLite
+   *
    * @param entries - Original eligibility entries
    * @returns Entries with overrides applied
    */
   async applyAdminOverrides(entries: EligibilityEntry[]): Promise<EligibilityEntry[]> {
-    const overrides = getActiveAdminOverrides();
+    // Sprint 175: Use PostgreSQL if initialized, otherwise fallback to SQLite
+    let overrides: AdminOverride[];
+    if (isEligibilityPgDbInitialized()) {
+      overrides = await getActiveAdminOverridesPg();
+    } else {
+      overrides = getActiveAdminOverrides();
+    }
 
     if (overrides.length === 0) {
       return entries;

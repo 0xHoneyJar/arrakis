@@ -291,6 +291,44 @@ export type {
 } from './types/user.types.js';
 
 // =============================================================================
+// PostgreSQL Eligibility Queries (Sprint 175)
+// =============================================================================
+// These are the PostgreSQL versions of eligibility queries that persist
+// data across container restarts (unlike in-memory SQLite).
+export {
+  // Database instance management
+  setEligibilityPgDb,
+  getEligibilityPgDb,
+  isEligibilityPgDbInitialized,
+  // Snapshot queries
+  saveEligibilitySnapshotPg,
+  getLatestEligibilitySnapshotPg,
+  // Current eligibility queries
+  getEligibilityByAddressPg,
+  getCurrentEligibilityPg,
+  // Health status queries
+  updateHealthStatusSuccessPg,
+  updateHealthStatusFailurePg,
+  getHealthStatusPg,
+  enterGracePeriodPg,
+  exitGracePeriodPg,
+  // Admin override queries
+  getActiveAdminOverridesPg,
+  createAdminOverridePg,
+  deactivateAdminOverridePg,
+  // Wallet verification queries
+  saveWalletVerificationPg,
+  getWalletByDiscordIdPg,
+  getDiscordIdByWalletPg,
+  deleteWalletVerificationPg,
+} from './queries/pg-eligibility-queries.js';
+
+// =============================================================================
+// PostgreSQL Schema (Sprint 175)
+// =============================================================================
+export * from './pg-schema.js';
+
+// =============================================================================
 // Legacy re-export from queries.ts for backward compatibility
 // Will be removed after all consumers migrate to new structure
 // =============================================================================

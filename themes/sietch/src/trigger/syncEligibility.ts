@@ -1,4 +1,6 @@
 import { schedules, logger as triggerLogger } from '@trigger.dev/sdk/v3';
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { chainService } from '../services/chain.js';
 import { eligibilityService } from '../services/eligibility.js';
 import { discordService } from '../services/discord.js';
@@ -10,15 +12,20 @@ import { tierService, syncTierRole, isTierRolesConfigured, TIER_INFO, awardBadge
 import { memberHasBadge } from '../db/index.js';
 import {
   initDatabase,
-  saveEligibilitySnapshot,
-  getLatestEligibilitySnapshot,
-  updateHealthStatusSuccess,
-  updateHealthStatusFailure,
+  // SQLite queries (still used for some features)
   logAuditEvent,
   getDiscordIdByWallet,
   getMemberProfileByDiscordId,
   getMemberProfileById,
+  // PostgreSQL queries (Sprint 175 - persistent eligibility)
+  setEligibilityPgDb,
+  isEligibilityPgDbInitialized,
+  saveEligibilitySnapshotPg,
+  getLatestEligibilitySnapshotPg,
+  updateHealthStatusSuccessPg,
+  updateHealthStatusFailurePg,
 } from '../db/index.js';
+import { config } from '../config.js';
 import type { Tier } from '../types/index.js';
 
 /**
@@ -40,12 +47,24 @@ export const syncEligibilityTask = schedules.task({
   run: async () => {
     triggerLogger.info('Starting eligibility sync task');
 
-    // Initialize database (idempotent)
+    // Initialize SQLite database for legacy features (idempotent)
     initDatabase();
 
+    // Initialize PostgreSQL for eligibility persistence (Sprint 175)
+    if (config.database.url && !isEligibilityPgDbInitialized()) {
+      const pgClient = postgres(config.database.url, {
+        max: 5,
+        idle_timeout: 20,
+        connect_timeout: 10,
+      });
+      const pgDb = drizzle(pgClient);
+      setEligibilityPgDb(pgDb);
+      triggerLogger.info('PostgreSQL initialized for eligibility queries');
+    }
+
     try {
-      // 1. Get previous snapshot for diff computation
-      const previousSnapshot = getLatestEligibilitySnapshot();
+      // 1. Get previous snapshot for diff computation (from PostgreSQL)
+      const previousSnapshot = await getLatestEligibilitySnapshotPg();
       triggerLogger.info(`Previous snapshot has ${previousSnapshot.length} entries`);
 
       // 2. Fetch fresh eligibility data from chain
@@ -67,12 +86,12 @@ export const syncEligibilityTask = schedules.task({
         demotedFromNaib: diff.demotedFromNaib.length,
       });
 
-      // 5. Save new snapshot
-      const snapshotId = saveEligibilitySnapshot(eligibility);
-      triggerLogger.info(`Saved eligibility snapshot #${snapshotId}`);
+      // 5. Save new snapshot (to PostgreSQL)
+      const snapshotId = await saveEligibilitySnapshotPg(eligibility);
+      triggerLogger.info(`Saved eligibility snapshot #${snapshotId} to PostgreSQL`);
 
-      // 6. Update health status - success
-      updateHealthStatusSuccess();
+      // 6. Update health status - success (in PostgreSQL)
+      await updateHealthStatusSuccessPg();
 
       // 7. Log audit event
       logAuditEvent('eligibility_update', {
@@ -421,8 +440,14 @@ export const syncEligibilityTask = schedules.task({
         tiers: tierStats.updated > 0 ? tierStats : null,
       };
     } catch (error) {
-      // Update health status - failure
-      updateHealthStatusFailure();
+      // Update health status - failure (in PostgreSQL)
+      try {
+        await updateHealthStatusFailurePg();
+      } catch (healthError) {
+        triggerLogger.error('Failed to update health status', {
+          error: healthError instanceof Error ? healthError.message : String(healthError),
+        });
+      }
 
       triggerLogger.error('Eligibility sync failed', {
         error: error instanceof Error ? error.message : String(error),

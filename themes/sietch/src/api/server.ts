@@ -18,8 +18,18 @@ import {
   notFoundHandler,
   requestIdMiddleware,
 } from './middleware.js';
-import { saveWalletMapping, logAuditEvent } from '../db/index.js';
+import {
+  saveWalletMapping,
+  logAuditEvent,
+  getEligibilityByAddress,
+  // PostgreSQL eligibility queries (Sprint 175)
+  setEligibilityPgDb,
+  getEligibilityByAddressPg,
+  isEligibilityPgDbInitialized,
+} from '../db/index.js';
 import { discordService } from '../services/discord.js';
+import { onboardingService } from '../services/onboarding.js';
+import { profileService } from '../services/profile.js';
 import { EmbedBuilder } from 'discord.js';
 
 /**
@@ -247,6 +257,12 @@ function createApp(): Application {
     });
 
     const verifyDb = drizzle(verifyPostgresClient);
+
+    // Sprint 175: Initialize PostgreSQL for eligibility queries
+    if (!isEligibilityPgDbInitialized()) {
+      setEligibilityPgDb(verifyDb);
+      logger.info('PostgreSQL initialized for eligibility queries');
+    }
     const verifyRouter = createVerifyIntegration({
       db: verifyDb,
       onWalletLinked: async ({ communityId, discordUserId, walletAddress }) => {
@@ -291,12 +307,42 @@ function createApp(): Application {
 
                 await user.send({ embeds: [embed] });
                 logger.info({ discordUserId }, 'Sent verification success DM to user');
+
+                // Check if wallet is eligible (top 69 BGT holders) and trigger onboarding
+                // Sprint 175: Use PostgreSQL for eligibility check (persistent across restarts)
+                let eligibility = null;
+                if (isEligibilityPgDbInitialized()) {
+                  eligibility = await getEligibilityByAddressPg(walletAddress.toLowerCase());
+                } else {
+                  // Fallback to SQLite (may be empty after restart)
+                  eligibility = getEligibilityByAddress(walletAddress.toLowerCase());
+                }
+                if (eligibility && eligibility.rank && eligibility.rank <= 69) {
+                  // User is eligible! Check if they already have a profile
+                  const existingProfile = profileService.getProfileByDiscordId(discordUserId);
+                  if (!existingProfile) {
+                    // Trigger onboarding
+                    const tier = eligibility.rank <= 7 ? 'naib' : 'fedaykin';
+                    await onboardingService.startOnboarding(user, tier);
+                    logger.info(
+                      { discordUserId, walletAddress, rank: eligibility.rank, tier },
+                      'Triggered onboarding after wallet verification - user is eligible'
+                    );
+                  } else {
+                    logger.debug({ discordUserId }, 'User already has profile, skipping onboarding');
+                  }
+                } else {
+                  logger.info(
+                    { discordUserId, walletAddress, rank: eligibility?.rank },
+                    'Wallet verified but not in top 69 - onboarding not triggered'
+                  );
+                }
               }
             } catch (dmError) {
-              // User may have DMs disabled - this is fine
+              // User may have DMs disabled or eligibility check failed
               logger.warn(
                 { error: dmError, discordUserId },
-                'Could not send verification success DM (user may have DMs disabled)'
+                'Could not send verification DM or check eligibility (DMs may be disabled)'
               );
             }
           }
