@@ -29,6 +29,11 @@ import {
   handleWaterShareCommand,
   handleAdminWaterShareCommand,
   handleVerifyCommand,
+  // Sprint 13: Notification System commands
+  handleAlertsCommand,
+  handlePositionCommand,
+  // Sprint 107: QA Sandbox Simulation
+  handleSimulationCommand,
   DIRECTORY_INTERACTIONS,
 } from '../../../discord/commands/index.js';
 import {
@@ -115,6 +120,12 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction): Pro
     case 'register-waitlist':
       await handleRegisterWaitlistCommand(interaction);
       break;
+    case 'alerts':
+      await handleAlertsCommand(interaction);
+      break;
+    case 'position':
+      await handlePositionCommand(interaction);
+      break;
     case 'water-share':
       await handleWaterShareCommand(interaction);
       break;
@@ -123,6 +134,9 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction): Pro
       break;
     case 'verify':
       await handleVerifyCommand(interaction);
+      break;
+    case 'simulation':
+      await handleSimulationCommand(interaction);
       break;
     default:
       logger.warn({ commandName }, 'Unknown slash command');
