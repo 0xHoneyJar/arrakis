@@ -47,19 +47,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          node-version: '20'
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Run migrations
         working-directory: ./themes/sietch
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: |
+          echo "Fetching database credentials from AWS Secrets Manager..."
+          DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id arrakis-staging/database --query 'SecretString' --output text | jq -r '.url // .DATABASE_URL // .')
           echo "Running database migrations..."
           # Run the eligibility tables migration directly (Sprint 175)
           # Using psql to execute the SQL file since drizzle schema is split
