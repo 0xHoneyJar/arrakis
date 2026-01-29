@@ -24,9 +24,12 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
+import { eq } from 'drizzle-orm';
+
 import { config, isPostgreSQLEnabled } from '../../config.js';
 import { logger } from '../../utils/logger.js';
 import { WalletVerificationService } from '../../packages/verification/VerificationService.js';
+import { communities } from '../../packages/adapters/storage/schema.js';
 
 // =============================================================================
 // Service Cache
@@ -38,24 +41,85 @@ import { WalletVerificationService } from '../../packages/verification/Verificat
 let cachedService: WalletVerificationService | null = null;
 let cachedDb: PostgresJsDatabase | null = null;
 let cachedClient: ReturnType<typeof postgres> | null = null;
+let cachedCommunityId: string | null = null;
 
 /**
- * Get or create verification service
+ * Get or create database connection
  */
-function getVerificationService(communityId: string): WalletVerificationService | null {
+function getDb(): PostgresJsDatabase | null {
   if (!isPostgreSQLEnabled()) {
     return null;
   }
 
-  if (!cachedService || !cachedDb) {
+  if (!cachedDb) {
     try {
-      // Create postgres client
       cachedClient = postgres(config.database.url!, {
         max: 3,
         idle_timeout: 20,
         connect_timeout: 10,
       });
       cachedDb = drizzle(cachedClient) as PostgresJsDatabase;
+    } catch (error) {
+      logger.error({ error }, 'Failed to create database connection');
+      return null;
+    }
+  }
+
+  return cachedDb;
+}
+
+/**
+ * Get or create community record for Discord guild
+ * Returns the community UUID for use with verification sessions
+ */
+async function getOrCreateCommunity(db: PostgresJsDatabase, guildId: string, guildName: string): Promise<string | null> {
+  try {
+    // Check if community already exists
+    const existing = await db
+      .select({ id: communities.id })
+      .from(communities)
+      .where(eq(communities.discordGuildId, guildId))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return existing[0].id;
+    }
+
+    // Create new community
+    const newCommunity = await db
+      .insert(communities)
+      .values({
+        name: guildName,
+        discordGuildId: guildId,
+        themeId: 'sietch',
+        subscriptionTier: 'free',
+      })
+      .returning({ id: communities.id });
+
+    if (newCommunity.length > 0) {
+      logger.info({ guildId, communityId: newCommunity[0].id }, 'Created community record for Discord guild');
+      return newCommunity[0].id;
+    }
+
+    return null;
+  } catch (error) {
+    logger.error({ error, guildId }, 'Failed to get or create community');
+    return null;
+  }
+}
+
+/**
+ * Get or create verification service for a community
+ */
+function getVerificationService(communityId: string): WalletVerificationService | null {
+  if (!isPostgreSQLEnabled() || !cachedDb) {
+    return null;
+  }
+
+  // Create new service if community changed or not initialized
+  if (!cachedService || cachedCommunityId !== communityId) {
+    try {
+      cachedCommunityId = communityId;
       cachedService = new WalletVerificationService(cachedDb, communityId, {
         onAuditEvent: async (event) => {
           logger.info({ event }, 'Verification audit event (Discord command)');
@@ -168,8 +232,26 @@ async function handleVerifyStart(
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    // Use guildId as communityId for single-guild deployments
-    const communityId = guildId;
+    // Get database connection
+    const db = getDb();
+    if (!db) {
+      await interaction.editReply({
+        content: 'Database connection is not available. Please try again later.',
+      });
+      return;
+    }
+
+    // Get or create community record for this Discord guild
+    const guildName = interaction.guild?.name ?? 'Unknown Server';
+    const communityId = await getOrCreateCommunity(db, guildId, guildName);
+
+    if (!communityId) {
+      await interaction.editReply({
+        content: 'Failed to initialize community. Please try again later.',
+      });
+      return;
+    }
+
     const service = getVerificationService(communityId);
 
     if (!service) {
