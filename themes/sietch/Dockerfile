@@ -41,6 +41,8 @@ RUN npm rebuild better-sqlite3
 # Copy source code and TypeScript configs
 COPY tsconfig.json tsconfig.production.json ./
 COPY src ./src
+COPY drizzle ./drizzle
+COPY drizzle.config.ts ./
 
 # Build TypeScript
 RUN npm run build
@@ -77,6 +79,8 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/package.json ./
+COPY --from=builder --chown=nodejs:nodejs /app/drizzle ./drizzle
+COPY --from=builder --chown=nodejs:nodejs /app/drizzle.config.ts ./
 
 # Security: Remove unnecessary files from node_modules
 # Note: Be careful not to remove package directories named "test" (e.g., viem/_esm/actions/test)
