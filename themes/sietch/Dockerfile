@@ -124,6 +124,12 @@ COPY --from=builder --chown=nodejs:nodejs /repo/themes/sietch/package.json ./
 COPY --from=builder --chown=nodejs:nodejs /repo/themes/sietch/drizzle ./drizzle
 COPY --from=builder --chown=nodejs:nodejs /repo/themes/sietch/drizzle.config.ts ./
 
+# Copy workspace dependencies (@arrakis/adapters and @arrakis/core)
+# These are file: dependencies that need to be at the correct relative path
+# The package.json has "file:../../packages/adapters" so from /app, they need to be at /packages/
+COPY --from=builder --chown=nodejs:nodejs /repo/packages/core /packages/core
+COPY --from=builder --chown=nodejs:nodejs /repo/packages/adapters /packages/adapters
+
 # Security: Remove unnecessary files from node_modules
 # Note: Be careful not to remove package directories named "test" (e.g., viem/_esm/actions/test)
 RUN find node_modules -name "*.md" -delete 2>/dev/null || true && \
