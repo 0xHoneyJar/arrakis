@@ -45,10 +45,9 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 
 /**
  * Block range for paginated log queries
- * Larger range = fewer requests but more data per request
- * Balance between number of requests and per-request size
+ * Berachain RPC limits eth_getLogs to 10,000 blocks max
  */
-const BLOCK_RANGE = 50000n;
+const BLOCK_RANGE = 10000n;
 
 /**
  * RPC endpoint health tracking
