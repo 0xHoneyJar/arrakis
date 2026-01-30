@@ -618,11 +618,18 @@ export class UserRegistryService {
       conditions.push(eq(userIdentities.status, status));
     }
     if (search) {
+      // HIGH-1 FIX: Escape LIKE metacharacters to prevent SQL pattern injection
+      // Escape %, _, and \ which have special meaning in LIKE patterns
+      const escapedSearch = search
+        .replace(/\\/g, '\\\\')  // Escape backslash first
+        .replace(/%/g, '\\%')    // Escape percent
+        .replace(/_/g, '\\_');   // Escape underscore
+
       conditions.push(
         or(
-          ilike(userIdentities.discordId, `%${search}%`),
-          ilike(userIdentities.discordUsername, `%${search}%`),
-          ilike(userIdentities.primaryWallet, `%${search}%`)
+          ilike(userIdentities.discordId, `%${escapedSearch}%`),
+          ilike(userIdentities.discordUsername, `%${escapedSearch}%`),
+          ilike(userIdentities.primaryWallet, `%${escapedSearch}%`)
         )
       );
     }
@@ -760,8 +767,13 @@ let userRegistryDb: PostgresJsDatabase | null = null;
 
 /**
  * Set the database connection for the user registry service
+ * MED-1 FIX: Added initialization guard with warning
  */
 export function setUserRegistryDb(db: PostgresJsDatabase): void {
+  if (userRegistryServiceInstance !== null) {
+    logger.warn('User Registry Service already initialized - skipping re-initialization');
+    return;
+  }
   userRegistryDb = db;
   userRegistryServiceInstance = new UserRegistryService(db);
   logger.info('User Registry Service initialized');

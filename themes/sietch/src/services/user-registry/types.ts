@@ -339,25 +339,40 @@ export class IdentityNotFoundError extends UserRegistryError {
   }
 }
 
+/**
+ * MED-2 FIX: Removed existingIdentityId from client-facing error to prevent
+ * identity enumeration attacks. Server logs still have full details.
+ */
 export class WalletAlreadyLinkedError extends UserRegistryError {
+  /** Internal reference for server-side logging only */
+  readonly existingIdentityId: string;
+
   constructor(walletAddress: string, existingIdentityId: string) {
     super(
-      `Wallet ${walletAddress} is already linked to another identity`,
+      'This wallet is already linked to another account',
       'WALLET_ALREADY_LINKED',
-      { walletAddress, existingIdentityId }
+      { walletAddress } // Don't expose existingIdentityId to client
     );
     this.name = 'WalletAlreadyLinkedError';
+    this.existingIdentityId = existingIdentityId; // Available for server logging
   }
 }
 
+/**
+ * MED-2 FIX: Removed existingIdentityId from client-facing error
+ */
 export class IdentityAlreadyExistsError extends UserRegistryError {
+  /** Internal reference for server-side logging only */
+  readonly existingIdentityId: string;
+
   constructor(discordId: string, existingIdentityId: string) {
     super(
-      `Identity already exists for Discord ID ${discordId}`,
+      'An identity already exists for this Discord account',
       'IDENTITY_ALREADY_EXISTS',
-      { discordId, existingIdentityId }
+      { discordId } // Don't expose existingIdentityId to client
     );
     this.name = 'IdentityAlreadyExistsError';
+    this.existingIdentityId = existingIdentityId; // Available for server logging
   }
 }
 

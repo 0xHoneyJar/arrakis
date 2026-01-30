@@ -187,16 +187,26 @@ export async function recoverIdentityAtTimestamp(
         break;
 
       default:
-        // Unknown event type - log but continue
-        logger.debug({ eventType, eventId: event.eventId }, 'Unknown event type during recovery');
+        // LOW-2 FIX: Use warning level for unknown events during recovery
+        logger.warn(
+          { eventType, eventId: event.eventId, identityId },
+          'Unknown event type during recovery - event skipped'
+        );
     }
   }
+
+  // Track skipped events count
+  const knownEventTypes = Object.values(IdentityEventType) as string[];
+  const skippedEvents = replayedEvents.filter(
+    (e) => !knownEventTypes.includes(e.eventType)
+  );
 
   logger.info(
     {
       identityId,
       targetTimestamp,
       eventCount: events.length,
+      skippedEventCount: skippedEvents.length,
       finalStatus: state.status,
       walletCount: state.wallets.length,
     },

@@ -1152,8 +1152,17 @@ function requireUserRegistryEnabled(req: AuthenticatedRequest, res: Response, ne
 const listUsersSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-  search: z.string().optional(),
+  // HIGH-1 FIX: Add max length to prevent performance issues with long search strings
+  search: z.string().max(100).optional(),
   status: z.enum(['active', 'suspended', 'deleted']).optional(),
+});
+
+/**
+ * Event history query schema (HIGH-2 FIX: Add pagination)
+ */
+const eventHistorySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
 /**
@@ -1562,7 +1571,7 @@ adminRouter.post(
 
 /**
  * GET /admin/users/:identityId/events
- * Get full event history for an identity
+ * Get event history for an identity with pagination (HIGH-2 FIX)
  */
 adminRouter.get(
   '/users/:identityId/events',
@@ -1576,6 +1585,11 @@ adminRouter.get(
         return;
       }
 
+      // HIGH-2 FIX: Add pagination to prevent bulk data exfiltration
+      const query = eventHistorySchema.parse(req.query);
+      const { page, limit } = query;
+      const offset = (page - 1) * limit;
+
       const userRegistry = getUserRegistryService();
 
       // Verify identity exists
@@ -1588,13 +1602,16 @@ adminRouter.get(
         return;
       }
 
-      const events = await userRegistry.getEventHistory(identityId);
+      const allEvents = await userRegistry.getEventHistory(identityId);
+      const totalEvents = allEvents.length;
+
+      // Apply pagination
+      const paginatedEvents = allEvents.slice(offset, offset + limit);
 
       res.json({
         success: true,
         identity_id: identityId,
-        event_count: events.length,
-        events: events.map((e) => ({
+        events: paginatedEvents.map((e) => ({
           event_id: e.eventId,
           event_type: e.eventType,
           event_data: e.eventData,
@@ -1603,8 +1620,22 @@ adminRouter.get(
           actor_id: e.actorId,
           request_id: e.requestId,
         })),
+        pagination: {
+          page,
+          limit,
+          total: totalEvents,
+          has_more: offset + paginatedEvents.length < totalEvents,
+        },
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({
+          error: 'Validation failed',
+          details: error.errors,
+        });
+        return;
+      }
+
       logger.error({ error: (error as Error).message }, 'Failed to get event history');
       res.status(500).json({
         error: 'Internal server error',
