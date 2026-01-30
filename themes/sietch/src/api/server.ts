@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { config, hasLegacyKeys, LEGACY_KEY_SUNSET_DATE } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { initDatabase, closeDatabase } from '../db/index.js';
-import { publicRouter, adminRouter, memberRouter, billingRouter, cryptoBillingRouter, badgeRouter, boostRouter, componentRouter, themeRouter } from './routes.js';
+import { publicRouter, adminRouter, memberRouter, billingRouter, cryptoBillingRouter, badgeRouter, boostRouter, componentRouter, themeRouter, internalRouter } from './routes.js';
 import { telegramRouter } from './telegram.routes.js';
 import { adminRouter as billingAdminRouter } from './admin.routes.js';
 import { docsRouter } from './docs/swagger.js';
@@ -482,6 +482,14 @@ function createApp(): Application {
   addApiKeyVerifyRoute(authRouter); // Add /api/auth/verify for frontend auth
   expressApp.use('/api/auth', authRouter);
   logger.info('Auth routes mounted at /api/auth');
+
+  // ==========================================================================
+  // Internal Routes (Sprint 175 - Trigger.dev -> ECS Communication)
+  // ==========================================================================
+  // Internal endpoints called by Trigger.dev workers via HTTP.
+  // These run on ECS which has VPC access to RDS.
+  expressApp.use('/internal', internalRouter);
+  logger.info('Internal routes mounted at /internal');
 
   // 404 handler
   expressApp.use(notFoundHandler);

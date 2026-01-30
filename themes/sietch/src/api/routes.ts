@@ -22,6 +22,8 @@ export {
   notificationRouter,
   componentRouter,
   themeRouter,
+  // Internal routes (Sprint 175 - Trigger.dev -> ECS)
+  internalRouter,
 } from './routes/index.js';
 
 // =============================================================================

@@ -18,6 +18,7 @@ import { badgeRouter } from '../badge.routes.js';
 import { boostRouter } from '../boost.routes.js';
 import { themeRouter } from './theme.routes.js';
 import { componentRouter } from './component.routes.js';
+import { internalRouter } from './internal.routes.js';
 
 /**
  * Combined API router that mounts all sub-routers
@@ -72,6 +73,7 @@ export {
   boostRouter,
   themeRouter,
   componentRouter,
+  internalRouter,
 };
 
 /**

@@ -467,7 +467,9 @@ resource "aws_ecs_task_definition" "api" {
         { name = "FEATURE_VAULT_ENABLED", value = "false" },
         { name = "FEATURE_BILLING_ENABLED", value = "false" },
         { name = "FEATURE_REDIS_ENABLED", value = "true" },
-        { name = "FEATURE_TELEGRAM_ENABLED", value = "false" }
+        { name = "FEATURE_TELEGRAM_ENABLED", value = "false" },
+        # Sprint 172: In-house wallet verification base URL (derived from domain)
+        { name = "VERIFY_BASE_URL", value = "https://${var.domain_name}" }
       ]
 
       secrets = [
@@ -487,7 +489,9 @@ resource "aws_ecs_task_definition" "api" {
         { name = "DISCORD_ROLE_FEDAYKIN", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:DISCORD_ROLE_FEDAYKIN::" },
         { name = "ADMIN_API_KEYS", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:ADMIN_API_KEYS::" },
         { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.db_credentials.arn}:url::" },
-        { name = "REDIS_URL", valueFrom = "${aws_secretsmanager_secret.redis_credentials.arn}:url::" }
+        { name = "REDIS_URL", valueFrom = "${aws_secretsmanager_secret.redis_credentials.arn}:url::" },
+        # Sprint 175: Internal API key for Trigger.dev -> ECS communication
+        { name = "INTERNAL_API_KEY", valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:INTERNAL_API_KEY::" }
       ]
 
       logConfiguration = {
