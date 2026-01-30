@@ -231,9 +231,9 @@ class ChainService {
     const currentBlock = await this.client.getBlockNumber();
     const recipients = new Set<Address>();
 
-    // Use configured start block, or default to last 100K blocks
-    // 100K / 10K batches = 10 RPC requests - keeps under rate limits
-    const DEFAULT_LOOKBACK = 100_000n;
+    // Use configured start block, or default to last 50K blocks
+    // 50K / 10K batches = 5 RPC requests
+    const DEFAULT_LOOKBACK = 50_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
@@ -262,15 +262,21 @@ class ChainService {
         }
 
         logger.debug(
-          { fromBlock, toBlock: endBlock, count: batchLogs.length, uniqueRecipients: recipients.size },
+          { fromBlock: fromBlock.toString(), toBlock: endBlock.toString(), count: batchLogs.length, uniqueRecipients: recipients.size },
           'Fetched Transfer log batch'
         );
       } catch (error) {
-        logger.warn({ fromBlock, toBlock: endBlock, error }, 'Error fetching Transfer logs');
-        throw error;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.warn({ fromBlock: fromBlock.toString(), toBlock: endBlock.toString(), error: errorMessage }, 'Error fetching Transfer logs');
+        throw new Error(`Failed to fetch Transfer logs: ${errorMessage}`);
       }
 
       fromBlock = endBlock + 1n;
+
+      // Small delay between batches to avoid rate limiting
+      if (fromBlock <= currentBlock) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     }
 
     return recipients;
@@ -354,7 +360,7 @@ class ChainService {
     const events: BurnEvent[] = [];
 
     // Use configured start block, or default to last 100K blocks
-    const DEFAULT_LOOKBACK = 100_000n;
+    const DEFAULT_LOOKBACK = 50_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
@@ -414,7 +420,7 @@ class ChainService {
     const currentBlock = await this.client.getBlockNumber();
 
     // Use configured start block, or default to last 100K blocks
-    const DEFAULT_LOOKBACK = 100_000n;
+    const DEFAULT_LOOKBACK = 50_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
