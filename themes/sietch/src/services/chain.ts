@@ -45,9 +45,10 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 
 /**
  * Block range for paginated log queries
- * Prevents RPC timeouts on large historical ranges
+ * Larger range = fewer requests but more data per request
+ * Balance between number of requests and per-request size
  */
-const BLOCK_RANGE = 10000n;
+const BLOCK_RANGE = 50000n;
 
 /**
  * RPC endpoint health tracking
@@ -232,7 +233,7 @@ class ChainService {
     const recipients = new Set<Address>();
 
     // Use configured start block, or default to last 2 million blocks to prevent timeout
-    const DEFAULT_LOOKBACK = 2_000_000n;
+    const DEFAULT_LOOKBACK = 500_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
@@ -354,7 +355,7 @@ class ChainService {
     const events: BurnEvent[] = [];
 
     // Use configured start block, or default to last 2 million blocks
-    const DEFAULT_LOOKBACK = 2_000_000n;
+    const DEFAULT_LOOKBACK = 500_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
@@ -414,7 +415,7 @@ class ChainService {
     const currentBlock = await this.client.getBlockNumber();
 
     // Use configured start block, or default to last 2 million blocks
-    const DEFAULT_LOOKBACK = 2_000_000n;
+    const DEFAULT_LOOKBACK = 500_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
