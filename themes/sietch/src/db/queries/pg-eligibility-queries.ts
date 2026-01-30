@@ -96,15 +96,17 @@ export async function saveEligibilitySnapshotPg(entries: EligibilityEntry[]): Pr
     await tx.delete(eligibilityCurrent);
 
     // 3. Insert current eligibility (only rank <= 69)
+    // Note: Convert BigInt to string for postgres.js driver compatibility,
+    // then cast back to bigint in the insert (Drizzle handles the cast)
     const eligibleEntries = entries.filter((e) => e.rank !== undefined && e.rank <= 69);
     if (eligibleEntries.length > 0) {
       await tx.insert(eligibilityCurrent).values(
         eligibleEntries.map((entry) => ({
           address: entry.address.toLowerCase(),
           rank: entry.rank!,
-          bgtClaimed: entry.bgtClaimed,
-          bgtBurned: entry.bgtBurned,
-          bgtHeld: entry.bgtHeld,
+          bgtClaimed: entry.bgtClaimed.toString() as unknown as bigint,
+          bgtBurned: entry.bgtBurned.toString() as unknown as bigint,
+          bgtHeld: entry.bgtHeld.toString() as unknown as bigint,
           role: entry.role,
           updatedAt: new Date(),
         }))
