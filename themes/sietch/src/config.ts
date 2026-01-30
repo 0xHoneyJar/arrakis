@@ -122,6 +122,10 @@ const configSchema = z.object({
   chain: z.object({
     rpcUrls: urlListSchema, // Support multiple RPC URLs for resilience
     bgtAddress: addressSchema,
+    // Start block for historical event queries (default: last 2 million blocks)
+    // This prevents timeout when querying from block 0 on long-running chains
+    // Set to 0 to query all history (may timeout on public RPCs)
+    startBlock: z.coerce.number().int().min(0).default(0),
     // DEPRECATED: rewardVaultAddresses is no longer used
     // Eligibility is now determined by balanceOf + burn detection
     rewardVaultAddresses: z
@@ -673,6 +677,8 @@ export interface Config {
   chain: {
     rpcUrls: string[];
     bgtAddress: Address;
+    /** Start block for historical event queries (0 = use default 2M block lookback) */
+    startBlock: number;
     /** @deprecated No longer used - eligibility now uses balanceOf + burn detection */
     rewardVaultAddresses: Address[];
   };
@@ -1110,6 +1116,7 @@ export const config: Config = {
   chain: {
     rpcUrls: parsedConfig.chain.rpcUrls,
     bgtAddress: parsedConfig.chain.bgtAddress as Address,
+    startBlock: parsedConfig.chain.startBlock,
     rewardVaultAddresses: parsedConfig.chain.rewardVaultAddresses as Address[],
   },
   triggerDev: parsedConfig.triggerDev,

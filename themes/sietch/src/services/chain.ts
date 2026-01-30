@@ -223,13 +223,25 @@ class ChainService {
   /**
    * Fetch all wallets that have ever received BGT
    * Queries Transfer events where 'to' is not 0x0
+   *
+   * Uses startBlock from config to limit historical queries.
+   * Default behavior: query last 2 million blocks if startBlock is 0.
    */
   async fetchBgtRecipients(): Promise<Set<Address>> {
     const currentBlock = await this.client.getBlockNumber();
     const recipients = new Set<Address>();
-    let fromBlock = 0n;
 
-    logger.info('Fetching all BGT recipients from Transfer events');
+    // Use configured start block, or default to last 2 million blocks to prevent timeout
+    const DEFAULT_LOOKBACK = 2_000_000n;
+    let fromBlock: bigint;
+    if (config.chain.startBlock > 0) {
+      fromBlock = BigInt(config.chain.startBlock);
+    } else {
+      // Default: query last 2 million blocks
+      fromBlock = currentBlock > DEFAULT_LOOKBACK ? currentBlock - DEFAULT_LOOKBACK : 0n;
+    }
+
+    logger.info({ fromBlock: fromBlock.toString(), currentBlock: currentBlock.toString() }, 'Fetching BGT recipients from Transfer events');
 
     while (fromBlock <= currentBlock) {
       const endBlock = fromBlock + BLOCK_RANGE - 1n > currentBlock ? currentBlock : fromBlock + BLOCK_RANGE - 1n;
@@ -332,6 +344,7 @@ class ChainService {
 
   /**
    * Fetch Transfer logs with pagination (for burns)
+   * Uses startBlock from config to limit historical queries.
    */
   private async fetchTransferLogs(
     address: Address,
@@ -339,7 +352,17 @@ class ChainService {
     toAddress: Address
   ): Promise<BurnEvent[]> {
     const events: BurnEvent[] = [];
-    let fromBlock = 0n;
+
+    // Use configured start block, or default to last 2 million blocks
+    const DEFAULT_LOOKBACK = 2_000_000n;
+    let fromBlock: bigint;
+    if (config.chain.startBlock > 0) {
+      fromBlock = BigInt(config.chain.startBlock);
+    } else {
+      fromBlock = toBlock > DEFAULT_LOOKBACK ? toBlock - DEFAULT_LOOKBACK : 0n;
+    }
+
+    logger.info({ fromBlock: fromBlock.toString(), toBlock: toBlock.toString() }, 'Fetching burn events from Transfer logs');
 
     while (fromBlock <= toBlock) {
       const endBlock = fromBlock + BLOCK_RANGE - 1n > toBlock ? toBlock : fromBlock + BLOCK_RANGE - 1n;
@@ -382,13 +405,22 @@ class ChainService {
 
   /**
    * Check if a specific wallet has ever burned BGT
+   * Uses startBlock from config to limit historical queries.
    *
    * @param address - Wallet address to check
    * @returns true if the wallet has burned any BGT, false otherwise
    */
   async hasWalletBurnedBgt(address: Address): Promise<boolean> {
     const currentBlock = await this.client.getBlockNumber();
-    let fromBlock = 0n;
+
+    // Use configured start block, or default to last 2 million blocks
+    const DEFAULT_LOOKBACK = 2_000_000n;
+    let fromBlock: bigint;
+    if (config.chain.startBlock > 0) {
+      fromBlock = BigInt(config.chain.startBlock);
+    } else {
+      fromBlock = currentBlock > DEFAULT_LOOKBACK ? currentBlock - DEFAULT_LOOKBACK : 0n;
+    }
 
     while (fromBlock <= currentBlock) {
       const endBlock = fromBlock + BLOCK_RANGE - 1n > currentBlock ? currentBlock : fromBlock + BLOCK_RANGE - 1n;
