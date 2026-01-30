@@ -305,6 +305,7 @@ export {
   getLatestEligibilitySnapshotPg,
   // Current eligibility queries
   getEligibilityByAddressPg,
+  getEligibilityFromSnapshotPg,
   getCurrentEligibilityPg,
   // Health status queries
   updateHealthStatusSuccessPg,

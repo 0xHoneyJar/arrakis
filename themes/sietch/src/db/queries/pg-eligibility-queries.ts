@@ -181,6 +181,47 @@ export async function getEligibilityByAddressPg(address: string): Promise<Eligib
 }
 
 /**
+ * Get eligibility info from the latest snapshot for any wallet (including non-top-69)
+ *
+ * This searches the full snapshot JSON, not just eligibility_current,
+ * so it can find rank info for wallets outside the top 69.
+ *
+ * @param address - Wallet address to look up
+ * @returns Eligibility entry or null if not found in any snapshot
+ */
+export async function getEligibilityFromSnapshotPg(address: string): Promise<EligibilityEntry | null> {
+  const db = getEligibilityPgDb();
+  const normalizedAddress = address.toLowerCase();
+
+  // Get the latest snapshot
+  const [row] = await db
+    .select({ data: eligibilitySnapshots.data })
+    .from(eligibilitySnapshots)
+    .orderBy(desc(eligibilitySnapshots.createdAt))
+    .limit(1);
+
+  if (!row) {
+    return null;
+  }
+
+  const serialized = row.data as SerializedEligibilityEntry[];
+  const entry = serialized.find((e) => e.address.toLowerCase() === normalizedAddress);
+
+  if (!entry) {
+    return null;
+  }
+
+  return {
+    address: entry.address as `0x${string}`,
+    bgtClaimed: BigInt(entry.bgtClaimed),
+    bgtBurned: BigInt(entry.bgtBurned),
+    bgtHeld: BigInt(entry.bgtHeld),
+    rank: entry.rank,
+    role: entry.role,
+  };
+}
+
+/**
  * Get all current eligible entries (top 69), sorted by rank
  *
  * @returns Array of eligibility entries sorted by rank ascending

@@ -25,6 +25,7 @@ import {
   // PostgreSQL eligibility queries (Sprint 175)
   setEligibilityPgDb,
   getEligibilityByAddressPg,
+  getEligibilityFromSnapshotPg,
   isEligibilityPgDbInitialized,
 } from '../db/index.js';
 // Sprint 176: User Registry Service
@@ -349,7 +350,7 @@ function createApp(): Application {
             }
           }
 
-          // Send Discord DM notification to user
+          // Send Discord DM notification to user with eligibility status
           if (discordService.isConnected()) {
             try {
               const client = discordService.getClient();
@@ -357,41 +358,73 @@ function createApp(): Application {
 
               if (user) {
                 const truncatedAddress = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
-                const embed = new EmbedBuilder()
-                  .setTitle('✅ Wallet Verified!')
-                  .setDescription(
-                    `Your wallet has been successfully linked to your Discord account.\n\n` +
-                    `**Wallet:** \`${truncatedAddress}\`\n\n` +
-                    `**What's Next?**\n` +
-                    `If your wallet is in the top 69 BGT holders, you'll receive an ` +
-                    `onboarding wizard to set up your Sietch profile (nym, PFP, bio).\n\n` +
-                    `Use \`/verify status\` to check your verification status.`
-                  )
-                  .setColor(0x00FF00) // Green
-                  .setTimestamp()
-                  .setFooter({ text: 'Powered by Arrakis' });
 
-                await user.send({ embeds: [embed] });
-                logger.info({ discordUserId }, 'Sent verification success DM to user');
-
-                // Check if wallet is eligible (top 69 BGT holders) and trigger onboarding
+                // Check eligibility first so we can include it in the DM
                 // Sprint 175: Use PostgreSQL for eligibility check (persistent across restarts)
                 let eligibility = null;
+                let snapshotEligibility = null;
                 if (isEligibilityPgDbInitialized()) {
+                  // First check top 69 (eligibility_current)
                   eligibility = await getEligibilityByAddressPg(walletAddress.toLowerCase());
+                  // If not in top 69, check full snapshot for their rank
+                  if (!eligibility) {
+                    snapshotEligibility = await getEligibilityFromSnapshotPg(walletAddress.toLowerCase());
+                  }
                 } else {
                   // Fallback to SQLite (may be empty after restart)
                   eligibility = getEligibilityByAddress(walletAddress.toLowerCase());
                 }
-                if (eligibility && eligibility.rank && eligibility.rank <= 69) {
-                  // User is eligible! Check if they already have a profile
+
+                const isEligible = eligibility && eligibility.rank && eligibility.rank <= 69;
+                const rank = eligibility?.rank ?? snapshotEligibility?.rank;
+
+                // Build the DM message based on eligibility
+                let description = `Your wallet has been successfully linked to your Discord account.\n\n`;
+                description += `**Wallet:** \`${truncatedAddress}\`\n\n`;
+
+                if (isEligible && eligibility && eligibility.rank !== undefined) {
+                  // User is in top 69 - they're getting onboarding
+                  const userRank = eligibility.rank;
+                  const tier = userRank <= 7 ? 'Naib' : 'Fedaykin';
+                  description += `**BGT Position:** #${userRank} of 69\n`;
+                  description += `**Tier:** ${tier}\n\n`;
+                  description += `**You're eligible for Sietch!** An onboarding wizard will start shortly to set up your profile (nym, PFP, bio).`;
+                } else if (rank) {
+                  // User has a rank but isn't in top 69
+                  description += `**BGT Position:** #${rank}\n\n`;
+                  description += `**Not Yet Eligible**\n`;
+                  description += `Sietch membership requires being in the top 69 BGT holders. `;
+                  description += `You're currently at position #${rank}.\n\n`;
+                  description += `Keep accumulating BGT! When you reach the top 69, you'll automatically receive the onboarding wizard.`;
+                } else {
+                  // Wallet not found in any eligibility data
+                  description += `**BGT Position:** Not ranked\n\n`;
+                  description += `**Not Yet Eligible**\n`;
+                  description += `Sietch membership requires being in the top 69 BGT holders. `;
+                  description += `Your wallet wasn't found in the BGT holder rankings.\n\n`;
+                  description += `Start accumulating BGT to become eligible! Rankings update periodically.`;
+                }
+
+                description += `\n\nUse \`/verify status\` to check your verification status anytime.`;
+
+                const embed = new EmbedBuilder()
+                  .setTitle('✅ Wallet Verified!')
+                  .setDescription(description)
+                  .setColor(isEligible ? 0x00FF00 : 0xFFA500) // Green if eligible, orange if not
+                  .setTimestamp()
+                  .setFooter({ text: 'Powered by Arrakis' });
+
+                await user.send({ embeds: [embed] });
+                logger.info({ discordUserId, rank, isEligible }, 'Sent verification success DM to user');
+
+                // Trigger onboarding if eligible
+                if (isEligible && eligibility && eligibility.rank !== undefined) {
                   const existingProfile = profileService.getProfileByDiscordId(discordUserId);
                   if (!existingProfile) {
-                    // Trigger onboarding
-                    const tier = eligibility.rank <= 7 ? 'naib' : 'fedaykin';
-                    await onboardingService.startOnboarding(user, tier);
+                    const onboardTier = eligibility.rank <= 7 ? 'naib' : 'fedaykin';
+                    await onboardingService.startOnboarding(user, onboardTier);
                     logger.info(
-                      { discordUserId, walletAddress, rank: eligibility.rank, tier },
+                      { discordUserId, walletAddress, rank: eligibility.rank, tier: onboardTier },
                       'Triggered onboarding after wallet verification - user is eligible'
                     );
                   } else {
@@ -399,7 +432,7 @@ function createApp(): Application {
                   }
                 } else {
                   logger.info(
-                    { discordUserId, walletAddress, rank: eligibility?.rank },
+                    { discordUserId, walletAddress, rank },
                     'Wallet verified but not in top 69 - onboarding not triggered'
                   );
                 }
