@@ -100,8 +100,10 @@ export interface CrossChainScore {
 /** Source of eligibility determination */
 export type EligibilitySource =
   | 'native'           // Tier 1: Direct RPC check
+  | 'dune_sim'         // Tier 1: Dune Sim API check
   | 'score_service'    // Tier 2: Score Service query
-  | 'native_degraded'; // Tier 1 fallback when Tier 2 unavailable
+  | 'native_degraded'  // Tier 1 fallback when Tier 2 unavailable
+  | 'dune_sim_degraded'; // Dune Sim fallback when Tier 2 unavailable
 
 /** Result of an eligibility check */
 export interface EligibilityResult {
@@ -271,6 +273,103 @@ export interface IChainProvider {
    * @returns Array of supported chain IDs
    */
   getSupportedChains(): ChainId[];
+
+  // --------------------------------------------------------------------------
+  // Optional Methods (Dune Sim Exclusive)
+  // --------------------------------------------------------------------------
+  // These methods are only available when using DuneSimClient or HybridChainProvider.
+  // They provide enhanced functionality not available via direct RPC.
+
+  /**
+   * Get balance with USD pricing information (optional)
+   *
+   * Only available with Dune Sim provider. Returns balance with current
+   * USD price and total USD value.
+   *
+   * @param chainId - Chain to check on
+   * @param address - Wallet address to check
+   * @param token - Token contract address or 'native' for native token
+   * @returns Balance with USD pricing, or undefined if not supported
+   */
+  getBalanceWithUSD?(
+    chainId: ChainId,
+    address: Address,
+    token: Address | 'native'
+  ): Promise<{
+    balance: bigint;
+    symbol: string;
+    decimals: number;
+    priceUsd: number | null;
+    valueUsd: number | null;
+  }>;
+
+  /**
+   * Get NFT collectibles owned by an address (optional)
+   *
+   * Only available with Dune Sim provider. Returns all NFTs with metadata,
+   * spam filtering, and floor prices.
+   *
+   * @param address - Wallet address to check
+   * @param options - Query options (chainIds, filterSpam, limit, cursor)
+   * @returns List of collectibles with pagination, or undefined if not supported
+   */
+  getCollectibles?(
+    address: Address,
+    options?: {
+      chainIds?: number[];
+      filterSpam?: boolean;
+      limit?: number;
+      cursor?: string;
+    }
+  ): Promise<{
+    collectibles: Array<{
+      contractAddress: string;
+      tokenId: string;
+      collectionName: string;
+      tokenStandard: 'ERC721' | 'ERC1155';
+      amount: bigint;
+      isSpam: boolean;
+      floorPriceUsd: number | null;
+      imageUrl: string | null;
+    }>;
+    nextCursor: string | null;
+  }>;
+
+  /**
+   * Get transaction activity history (optional)
+   *
+   * Only available with Dune Sim provider. Returns parsed transaction
+   * history with categorization and USD values.
+   *
+   * @param address - Wallet address to check
+   * @param options - Query options (chainIds, limit, cursor, types)
+   * @returns List of activities with pagination, or undefined if not supported
+   */
+  getActivity?(
+    address: Address,
+    options?: {
+      chainIds?: number[];
+      limit?: number;
+      cursor?: string;
+      types?: string[];
+    }
+  ): Promise<{
+    activities: Array<{
+      txHash: string;
+      blockNumber: number;
+      timestamp: Date;
+      type: string;
+      description: string;
+      from: string;
+      to: string;
+      value: bigint;
+      fee: bigint;
+      feeUsd: number | null;
+      chainId: number;
+      status: 'success' | 'failed';
+    }>;
+    nextCursor: string | null;
+  }>;
 }
 
 // --------------------------------------------------------------------------
