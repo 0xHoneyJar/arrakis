@@ -7,7 +7,8 @@
  * @module db/queries/pg-eligibility-queries
  */
 
-import { eq, desc, and, gt, isNull, or, sql } from 'drizzle-orm';
+import { eq, desc, and, gt, isNull, or, sql as drizzleSql } from 'drizzle-orm';
+import postgres from 'postgres';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { logger } from '../../utils/logger.js';
 import type { EligibilityEntry, AdminOverride, SerializedEligibilityEntry } from '../../types/index.js';
@@ -24,13 +25,23 @@ import {
 // =============================================================================
 
 let pgDb: PostgresJsDatabase | null = null;
+let pgSql: ReturnType<typeof postgres> | null = null;
 
 /**
  * Set the PostgreSQL database instance for eligibility queries
  */
-export function setEligibilityPgDb(db: PostgresJsDatabase): void {
+export function setEligibilityPgDb(db: PostgresJsDatabase, rawSql?: ReturnType<typeof postgres>): void {
   pgDb = db;
+  pgSql = rawSql ?? null;
   logger.info('PostgreSQL database set for eligibility queries');
+}
+
+/**
+ * Set the raw postgres client for direct SQL operations
+ */
+export function setEligibilityPgSql(rawSql: ReturnType<typeof postgres>): void {
+  pgSql = rawSql;
+  logger.info('Raw postgres client set for eligibility queries');
 }
 
 /**
@@ -96,21 +107,18 @@ export async function saveEligibilitySnapshotPg(entries: EligibilityEntry[]): Pr
     await tx.delete(eligibilityCurrent);
 
     // 3. Insert current eligibility (only rank <= 69)
-    // Note: Convert BigInt to string for postgres.js driver compatibility,
-    // then cast back to bigint in the insert (Drizzle handles the cast)
+    // Note: Use raw SQL for BigInt values - postgres.js handles bigint string literals correctly
     const eligibleEntries = entries.filter((e) => e.rank !== undefined && e.rank <= 69);
     if (eligibleEntries.length > 0) {
-      await tx.insert(eligibilityCurrent).values(
-        eligibleEntries.map((entry) => ({
-          address: entry.address.toLowerCase(),
-          rank: entry.rank!,
-          bgtClaimed: entry.bgtClaimed.toString() as unknown as bigint,
-          bgtBurned: entry.bgtBurned.toString() as unknown as bigint,
-          bgtHeld: entry.bgtHeld.toString() as unknown as bigint,
-          role: entry.role,
-          updatedAt: new Date(),
-        }))
-      );
+      // Build VALUES clause with proper bigint casting
+      const values = eligibleEntries.map((entry) =>
+        `('${entry.address.toLowerCase()}', ${entry.rank}, ${entry.bgtClaimed.toString()}::bigint, ${entry.bgtBurned.toString()}::bigint, ${entry.bgtHeld.toString()}::bigint, '${entry.role}', NOW())`
+      ).join(', ');
+
+      await tx.execute(drizzleSql.raw(`
+        INSERT INTO eligibility_current (address, rank, bgt_claimed, bgt_burned, bgt_held, role, updated_at)
+        VALUES ${values}
+      `));
     }
 
     return snapshot.id;
@@ -280,7 +288,7 @@ export async function updateHealthStatusFailurePg(): Promise<void> {
     .update(eligibilityHealthStatus)
     .set({
       lastFailure: new Date(),
-      consecutiveFailures: sql`${eligibilityHealthStatus.consecutiveFailures} + 1`,
+      consecutiveFailures: drizzleSql`${eligibilityHealthStatus.consecutiveFailures} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(eligibilityHealthStatus.id, 1));
