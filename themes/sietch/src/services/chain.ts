@@ -231,13 +231,13 @@ class ChainService {
     const currentBlock = await this.client.getBlockNumber();
     const recipients = new Set<Address>();
 
-    // Use configured start block, or default to last 2 million blocks to prevent timeout
-    const DEFAULT_LOOKBACK = 500_000n;
+    // Use configured start block, or default to last 100K blocks
+    // 100K / 10K batches = 10 RPC requests - keeps under rate limits
+    const DEFAULT_LOOKBACK = 100_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
     } else {
-      // Default: query last 2 million blocks
       fromBlock = currentBlock > DEFAULT_LOOKBACK ? currentBlock - DEFAULT_LOOKBACK : 0n;
     }
 
@@ -353,8 +353,8 @@ class ChainService {
   ): Promise<BurnEvent[]> {
     const events: BurnEvent[] = [];
 
-    // Use configured start block, or default to last 2 million blocks
-    const DEFAULT_LOOKBACK = 500_000n;
+    // Use configured start block, or default to last 100K blocks
+    const DEFAULT_LOOKBACK = 100_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
@@ -413,8 +413,8 @@ class ChainService {
   async hasWalletBurnedBgt(address: Address): Promise<boolean> {
     const currentBlock = await this.client.getBlockNumber();
 
-    // Use configured start block, or default to last 2 million blocks
-    const DEFAULT_LOOKBACK = 500_000n;
+    // Use configured start block, or default to last 100K blocks
+    const DEFAULT_LOOKBACK = 100_000n;
     let fromBlock: bigint;
     if (config.chain.startBlock > 0) {
       fromBlock = BigInt(config.chain.startBlock);
