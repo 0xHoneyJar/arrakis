@@ -151,13 +151,32 @@ compound_learning:
     reusability: { min_score: 5 }
 
 # -----------------------------------------------------------------------------
-# Visual Communication (v1.10.0)
+# Visual Communication (v2.0.0)
 # -----------------------------------------------------------------------------
 visual_communication:
   enabled: true
-  service: "https://agents.craft.do/mermaid"
+  mode: "github"   # github (default) | render | url
   theme: "github"  # github|dracula|nord|tokyo-night|solarized-light|solarized-dark|catppuccin
-  include_preview_urls: true
+
+  # Local rendering options (for mode: render)
+  local_render:
+    output_format: "svg"  # svg | png
+    output_dir: "grimoires/loa/diagrams/"
+
+  # Legacy URL options (for mode: url)
+  service: "https://agents.craft.do/mermaid"  # External service URL
+  include_preview_urls: false  # Generate preview links (legacy)
+
+# -----------------------------------------------------------------------------
+# Agent Browser (v2.0.0)
+# -----------------------------------------------------------------------------
+agent_browser:
+  enabled: false              # Opt-in (default: false)
+  tool: "dev-browser"         # MCP server to use
+  mode: "headless"            # headless | extension
+  session_persistence: true   # Keep sessions between calls
+  screenshot_dir: "grimoires/loa/screenshots/"
+  timeout_ms: 30000           # Navigation timeout
 
 # -----------------------------------------------------------------------------
 # Prompt Enhancement (v1.14.0)
