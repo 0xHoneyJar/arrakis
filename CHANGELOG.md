@@ -5,6 +5,95 @@ All notable changes to Loa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0] - 2026-02-02 — Visual Communication & Invisible Enhancement
+
+### Why This Release
+
+This release brings **Visual Communication v2.0** with GitHub-native Mermaid rendering and browser automation infrastructure, **Invisible Prompt Enhancement** that silently improves prompt quality, and a **95% context reduction** in CLAUDE.md through modular reference files.
+
+*"Better diagrams, better prompts, better context efficiency."*
+
+### Added
+
+#### Visual Communication v2.0 (#144)
+
+Complete rewrite of Mermaid diagram support with multiple rendering modes:
+
+```yaml
+# .loa.config.yaml
+visual_communication:
+  mode: "github"   # github (default) | render | url
+  theme: "github"  # github|dracula|nord|tokyo-night|solarized-light|solarized-dark|catppuccin
+```
+
+**Key Features**:
+- **GitHub Native Mode**: Direct Mermaid code blocks render in GitHub PRs/Issues
+- **Local Render Mode**: SVG/PNG output via mermaid-cli for offline use
+- **Legacy URL Mode**: External service URLs for backward compatibility
+- **7 Theme Presets**: GitHub, Dracula, Nord, Tokyo Night, Solarized (light/dark), Catppuccin
+
+**Browser Automation Infrastructure**:
+- MCP dev-browser integration for visual verification
+- Screenshot capture to `grimoires/loa/screenshots/`
+- Headless and extension modes
+- Protocol: `.claude/protocols/browser-automation.md`
+
+#### Invisible Prompt Enhancement (#145)
+
+Automatic prompt enhancement without user visibility using PTCF framework:
+
+```yaml
+# .loa.config.yaml
+prompt_enhancement:
+  invisible_mode:
+    enabled: true
+    log_to_trajectory: true
+```
+
+**Key Features**:
+- **Silent Enhancement**: Prompts scoring < 4 are enhanced invisibly
+- **PTCF Framework**: Persona + Task + Context + Format analysis
+- **Skill-Level Preludes**: Enhancement logic embedded in skill SKILL.md files
+- **Recursion Prevention**: `/enhance` command has `enhance: false` frontmatter
+- **Trajectory Logging**: Activity logged to `grimoires/loa/a2a/trajectory/prompt-enhancement-*.jsonl`
+- **Passthrough on Error**: Any failure uses original prompt unchanged
+
+**Skills with Enhancement Prelude**:
+- `discovering-requirements` (/plan-and-analyze)
+- `implementing-tasks` (/implement)
+- `translating-for-executives` (/translate)
+
+**`/loa` Status Updates**:
+- Shows enhancement metrics (enhanced/skipped/errors count)
+- Average latency tracking
+
+#### CLAUDE.md Context Optimization (#142)
+
+95% reduction in CLAUDE.md token usage through modular reference architecture:
+
+**New Reference Files** (`.claude/loa/reference/`):
+- `context-engineering.md` - Memory protocols, attention budgets
+- `protocols-summary.md` - Key protocol summaries
+- `scripts-reference.md` - Helper script documentation
+- `version-features.md` - Version-specific feature details
+
+**Token Impact**:
+- Before: ~50K tokens loaded every session
+- After: ~2.5K tokens (table of contents)
+- Reference files loaded on-demand
+
+### Changed
+
+- `/loa` command now displays prompt enhancement statistics
+- `mermaid-url.sh` enhanced with theme support and local rendering options
+- `.loa.config.yaml.example` expanded with visual communication and invisible enhancement configs
+
+### Technical Notes
+
+- Browser automation requires MCP dev-browser server (opt-in)
+- Invisible enhancement uses prelude-based architecture (hooks cannot modify prompts)
+- Reference files use lazy loading pattern for context efficiency
+
 ## [1.17.0] - 2026-02-02 — Upstream Learning Flow
 
 ### Why This Release
