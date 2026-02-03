@@ -51,6 +51,7 @@ DAYS=""
 CYCLE_START=""
 CYCLE_END=""
 PATTERNS_FOUND=0
+FLATLINE_LEARNINGS=0  # v1.23.0: Count of Flatline-derived learnings
 SKILLS_EXTRACTED=0
 SKILLS_PROMOTED=0
 
@@ -139,6 +140,133 @@ log_event() {
   fi
 }
 
+# =============================================================================
+# Flatline Integration Functions (v1.23.0)
+# =============================================================================
+
+# Check if Flatline integration is enabled
+flatline_integration_enabled() {
+  if [[ -f "$CONFIG_FILE" ]]; then
+    local enabled
+    enabled=$(yq -e '.compound_learning.flatline_integration.enabled // false' "$CONFIG_FILE" 2>/dev/null || echo "false")
+    [[ "$enabled" == "true" ]]
+    return $?
+  fi
+  return 1
+}
+
+# Check if Flatline validation is enabled
+flatline_validation_enabled() {
+  if [[ -f "$CONFIG_FILE" ]]; then
+    local enabled
+    enabled=$(yq -e '.compound_learning.flatline_integration.validation.enabled // false' "$CONFIG_FILE" 2>/dev/null || echo "false")
+    [[ "$enabled" == "true" ]]
+    return $?
+  fi
+  return 1
+}
+
+# Validate borderline learnings via Flatline
+validate_borderline_learnings() {
+  local patterns_json="$1"
+
+  # Get borderline range from config
+  local borderline_min borderline_max
+  borderline_min=$(yq -e '.compound_learning.flatline_integration.validation.borderline_range[0] // 20' "$CONFIG_FILE" 2>/dev/null || echo "20")
+  borderline_max=$(yq -e '.compound_learning.flatline_integration.validation.borderline_range[1] // 28' "$CONFIG_FILE" 2>/dev/null || echo "28")
+
+  # Count borderline patterns
+  local borderline_count
+  borderline_count=$(echo "$patterns_json" | jq --argjson min "$borderline_min" --argjson max "$borderline_max" \
+    '[.[] | select(.passes == false and .total_score >= $min and .total_score <= $max)] | length')
+
+  if [[ "$borderline_count" -eq 0 ]]; then
+    echo "  No borderline learnings to validate"
+    log_event "borderline_validation_skipped" "count=0"
+    return 0
+  fi
+
+  echo "  Found $borderline_count borderline learnings (score $borderline_min-$borderline_max)"
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "  [DRY-RUN] Would validate with Flatline"
+    return 0
+  fi
+
+  # Run quality gates with Flatline validation
+  local validation_results
+  validation_results=$("$SCRIPT_DIR/quality-gates.sh" \
+    --patterns /tmp/compound-patterns.json \
+    --with-flatline-validation \
+    --borderline-range "$borderline_min,$borderline_max" \
+    --output json 2>/dev/null || echo "[]")
+
+  # Count results
+  local promoted demoted disputed
+  promoted=$(echo "$validation_results" | jq '[.[] | select(.flatline_action == "promote")] | length')
+  demoted=$(echo "$validation_results" | jq '[.[] | select(.flatline_action == "demote")] | length')
+  disputed=$(echo "$validation_results" | jq '[.[] | select(.flatline_action == "human_review")] | length')
+
+  echo "  Validation results: $promoted promoted, $demoted demoted, $disputed disputed"
+
+  log_event "borderline_validation_complete" "borderline=$borderline_count,promoted=$promoted,demoted=$demoted,disputed=$disputed"
+
+  # Update patterns file with validation results
+  echo "$validation_results" > /tmp/compound-patterns.json
+}
+
+# Ingest Flatline learnings from flatline-learnings.jsonl
+ingest_flatline_learnings() {
+  local flatline_learnings_file="${COMPOUND_DIR}/flatline-learnings.jsonl"
+
+  if [[ ! -f "$flatline_learnings_file" ]]; then
+    log_event "flatline_ingest_skipped" "file_not_found"
+    return 0
+  fi
+
+  # Count learnings
+  FLATLINE_LEARNINGS=$(wc -l < "$flatline_learnings_file" | tr -d ' ')
+
+  if [[ "$FLATLINE_LEARNINGS" -eq 0 ]]; then
+    log_event "flatline_ingest_skipped" "empty_file"
+    return 0
+  fi
+
+  log_event "flatline_ingest_start" "count=$FLATLINE_LEARNINGS"
+
+  # Convert JSONL to array and merge with session patterns
+  local flatline_patterns
+  flatline_patterns=$(jq -s '.' "$flatline_learnings_file" 2>/dev/null || echo "[]")
+
+  # Merge with existing patterns
+  if [[ -f /tmp/compound-patterns.json ]]; then
+    local existing_patterns
+    existing_patterns=$(cat /tmp/compound-patterns.json)
+
+    # Combine arrays, marking flatline patterns
+    jq -s '.[0] + .[1]' <(echo "$existing_patterns") <(echo "$flatline_patterns") > /tmp/compound-patterns.json.tmp
+    mv /tmp/compound-patterns.json.tmp /tmp/compound-patterns.json
+
+    PATTERNS_FOUND=$(jq 'length' /tmp/compound-patterns.json)
+  else
+    # Just use flatline patterns
+    echo "$flatline_patterns" > /tmp/compound-patterns.json
+    PATTERNS_FOUND=$FLATLINE_LEARNINGS
+  fi
+
+  log_event "flatline_ingest_complete" "count=$FLATLINE_LEARNINGS,total_patterns=$PATTERNS_FOUND"
+
+  # Archive the ingested file to prevent re-processing
+  if [[ "$DRY_RUN" == "false" ]]; then
+    local archive_file="${flatline_learnings_file}.$(date +%Y%m%d%H%M%S)"
+    mv "$flatline_learnings_file" "$archive_file"
+  fi
+}
+
+# =============================================================================
+# Cycle Detection
+# =============================================================================
+
 # Detect current cycle from ledger
 detect_cycle() {
   if [[ ! -f "$LEDGER_FILE" ]]; then
@@ -200,10 +328,19 @@ cmd_status() {
   
   # Patterns
   local pattern_count=0
+  local flatline_pattern_count=0
   if [[ -f "${COMPOUND_DIR}/patterns.json" ]]; then
     pattern_count=$(jq '.patterns | length' "${COMPOUND_DIR}/patterns.json" 2>/dev/null || echo "0")
+    flatline_pattern_count=$(jq '[.patterns[] | select(.source == "flatline")] | length' "${COMPOUND_DIR}/patterns.json" 2>/dev/null || echo "0")
   fi
   echo "- Patterns Detected: $pattern_count"
+
+  # Flatline learnings (v1.23.0)
+  local flatline_pending=0
+  if [[ -f "${COMPOUND_DIR}/flatline-learnings.jsonl" ]]; then
+    flatline_pending=$(wc -l < "${COMPOUND_DIR}/flatline-learnings.jsonl" | tr -d ' ')
+  fi
+  echo "- Flatline Patterns: $flatline_pattern_count (active), $flatline_pending (pending)"
   
   # Pending skills
   local pending_count=0
@@ -305,7 +442,17 @@ cmd_review() {
     PATTERNS_FOUND=$(jq 'length' /tmp/compound-patterns.json 2>/dev/null || echo "0")
   fi
   echo "  Found $PATTERNS_FOUND patterns"
-  
+
+  # Step 2.5: Ingest Flatline learnings (v1.23.0)
+  echo ""
+  echo "[2.5/6] Ingesting Flatline learnings..."
+  if flatline_integration_enabled; then
+    ingest_flatline_learnings
+    echo "  Ingested $FLATLINE_LEARNINGS Flatline-derived learnings"
+  else
+    echo "  Skipped (flatline_integration.enabled=false)"
+  fi
+
   # Step 3: Quality gates
   echo ""
   echo "[3/6] Applying quality gates..."
@@ -333,6 +480,15 @@ cmd_review() {
       SKILLS_EXTRACTED=$((SKILLS_EXTRACTED + 1))
     done
     echo "  Extracted $SKILLS_EXTRACTED skills to skills-pending/"
+  fi
+
+  # Step 4.5: Validate borderline learnings via Flatline (v1.23.0)
+  echo ""
+  echo "[4.5/6] Validating borderline learnings..."
+  if flatline_validation_enabled; then
+    validate_borderline_learnings "$qualified_patterns"
+  else
+    echo "  Skipped (flatline_integration.validation.enabled=false)"
   fi
   
   # Step 5: Consolidation (unless review-only)
