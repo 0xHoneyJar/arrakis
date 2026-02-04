@@ -1,0 +1,773 @@
+# =============================================================================
+# Loa Framework Configuration Examples
+# =============================================================================
+# This file contains comprehensive configuration examples for .loa.config.yaml
+# Copy sections you need to your .loa.config.yaml file.
+#
+# For documentation on each option, see:
+# - .claude/loa/reference/config-reference.md
+# - CHANGELOG.md for version-specific features
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Plan and Analyze (v1.6.0)
+# -----------------------------------------------------------------------------
+plan_and_analyze:
+  codebase_grounding:
+    enabled: true
+    reality_staleness_days: 7
+    ride_timeout_minutes: 20
+    skip_on_ride_error: false
+
+# -----------------------------------------------------------------------------
+# Autonomous Agent (v1.11.0)
+# -----------------------------------------------------------------------------
+autonomous_agent:
+  operator:
+    type: auto  # auto | human | ai
+  audit_threshold: 4
+  max_remediation_loops: 3
+  context:
+    soft_limit_tokens: 80000
+    hard_limit_tokens: 150000
+
+# -----------------------------------------------------------------------------
+# Workspace Cleanup (v1.23.0)
+# -----------------------------------------------------------------------------
+# Archives previous cycle artifacts when starting fresh /simstim or /autonomous
+workspace_cleanup:
+  enabled: true                        # Enable workspace cleanup in preflight
+
+  # Default action when no TTY (non-interactive mode)
+  # Options: archive | skip
+  default_action: archive
+
+  # Disk space safety settings
+  disk_space:
+    safety_margin: 2                   # Require 2x archive size free space
+
+  # Lock settings for concurrent execution prevention
+  lock:
+    ttl_seconds: 300                   # Lock timeout for stale detection
+
+  # Security settings
+  security:
+    follow_symlinks: false             # Never follow symlinks (security)
+
+  # Archive retention policy
+  retention:
+    max_age_days: 90                   # Delete archives older than 90 days
+    max_count: 10                      # Keep only 10 newest archives
+    # Note: Archives with .keep marker are never deleted
+
+  # Prompt settings (for interactive mode)
+  prompt:
+    timeout_seconds: 5                 # Timeout before defaulting to archive
+
+# -----------------------------------------------------------------------------
+# Goal Traceability (v0.21.0)
+# -----------------------------------------------------------------------------
+goal_traceability:
+  enabled: true              # Enable goal ID system
+  require_goal_ids: false    # Require G-N IDs in PRD (backward compat)
+  auto_assign_ids: true      # Auto-assign if missing
+  generate_appendix_c: true  # Generate goal mapping in sprint
+  generate_e2e_task: true    # Auto-generate E2E validation task
+
+goal_validation:
+  enabled: true              # Enable goal validation
+  block_on_at_risk: false    # Block review on AT_RISK (default: warn)
+  block_on_blocked: true     # Block review on BLOCKED
+  require_e2e_task: true     # Require E2E task in final sprint
+
+# -----------------------------------------------------------------------------
+# Effort Parameter (v1.13.0)
+# -----------------------------------------------------------------------------
+effort:
+  default_level: medium
+  budget_ranges:
+    low: { min: 1024, max: 4000 }
+    medium: { min: 8000, max: 16000 }
+    high: { min: 24000, max: 32000 }
+  per_skill:
+    auditing-security: high
+    designing-architecture: high
+    implementing-tasks: medium
+    translating-for-executives: low
+
+# -----------------------------------------------------------------------------
+# Context Editing (v1.13.0)
+# -----------------------------------------------------------------------------
+context_editing:
+  enabled: true
+  compact_threshold_percent: 80
+  preserve_recent_turns: 5
+  clear_targets:
+    - stale_tool_results
+    - completed_phase_details
+    - superseded_file_reads
+  preserve_artifacts:
+    - trajectory_events
+    - quality_gate_results
+    - decision_records
+
+# -----------------------------------------------------------------------------
+# Memory Schema (v1.13.0)
+# -----------------------------------------------------------------------------
+memory_schema:
+  enabled: true
+  storage_dir: grimoires/loa/memory
+  auto_capture:
+    decisions: true
+    errors: true
+    learnings: true
+  retrieval:
+    max_per_query: 10
+    min_confidence: 0.6
+  lifecycle:
+    auto_archive: true
+    check_on_session_start: true
+
+# -----------------------------------------------------------------------------
+# Skills (v1.14.0)
+# -----------------------------------------------------------------------------
+skills:
+  defer_loading: false        # Config prep only (runtime Phase 2)
+  always_load:
+    - autonomous-agent
+    - run-mode
+  categories:
+    planning: [discovering-requirements, planning-sprints, designing-architecture]
+    implementation: [implementing-tasks, deploying-infrastructure]
+    quality: [reviewing-code, auditing-security]
+    support: [translating-for-executives, continuous-learning]
+    operations: [autonomous-agent, run-mode, riding-codebase, mounting-framework]
+
+# -----------------------------------------------------------------------------
+# Learnings / Two-Tier Architecture (v1.15.1)
+# -----------------------------------------------------------------------------
+learnings:
+  tiers:
+    framework:
+      enabled: true
+      weight: 1.0
+    project:
+      enabled: true
+      weight: 0.9
+  query:
+    default_tier: all  # framework | project | all
+    max_results: 10
+
+# -----------------------------------------------------------------------------
+# Oracle (v1.11.0)
+# -----------------------------------------------------------------------------
+oracle:
+  weights:
+    loa: 1.0
+    anthropic: 0.8
+    community: 0.5
+  query:
+    default_indexer: auto  # auto | qmd | grep
+    default_limit: 10
+    default_scope: all
+
+# -----------------------------------------------------------------------------
+# Compound Learning (v1.10.0, Flatline Integration v1.23.0)
+# -----------------------------------------------------------------------------
+compound_learning:
+  enabled: true
+  pattern_detection:
+    min_occurrences: 2
+    similarity_threshold: 0.6
+  quality_gates:
+    discovery_depth: { min_score: 5 }
+    reusability: { min_score: 5 }
+
+  # Flatline Integration (v1.23.0)
+  # Connect Flatline Protocol multi-model consensus to Compound Learning
+  flatline_integration:
+    # Master toggle for Flatline → Compound Learning connection
+    enabled: true
+
+    # Capture learning candidates from Flatline HIGH_CONSENSUS outputs
+    capture_from_flatline:
+      enabled: true
+      min_consensus_score: 750      # Minimum consensus score (0-1000)
+      include_disputed: true         # Also capture low-delta disputed items
+      disputed_max_delta: 200        # Maximum score delta for disputed items
+
+    # Transformation configuration (content → trigger/solution)
+    transformation:
+      fallback_to_llm: true          # Use LLM when patterns fail
+      max_transformations_per_cycle: 50  # Prevent runaway API costs
+
+    # Validation of borderline learnings (Sprint 2)
+    validation:
+      enabled: true
+      borderline_range: [20, 28]     # Score range for borderline (out of 40)
+      max_validations_per_cycle: 10  # Budget control
+      rate_limit_seconds: 30         # Minimum time between validations
+
+    # Upstream proposal enhancement (Sprint 3)
+    upstream_enhancement:
+      semantic_similarity:
+        enabled: true
+        threshold: 70                # Similarity threshold (0-100)
+        alpha: 0.6                   # Weight for semantic vs Jaccard
+        combine_with_jaccard: true
+      pre_proposal_review:
+        enabled: true
+        min_alignment_score: 600     # Minimum alignment (0-1000)
+
+  # API configuration for Flatline integration
+  api:
+    max_retries: 3
+    initial_backoff_ms: 1000
+    max_backoff_ms: 30000
+    timeout_seconds: 60
+    circuit_breaker:
+      failure_threshold: 5
+      reset_timeout_seconds: 300
+
+  # LLM response validation
+  validation:
+    llm_responses:
+      require_schema_validation: true
+      sanitize_input: true
+      sanitize_output: true
+      banned_tokens:
+        - "ignore previous"
+        - "disregard instructions"
+        - "system prompt"
+
+  # Budget controls (SKP-001)
+  budget:
+    daily_budget_cents: 500          # Maximum daily API spend
+    warn_at_percent: 80              # Warning threshold
+    track_costs_in_trajectory: true
+
+  # Security and data redaction (SKP-006)
+  security:
+    redaction:
+      enabled: true
+      patterns:
+        - api_keys
+        - emails
+        - file_paths
+      allowlist_domains: []
+
+# -----------------------------------------------------------------------------
+# Visual Communication (v2.0.0)
+# -----------------------------------------------------------------------------
+visual_communication:
+  enabled: true
+  mode: "github"   # github (default) | render | url
+  theme: "github"  # github|dracula|nord|tokyo-night|solarized-light|solarized-dark|catppuccin
+
+  # Local rendering options (for mode: render)
+  local_render:
+    output_format: "svg"  # svg | png
+    output_dir: "grimoires/loa/diagrams/"
+
+  # Legacy URL options (for mode: url)
+  service: "https://agents.craft.do/mermaid"  # External service URL
+  include_preview_urls: false  # Generate preview links (legacy)
+
+# -----------------------------------------------------------------------------
+# Agent Browser (v2.0.0)
+# -----------------------------------------------------------------------------
+agent_browser:
+  enabled: false              # Opt-in (default: false)
+  tool: "dev-browser"         # MCP server to use
+  mode: "headless"            # headless | extension
+  session_persistence: true   # Keep sessions between calls
+  screenshot_dir: "grimoires/loa/screenshots/"
+  timeout_ms: 30000           # Navigation timeout
+
+# -----------------------------------------------------------------------------
+# Prompt Enhancement (v1.14.0 + Invisible Mode v1.17.0)
+# -----------------------------------------------------------------------------
+prompt_enhancement:
+  enabled: true
+  auto_enhance_threshold: 4
+  show_analysis: true
+  max_refinement_iterations: 3
+
+  # Invisible mode: automatically enhance prompts without user visibility
+  invisible_mode:
+    enabled: true              # Enable invisible enhancement for all commands
+    log_to_trajectory: true    # Log activity to trajectory for debugging
+    timeout_ms: 500            # Maximum time for enhancement (advisory)
+
+  # Middleware configuration
+  middleware:
+    enabled: true              # Enable middleware mode (enhancement before skill)
+    exclude_skills:            # Skills excluded from enhancement
+      - "enhancing-prompts"    # Prevent recursion
+      - "run-mode"             # Don't enhance autonomous mode
+    exclude_commands: []       # Additional commands to exclude
+
+# -----------------------------------------------------------------------------
+# URL Registry (v1.15.1)
+# -----------------------------------------------------------------------------
+url_registry:
+  enabled: true
+  placeholder_domain: your-domain.example.com
+  warn_on_missing: true
+
+# -----------------------------------------------------------------------------
+# Feedback Routing (v1.11.0)
+# -----------------------------------------------------------------------------
+feedback:
+  routing:
+    enabled: true           # Enable smart routing
+    auto_classify: true     # Auto-detect target repo
+    require_confirmation: true  # Always confirm with user
+  labels:
+    graceful_missing: true  # Don't fail on missing labels
+
+# -----------------------------------------------------------------------------
+# Update Loa / Branch Testing (v1.11.0)
+# -----------------------------------------------------------------------------
+update_loa:
+  branch_testing:
+    enabled: true
+    feature_patterns: ["feature/*", "fix/*", "topic/*", "wip/*", "test/*"]
+    test_branch_prefix: "test/loa-"
+
+# -----------------------------------------------------------------------------
+# Run Mode
+# -----------------------------------------------------------------------------
+run_mode:
+  enabled: true
+  defaults:
+    max_cycles: 20
+    timeout_hours: 8
+  sprint_plan:
+    branch_prefix: "feature/"
+    default_branch_name: "release"
+    consolidate_pr: true
+    commit_prefix: "feat"
+    include_commits_by_sprint: true
+
+# -----------------------------------------------------------------------------
+# Simstim - HITL Accelerated Development (v1.24.0)
+# -----------------------------------------------------------------------------
+# Orchestrate complete development cycle (PRD → SDD → Sprint → Implementation)
+# with Flatline Protocol reviews at each stage. Human drives planning phases
+# while HIGH_CONSENSUS findings auto-integrate.
+# "Experience the AI's work while maintaining your own consciousness." — Gibson
+simstim:
+  # Master toggle - set to true to enable /simstim command
+  enabled: true
+
+  # Flatline behavior in HITL mode
+  flatline:
+    auto_accept_high_consensus: true   # Auto-integrate without prompting
+    show_disputed: true                # Present DISPUTED items for decision
+    show_blockers: true                # Present BLOCKERS (NOT auto-halt like autonomous)
+    phases:                            # Which phases get Flatline review
+      - prd
+      - sdd
+      - sprint
+
+  # Default options
+  defaults:
+    timeout_hours: 24                  # Maximum workflow duration
+
+  # Phase skipping behavior
+  skip_phases:
+    prd_if_exists: false               # Still review even if PRD exists
+    sdd_if_exists: false               # Still review even if SDD exists
+    sprint_if_exists: false            # Still review even if sprint exists
+
+# -----------------------------------------------------------------------------
+# Search Orchestration (v1.7.0)
+# -----------------------------------------------------------------------------
+prefer_ck: true  # Use ck when available
+
+# -----------------------------------------------------------------------------
+# Upstream Learning Flow (v1.17.0)
+# -----------------------------------------------------------------------------
+upstream_detection:
+  enabled: true
+  min_occurrences: 3
+  min_success_rate: 0.8
+  min_upstream_score: 70
+
+upstream_proposals:
+  target_repo: "0xHoneyJar/loa"
+  label: "learning-proposal"
+  anonymization:
+    enabled: true
+  rejection_cooldown_days: 90
+
+# -----------------------------------------------------------------------------
+# Input Guardrails & Danger Level Enforcement (v1.20.0)
+# -----------------------------------------------------------------------------
+# Pre-execution validation for skill invocations. Provides PII filtering,
+# injection detection, and relevance checking before skills execute.
+# Based on OpenAI's "A Practical Guide to Building Agents" guardrails pattern.
+guardrails:
+  # Input guardrails (pre-execution)
+  input:
+    enabled: true
+
+    # PII Filter: Detect and redact sensitive data before processing
+    # Actions: redact (replace with placeholder), anonymize (generic value)
+    pii_filter:
+      enabled: true
+      mode: blocking              # blocking | parallel | advisory
+      patterns:
+        api_keys: true            # sk-*, ghp_*, AKIA*
+        emails: true              # user@example.com
+        phone_numbers: true       # 555-123-4567
+        ssn: true                 # 123-45-6789
+        credit_cards: true        # 4111-1111-1111-1111
+        jwt_tokens: true          # eyJ... tokens
+        private_keys: true        # -----BEGIN PRIVATE KEY-----
+        file_paths: anonymize     # anonymize | redact | ignore
+      log_redactions: true        # Log redaction count (never values)
+
+    # Injection Detection: Check for prompt injection patterns
+    # Score threshold: 0.0-1.0 (higher = more strict)
+    injection_detection:
+      enabled: true
+      mode: blocking
+      threshold: 0.7              # Range: 0.0-1.0 (default: 0.7)
+      patterns:
+        - instruction_override    # "ignore previous", "disregard"
+        - role_confusion          # "you are now", "act as"
+        - context_manipulation    # "system prompt", "debug mode"
+        - encoding_evasion        # base64, unicode tricks
+
+    # Relevance Check: Verify request matches skill purpose
+    # Note: High false positive rate - recommended mode: advisory or parallel
+    relevance_check:
+      enabled: false              # Disabled by default (high FP rate)
+      mode: advisory
+      confidence_threshold: 0.8   # Range: 0.0-1.0 (default: 0.8)
+
+  # Tripwire: Halt execution on parallel guardrail failure
+  tripwire:
+    enabled: true
+    on_failure: halt              # halt | warn | log
+    rollback_on_halt: false       # Revert uncommitted changes (experimental)
+
+  # Danger Level Enforcement: Tool risk classification
+  # Levels: safe, moderate, high, critical
+  danger_level:
+    enforce: true
+    interactive:
+      safe: execute               # Execute immediately
+      moderate: execute_with_notice  # Brief notice in output
+      high: confirm_required      # Require explicit confirmation
+      critical: confirm_with_reason  # Confirm + explain why
+    autonomous:
+      safe: execute               # Execute immediately
+      moderate: execute_with_log  # Execute with enhanced logging
+      high: block_without_flag    # BLOCK unless --allow-high
+      critical: always_block      # ALWAYS BLOCK (no override)
+
+  # Trajectory logging for guardrail events
+  logging:
+    enabled: true
+    input_guardrails: true
+    danger_level_decisions: true
+    handoffs: true
+    redaction_audit: true         # Log redaction counts for audit
+
+# -----------------------------------------------------------------------------
+# Invisible Retrospective Learning (v1.19.0)
+# -----------------------------------------------------------------------------
+# Automatic learning detection during skill execution without user invocation.
+# Uses skill postludes to silently scan for discoveries and extract learnings.
+# Mirrors the invisible prompt enhancement pattern from v1.17.0.
+invisible_retrospective:
+  # Master toggle - set to false to disable all invisible retrospective
+  enabled: true
+
+  # Always log to trajectory (even when disabled) - useful for debugging
+  log_to_trajectory: true
+
+  # Minimum quality gates passed to surface finding (out of 4)
+  # Gates: Depth, Reusability, Trigger Clarity, Verification
+  # Range: 0-4 (0 = surface everything, 4 = maximum strictness)
+  surface_threshold: 3
+
+  # Maximum candidates to evaluate per skill invocation
+  # Range: 1-20 (recommended max: 10, higher values increase processing time)
+  max_candidates: 5
+
+  # Maximum learnings to extract per session (prevents noise)
+  # Range: 1-10 (recommended max: 5, higher values may flood NOTES.md)
+  max_extractions_per_session: 3
+
+  # Sanitize descriptions before logging (redacts API keys, paths, emails, etc.)
+  # CRITICAL: Do NOT disable in production - defense in depth applies sanitization even if false
+  sanitize_descriptions: true
+
+  # Per-skill enablement (only skills with postludes support this)
+  skills:
+    implementing-tasks: true     # High discovery potential (bugs, debugging)
+    auditing-security: true      # Security patterns and findings
+    reviewing-code: true         # Code review insights
+    deploying-infrastructure: false  # Lower discovery potential
+    designing-architecture: false    # Lower discovery potential
+
+  # Quality gate toggles (all default to true)
+  # Disable specific gates if they're too strict for your use case
+  quality_gates:
+    require_depth: true          # Gate 1: Discovery required multiple steps
+    require_reusability: true    # Gate 2: Generalizable beyond this instance
+    require_trigger_clarity: true # Gate 3: Clear when to apply learning
+    require_verification: true   # Gate 4: Solution confirmed working
+
+# -----------------------------------------------------------------------------
+# Flatline Protocol (v1.17.0)
+# -----------------------------------------------------------------------------
+# Multi-model adversarial review using Claude Opus 4.5 + GPT-5.2 for planning
+# document quality assurance. Phase 1: parallel reviews, Phase 2: cross-scoring,
+# Phase 3: consensus extraction with HIGH/DISPUTED/LOW/BLOCKER classification.
+flatline_protocol:
+  # Master toggle - set to true to enable Flatline Protocol
+  enabled: true
+
+  # Auto-trigger after planning phases (prd, sdd, sprint)
+  auto_trigger: true
+
+  # Phase-specific toggles
+  phases:
+    prd: true      # Review after /plan-and-analyze
+    sdd: true      # Review after /architect
+    sprint: true   # Review after /sprint-plan
+
+  # Model configuration
+  models:
+    primary: opus        # Claude Opus 4.5 (via claude.ai or API)
+    secondary: gpt-5.2   # OpenAI GPT-5.2 (via API)
+
+  # Consensus thresholds (0-1000 scale)
+  thresholds:
+    high_consensus: 700      # Both models > this = auto-integrate
+    disputed_delta: 300      # Score delta > this = disputed
+    low_value: 400           # Both < this = discard
+    blocker_skeptic: 700     # Skeptic concern > this = blocker
+
+  # Knowledge retrieval for domain context
+  knowledge:
+    # Tier 1: Local grimoires (always active)
+    local:
+      enabled: true
+      paths:
+        - grimoires/loa/
+        - .claude/protocols/
+
+    # Tier 2: NotebookLM (optional, requires browser auth setup)
+    notebooklm:
+      enabled: false           # Opt-in (requires auth setup)
+      notebook_id: ""          # Your NotebookLM notebook ID
+      timeout_ms: 30000        # Query timeout
+
+# -----------------------------------------------------------------------------
+# Autonomous Flatline Mode (v1.22.0)
+# -----------------------------------------------------------------------------
+# Enable Flatline Protocol to operate within autonomous workflows (/autonomous,
+# /run sprint-plan) without human intervention. HIGH_CONSENSUS findings auto-
+# integrate, BLOCKERS halt workflow, DISPUTED items are logged for post-review.
+autonomous_mode:
+  # Master toggle - set to true to enable autonomous operation
+  # Default: false (requires explicit opt-in for safety)
+  enabled: false
+
+  # Auto-enable when AI operator detected (CLAWDBOT_GATEWAY_TOKEN, LOA_OPERATOR=ai)
+  # Only triggers on "strong" signals - weak signals require explicit enabled: true
+  auto_enable_for_ai: true
+
+  # Actions for each consensus category
+  actions:
+    high_consensus: integrate    # integrate | log | skip
+    disputed: log                # halt | log | skip (logged to NOTES.md + trajectory)
+    blocker: halt                # halt | log | continue (halt generates escalation)
+    low_value: skip              # log | skip
+
+  # Behavior on unrecoverable error (auth failure, invalid response, etc.)
+  # halt: Stop workflow, generate escalation report
+  # continue: Log error, skip document, continue with next
+  on_error: halt
+
+  # Maximum disputed items before converting to BLOCKER
+  # Threshold scope determines if this is per-phase or cumulative
+  # Default: 5 per phase
+  max_disputed_items: 5
+
+  # Disputed threshold configuration
+  disputed:
+    threshold_scope: per_phase   # per_phase | cumulative
+    warn_at_percent: 60          # Warn at N% of threshold (e.g., 3/5)
+    critical_at_percent: 80      # Escalate warning at N% (e.g., 4/5)
+
+  # Timeout configuration (all values in milliseconds)
+  timeouts:
+    per_call: 60000              # Single API call timeout (60s)
+    per_document: 180000         # Total time for one document review (3min)
+    total_run: 900000            # Total time for all phases (15min)
+
+  # Retry configuration for transient errors
+  retry:
+    max_attempts: 3              # Maximum retry attempts per call
+    base_delay_ms: 1000          # Initial delay between retries
+    max_delay_ms: 30000          # Maximum delay (with exponential backoff + jitter)
+
+  # Pre-integration snapshot configuration
+  snapshots:
+    enabled: true                # Create snapshots before auto-integration
+    max_age_days: 7              # Auto-cleanup snapshots older than this
+
+    # Git integration (SECURITY: defaults to false to prevent history pollution)
+    git_commit: false            # Commit snapshots to git (default: local only)
+    git_commit_with_hooks: true  # Run pre-commit hooks when git_commit is true
+    secret_scanning: true        # Scan for secrets before git commit (gitleaks/basic)
+
+    # Storage quota management (prevents disk exhaustion)
+    max_count: 100               # Maximum number of snapshots to retain
+    max_bytes: 104857600         # Maximum total storage (100MB default)
+    on_quota: fail               # fail | purge_oldest (what to do when quota exceeded)
+
+  # Document/manifest locking (prevents concurrent modification)
+  locking:
+    enabled: true                # Enable flock()-based advisory locks
+    timeout_seconds: 10          # Lock acquisition timeout
+    stale_ttl_seconds: 300       # Auto-expire stale locks (5min)
+    max_retries: 3               # Retry attempts with exponential backoff
+
+    # Run-level isolation (prevents concurrent Flatline runs)
+    run_isolation: true          # Acquire global run mutex before starting
+
+    # NFS fallback (for shared filesystems where flock may not work)
+    nfs_fallback: true           # Use mkdir-based atomic locking as fallback
+
+# -----------------------------------------------------------------------------
+# Autonomous Flatline Examples
+# -----------------------------------------------------------------------------
+# Example 1: Minimal (AI auto-enable, safe defaults)
+# autonomous_mode:
+#   enabled: false               # Let auto_enable_for_ai handle it
+#   auto_enable_for_ai: true     # Enable when running under AI operator
+#
+# Example 2: Explicit autonomous with safety limits
+# autonomous_mode:
+#   enabled: true
+#   max_disputed_items: 3        # Lower threshold for safety
+#   timeouts:
+#     total_run: 600000          # 10 minute limit
+#   snapshots:
+#     enabled: true
+#     git_commit: false          # Local snapshots only
+#
+# Example 3: Conservative (log everything, no auto-integrate)
+# autonomous_mode:
+#   enabled: true
+#   actions:
+#     high_consensus: log        # Log instead of integrate
+#     disputed: log
+#     blocker: halt
+#     low_value: log
+#
+# Example 4: Aggressive (continue on errors) - USE WITH CAUTION
+# autonomous_mode:
+#   enabled: true
+#   on_error: continue           # Don't halt on errors
+#   actions:
+#     blocker: log               # Log blockers instead of halting
+#   # WARNING: This may allow problematic changes to accumulate
+
+# =============================================================================
+# Post-PR Validation Loop (v1.25.0)
+# =============================================================================
+# Automated validation after PR creation: audit, context clear, E2E, Flatline
+# PRD: grimoires/loa/prd-post-pr-validation.md
+# SDD: grimoires/loa/sdd-post-pr-validation.md
+post_pr_validation:
+  # Master toggle - set to false to disable all post-PR validation
+  enabled: true
+
+  # -------------------------------------------------------------------------
+  # Phase Toggles
+  # -------------------------------------------------------------------------
+  phases:
+    # Consolidated PR audit after PR creation
+    audit:
+      enabled: true
+      # Maximum fix iterations before escalating
+      max_iterations: 5
+      # Skip findings below this severity
+      min_severity: "medium"
+
+    # Context clearing for fresh-eyes review
+    context_clear:
+      enabled: true
+      # Write checkpoint to NOTES.md Session Continuity
+      write_checkpoint: true
+
+    # E2E testing with fresh context
+    e2e:
+      enabled: true
+      # Maximum fix iterations
+      max_iterations: 3
+      # Build command (uses package.json scripts if not specified)
+      # build_command: "npm run build"
+      # Test command (uses package.json scripts if not specified)
+      # test_command: "npm test"
+
+    # Final Flatline PR review (optional, costs ~$1.50)
+    flatline:
+      enabled: false  # Disabled by default due to cost
+      # Mode for Flatline review
+      mode: "hitl"    # hitl | autonomous
+
+  # -------------------------------------------------------------------------
+  # Per-Phase Timeouts (seconds)
+  # -------------------------------------------------------------------------
+  timeouts:
+    post_pr_audit: 600    # 10 minutes
+    context_clear: 60     # 1 minute
+    e2e_testing: 1200     # 20 minutes
+    flatline_pr: 300      # 5 minutes
+
+  # -------------------------------------------------------------------------
+  # Circuit Breakers
+  # -------------------------------------------------------------------------
+  circuit_breaker:
+    # Same finding appearing N times triggers escalation
+    same_finding_threshold: 3
+    # Same E2E failure appearing N times triggers escalation
+    same_failure_threshold: 2
+
+  # -------------------------------------------------------------------------
+  # Marker Files (Flatline IMP-008)
+  # -------------------------------------------------------------------------
+  # Stored in .run/ directory with dotfile convention
+  markers:
+    audit_passed: ".PR-AUDITED"
+    e2e_passed: ".PR-E2E-PASSED"
+    validated: ".PR-VALIDATED"
+
+  # -------------------------------------------------------------------------
+  # GitHub API Retry Policy (Flatline IMP-003)
+  # -------------------------------------------------------------------------
+  github_api:
+    max_attempts: 3
+    # Exponential backoff delays (seconds)
+    backoff: [1, 2, 4]
+    # Timeout per attempt (seconds)
+    timeout_per_attempt: 30
+
+  # -------------------------------------------------------------------------
+  # Integration with Run Mode
+  # -------------------------------------------------------------------------
+  # When run_mode creates a PR, automatically invoke post-PR validation
+  auto_invoke:
+    enabled: true
+    # Mode for auto-invoked validation
+    mode: "autonomous"

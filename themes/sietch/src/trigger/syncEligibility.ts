@@ -1,432 +1,128 @@
 import { schedules, logger as triggerLogger } from '@trigger.dev/sdk/v3';
-import { chainService } from '../services/chain.js';
-import { eligibilityService } from '../services/eligibility.js';
-import { discordService } from '../services/discord.js';
-import { naibService } from '../services/naib.js';
-import { thresholdService } from '../services/threshold.js';
-import { notificationService } from '../services/notification.js';
-import { storyService } from '../services/StoryService.js';
-import { tierService, syncTierRole, isTierRolesConfigured, TIER_INFO, awardBadge, BADGE_IDS } from '../services/index.js';
-import { memberHasBadge } from '../db/index.js';
-import {
-  initDatabase,
-  saveEligibilitySnapshot,
-  getLatestEligibilitySnapshot,
-  updateHealthStatusSuccess,
-  updateHealthStatusFailure,
-  logAuditEvent,
-  getDiscordIdByWallet,
-  getMemberProfileByDiscordId,
-  getMemberProfileById,
-} from '../db/index.js';
-import type { Tier } from '../types/index.js';
 
 /**
  * Scheduled task to sync BGT eligibility data from chain
  *
- * Runs every 6 hours
- * - Fetches fresh eligibility data from Berachain RPC
- * - Computes diff from previous snapshot
- * - Stores new snapshot in database
- * - Evaluates Naib seats (v2.1)
- * - Saves threshold snapshot (v2.1)
- * - Checks waitlist eligibility (v2.1)
- * - Processes notifications (v2.1)
- * - Updates health status
+ * Runs every 6 hours via Trigger.dev scheduler.
+ *
+ * ARCHITECTURE NOTE (Sprint 175):
+ * Trigger.dev workers run outside AWS VPC and cannot connect to RDS directly.
+ * Instead of querying the database, this task calls an HTTP endpoint on the
+ * ECS server which has VPC access to RDS. The sync logic runs on ECS.
+ *
+ * Flow:
+ * 1. Trigger.dev schedules this task every 6 hours
+ * 2. This task calls POST /internal/sync-eligibility on the sietch server
+ * 3. The sietch server (running on ECS) executes the sync logic
+ * 4. Results are returned via HTTP response
  */
+
+interface SyncResult {
+  success: boolean;
+  snapshotId?: number;
+  duration_ms?: number;
+  stats?: {
+    totalWallets: number;
+    eligibleWallets: number;
+    naibCount: number;
+    fedaykinCount: number;
+  };
+  diff?: {
+    added: number;
+    removed: number;
+    promotedToNaib: number;
+    demotedFromNaib: number;
+  };
+  error?: string;
+}
+
 export const syncEligibilityTask = schedules.task({
   id: 'sync-eligibility',
   cron: '0 */6 * * *', // Every 6 hours at minute 0
   run: async () => {
-    triggerLogger.info('Starting eligibility sync task');
+    triggerLogger.info('Starting eligibility sync task (HTTP proxy mode)');
 
-    // Initialize database (idempotent)
-    initDatabase();
+    // Get the internal API URL and key from environment
+    const internalApiUrl = process.env.SIETCH_INTERNAL_URL;
+    const internalApiKey = process.env.INTERNAL_API_KEY;
+
+    if (!internalApiUrl) {
+      triggerLogger.error('SIETCH_INTERNAL_URL environment variable not set');
+      throw new Error('SIETCH_INTERNAL_URL not configured - cannot call ECS server');
+    }
+
+    if (!internalApiKey) {
+      triggerLogger.error('INTERNAL_API_KEY environment variable not set');
+      throw new Error('INTERNAL_API_KEY not configured - cannot authenticate with ECS server');
+    }
+
+    // First, verify connectivity with health check
+    try {
+      const healthUrl = `${internalApiUrl}/internal/health`;
+      triggerLogger.info(`Checking ECS server connectivity at ${healthUrl}...`);
+
+      const healthResponse = await fetch(healthUrl, {
+        method: 'GET',
+        headers: {
+          'X-Internal-API-Key': internalApiKey,
+        },
+        signal: AbortSignal.timeout(10000), // 10 second timeout for health check
+      });
+
+      if (!healthResponse.ok) {
+        const errMsg = `Health check failed: ${healthResponse.status} ${healthResponse.statusText}`;
+        triggerLogger.error(errMsg);
+        throw new Error(errMsg);
+      }
+
+      const healthData = await healthResponse.json();
+      triggerLogger.info(`ECS server health check passed: ${JSON.stringify(healthData)}`);
+    } catch (healthError) {
+      const errMsg = healthError instanceof Error ? healthError.message : String(healthError);
+      triggerLogger.error(`Failed to connect to ECS server: ${errMsg}`);
+      throw new Error(`Cannot connect to ECS server: ${errMsg}`);
+    }
+
+    // Call the sync endpoint on the ECS server
+    const syncUrl = `${internalApiUrl}/internal/sync-eligibility`;
+    triggerLogger.info(`Calling ECS server to run eligibility sync at ${syncUrl}...`);
 
     try {
-      // 1. Get previous snapshot for diff computation
-      const previousSnapshot = getLatestEligibilitySnapshot();
-      triggerLogger.info(`Previous snapshot has ${previousSnapshot.length} entries`);
-
-      // 2. Fetch fresh eligibility data from chain
-      triggerLogger.info('Fetching eligibility data from Berachain RPC...');
-      const rawEligibility = await chainService.fetchEligibilityData();
-      triggerLogger.info(`Fetched ${rawEligibility.length} wallets from chain`);
-
-      // 3. Apply admin overrides
-      const eligibility = await eligibilityService.applyAdminOverrides(rawEligibility);
-      triggerLogger.info(`After overrides: ${eligibility.length} entries`);
-
-      // 4. Compute diff from previous snapshot
-      const diff = eligibilityService.computeDiff(previousSnapshot, eligibility);
-
-      triggerLogger.info('Eligibility diff computed', {
-        added: diff.added.length,
-        removed: diff.removed.length,
-        promotedToNaib: diff.promotedToNaib.length,
-        demotedFromNaib: diff.demotedFromNaib.length,
+      const response = await fetch(syncUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-API-Key': internalApiKey,
+        },
+        signal: AbortSignal.timeout(300000), // 5 minute timeout for sync
       });
 
-      // 5. Save new snapshot
-      const snapshotId = saveEligibilitySnapshot(eligibility);
-      triggerLogger.info(`Saved eligibility snapshot #${snapshotId}`);
+      const result = await response.json() as SyncResult;
 
-      // 6. Update health status - success
-      updateHealthStatusSuccess();
-
-      // 7. Log audit event
-      logAuditEvent('eligibility_update', {
-        snapshotId,
-        totalEligible: eligibility.filter((e) => e.rank && e.rank <= 69).length,
-        added: diff.added.length,
-        removed: diff.removed.length,
-        promotedToNaib: diff.promotedToNaib.length,
-        demotedFromNaib: diff.demotedFromNaib.length,
-      });
-
-      // 8. Evaluate Naib seats based on BGT changes (v2.1)
-      let naibEvaluation = null;
-      try {
-        triggerLogger.info('Evaluating Naib seats...');
-        naibEvaluation = naibService.evaluateSeats();
-        triggerLogger.info('Naib seat evaluation completed', {
-          changes: naibEvaluation.changes.length,
-          emptySeats: naibEvaluation.emptySeats,
-          currentNaib: naibEvaluation.currentNaib.length,
-        });
-
-        // Log audit event for Naib changes
-        if (naibEvaluation.changes.length > 0) {
-          logAuditEvent('naib_seats_evaluated', {
-            snapshotId,
-            changes: naibEvaluation.changes.map((c) => ({
-              type: c.type,
-              memberId: c.memberId,
-              seatNumber: c.seatNumber,
-            })),
-          });
-        }
-      } catch (naibError) {
-        triggerLogger.error('Naib evaluation error (non-fatal)', {
-          error: naibError instanceof Error ? naibError.message : String(naibError),
-        });
+      if (!response.ok || !result.success) {
+        const errMsg = `Sync failed: ${result.error || response.statusText}`;
+        triggerLogger.error(`Eligibility sync failed on ECS server: status=${response.status}, error=${result.error}`);
+        throw new Error(errMsg);
       }
 
-      // 9. Calculate and sync tier for each member (v3.0)
-      let tierStats = { updated: 0, promotions: 0, demotions: 0, roleChanges: 0, errors: 0, dmsSent: 0 };
-      if (isTierRolesConfigured()) {
-        try {
-          triggerLogger.info('Processing tier updates for members...');
+      triggerLogger.info(
+        `Eligibility sync completed successfully: snapshotId=${result.snapshotId}, ` +
+        `duration=${result.duration_ms}ms, ` +
+        `stats=${JSON.stringify(result.stats)}`
+      );
 
-          // Get all onboarded members with their current BGT and rank
-          for (const entry of eligibility) {
-            const discordId = getDiscordIdByWallet(entry.address);
-            if (!discordId) continue;
-
-            const profile = getMemberProfileByDiscordId(discordId);
-            if (!profile || !profile.onboardingComplete) continue;
-
-            try {
-              // Calculate new tier based on BGT and rank
-              const newTier = tierService.calculateTier(entry.bgtHeld, entry.rank ?? null);
-              const oldTier = profile.tier as Tier | null;
-
-              // Check if tier changed
-              if (oldTier !== newTier) {
-                // Update tier in database
-                const updated = await tierService.updateMemberTier(
-                  profile.memberId,
-                  newTier,
-                  entry.bgtHeld.toString(),
-                  entry.rank ?? null,
-                  oldTier
-                );
-
-                if (updated) {
-                  tierStats.updated++;
-
-                  // Check if promotion or demotion
-                  // Note: First tier assignment (oldTier === null) is NOT a promotion
-                  const isPromotion = oldTier !== null && tierService.isPromotion(oldTier, newTier);
-                  if (isPromotion) {
-                    tierStats.promotions++;
-
-                    // Send tier promotion DM (Sprint 18)
-                    // Only for actual promotions, not first tier assignment
-                    try {
-                      const newTierInfo = TIER_INFO[newTier];
-                      const isRankBased = newTier === 'naib' || newTier === 'fedaykin';
-
-                      await notificationService.sendTierPromotion(profile.memberId, {
-                        oldTier: oldTier, // Safe - we know oldTier is not null
-                        newTier,
-                        newTierName: newTierInfo.name,
-                        bgtThreshold: newTierInfo.bgtThreshold,
-                        isRankBased,
-                      });
-
-                      tierStats.dmsSent++;
-                      triggerLogger.debug('Tier promotion DM sent', {
-                        memberId: profile.memberId,
-                        oldTier,
-                        newTier,
-                      });
-                    } catch (dmError) {
-                      // DM failures are non-critical
-                      triggerLogger.warn('Failed to send tier promotion DM', {
-                        memberId: profile.memberId,
-                        error: dmError instanceof Error ? dmError.message : String(dmError),
-                      });
-                    }
-
-                    // Auto-award Usul Ascended badge when promoted to Usul tier (Sprint 18)
-                    if (newTier === 'usul' && !memberHasBadge(profile.memberId, BADGE_IDS.usulAscended)) {
-                      try {
-                        const badge = awardBadge(profile.memberId, BADGE_IDS.usulAscended, {
-                          reason: 'Reached Usul tier (1111+ BGT)',
-                        });
-                        if (badge) {
-                          triggerLogger.info('Usul Ascended badge awarded', { memberId: profile.memberId });
-
-                          // Send badge award DM
-                          await notificationService.sendBadgeAward(profile.memberId, {
-                            badgeId: BADGE_IDS.usulAscended,
-                            badgeName: 'Usul Ascended',
-                            badgeDescription: 'Reached the Usul tier - the base of the pillar, the innermost identity. 1111+ BGT',
-                            badgeEmoji: '\u2B50',
-                            awardReason: 'Reached Usul tier (1111+ BGT)',
-                            isWaterSharer: false,
-                          });
-                        }
-                      } catch (badgeError) {
-                        triggerLogger.warn('Failed to award Usul Ascended badge', {
-                          memberId: profile.memberId,
-                          error: badgeError instanceof Error ? badgeError.message : String(badgeError),
-                        });
-                      }
-                    }
-                  } else if (oldTier) {
-                    tierStats.demotions++;
-                  }
-
-                  // Sync Discord roles
-                  const roleResult = await syncTierRole(discordId, newTier, oldTier);
-                  if (roleResult.assigned.length > 0 || roleResult.removed.length > 0) {
-                    tierStats.roleChanges++;
-                  }
-
-                  // Post story fragment for elite tier promotions (v3.0 - Sprint 21)
-                  // Only post for actual promotions to Fedaykin or Naib (not initial assignment)
-                  if (isPromotion && (newTier === 'fedaykin' || newTier === 'naib')) {
-                    try {
-                      const client = discordService.getClient();
-                      if (client) {
-                        const fragmentPosted = await storyService.postJoinFragment(client, newTier);
-                        if (fragmentPosted) {
-                          triggerLogger.info('Story fragment posted for elite promotion', {
-                            memberId: profile.memberId,
-                            tier: newTier,
-                          });
-                        }
-                      }
-                    } catch (storyError) {
-                      // Story fragment failures are non-critical
-                      triggerLogger.warn('Failed to post story fragment', {
-                        memberId: profile.memberId,
-                        tier: newTier,
-                        error: storyError instanceof Error ? storyError.message : String(storyError),
-                      });
-                    }
-                  }
-                }
-              }
-            } catch (memberTierError) {
-              triggerLogger.warn('Failed to process tier for member', {
-                discordId,
-                error: memberTierError instanceof Error ? memberTierError.message : String(memberTierError),
-              });
-              tierStats.errors++;
-            }
-          }
-
-          triggerLogger.info('Tier sync completed', tierStats);
-
-          // Log audit event for tier sync
-          if (tierStats.updated > 0) {
-            logAuditEvent('tier_role_sync', {
-              snapshotId,
-              updated: tierStats.updated,
-              promotions: tierStats.promotions,
-              demotions: tierStats.demotions,
-              roleChanges: tierStats.roleChanges,
-              dmsSent: tierStats.dmsSent,
-              errors: tierStats.errors,
-            });
-          }
-        } catch (tierError) {
-          triggerLogger.error('Tier sync error (non-fatal)', {
-            error: tierError instanceof Error ? tierError.message : String(tierError),
-          });
-        }
-      } else {
-        triggerLogger.debug('Tier roles not configured, skipping tier sync');
-      }
-
-      // 10. Save threshold snapshot (v2.1)
-      let thresholdSnapshot = null;
-      try {
-        triggerLogger.info('Saving threshold snapshot...');
-        thresholdSnapshot = thresholdService.saveSnapshot();
-        triggerLogger.info('Threshold snapshot saved', {
-          entryThreshold: thresholdSnapshot.entryThresholdBgt,
-          eligibleCount: thresholdSnapshot.eligibleCount,
-          waitlistCount: thresholdSnapshot.waitlistCount,
-        });
-      } catch (thresholdError) {
-        triggerLogger.error('Threshold snapshot error (non-fatal)', {
-          error: thresholdError instanceof Error ? thresholdError.message : String(thresholdError),
-        });
-      }
-
-      // 10. Check waitlist eligibility (v2.1)
-      let waitlistCheck = null;
-      try {
-        triggerLogger.info('Checking waitlist eligibility...');
-        waitlistCheck = thresholdService.checkWaitlistEligibility();
-        triggerLogger.info('Waitlist eligibility check completed', {
-          newlyEligible: waitlistCheck.newlyEligible.length,
-          droppedOut: waitlistCheck.droppedOut.length,
-        });
-
-        // Send notifications to newly eligible waitlist members
-        for (const registration of waitlistCheck.newlyEligible) {
-          try {
-            // Get current position for the wallet
-            const currentPos = thresholdService.getWalletPosition(registration.walletAddress);
-            const currentBgt = currentPos ? currentPos.bgt : 0;
-
-            await notificationService.sendWaitlistEligible(
-              registration.discordUserId,
-              {
-                previousPosition: registration.positionAtRegistration,
-                currentPosition: currentPos?.position ?? 69, // Position or threshold
-                bgt: currentBgt,
-              }
-            );
-            thresholdService.markNotified(registration.id);
-          } catch (notifyError) {
-            triggerLogger.warn('Failed to notify waitlist member', {
-              discordUserId: registration.discordUserId,
-              error: notifyError instanceof Error ? notifyError.message : String(notifyError),
-            });
-          }
-        }
-      } catch (waitlistError) {
-        triggerLogger.error('Waitlist check error (non-fatal)', {
-          error: waitlistError instanceof Error ? waitlistError.message : String(waitlistError),
-        });
-      }
-
-      // 11. Process position and at-risk notifications (v2.1)
-      let notificationStats = { position: { sent: 0, skipped: 0, failed: 0 }, atRisk: { sent: 0, skipped: 0, failed: 0 } };
-      try {
-        triggerLogger.info('Processing member notifications...');
-
-        // Process position update notifications
-        notificationStats.position = await notificationService.processPositionAlerts();
-        triggerLogger.info('Position alerts processed', notificationStats.position);
-
-        // Identify at-risk members (positions 63-69)
-        const atRiskMembers = eligibility
-          .filter((e) => e.rank && e.rank >= 63 && e.rank <= 69)
-          .map((e, _idx, arr) => {
-            // Look up member by wallet address
-            const discordId = getDiscordIdByWallet(e.address);
-            if (!discordId) return null;
-            const member = getMemberProfileByDiscordId(discordId);
-            if (!member) return null;
-
-            const belowEntry = arr.find((b) => b.rank === (e.rank ?? 0) + 1);
-            return {
-              memberId: member.memberId,
-              position: e.rank ?? 0,
-              bgt: Number(BigInt(e.bgtHeld)) / 1e18,
-              distanceToBelow: belowEntry
-                ? (Number(BigInt(e.bgtHeld)) - Number(BigInt(belowEntry.bgtHeld))) / 1e18
-                : 0,
-            };
-          })
-          .filter((m): m is NonNullable<typeof m> => m !== null); // Only members with profiles
-
-        if (atRiskMembers.length > 0) {
-          notificationStats.atRisk = await notificationService.processAtRiskAlerts(atRiskMembers);
-          triggerLogger.info('At-risk alerts processed', notificationStats.atRisk);
-        }
-      } catch (notificationError) {
-        triggerLogger.error('Notification processing error (non-fatal)', {
-          error: notificationError instanceof Error ? notificationError.message : String(notificationError),
-        });
-      }
-
-      // 12. Process Discord notifications (non-blocking)
-      // Errors in Discord don't fail the sync
-      try {
-        if (discordService.isConnected()) {
-          triggerLogger.info('Processing Discord notifications...');
-          await discordService.processEligibilityChanges(diff);
-          triggerLogger.info('Discord notifications processed');
-        } else {
-          triggerLogger.warn('Discord not connected, skipping notifications');
-        }
-      } catch (discordError) {
-        triggerLogger.error('Discord notification error (non-fatal)', {
-          error: discordError instanceof Error ? discordError.message : String(discordError),
-        });
-        // Don't re-throw - Discord errors shouldn't fail the sync
-      }
-
-      triggerLogger.info('Eligibility sync completed successfully');
-
-      // Return summary for trigger.dev dashboard
+      // Return the result from the ECS server
       return {
         success: true,
-        snapshotId,
-        stats: {
-          totalWallets: rawEligibility.length,
-          eligibleWallets: eligibility.filter((e) => e.rank && e.rank <= 69).length,
-          naibCount: eligibility.filter((e) => e.role === 'naib').length,
-          fedaykinCount: eligibility.filter((e) => e.role === 'fedaykin').length,
-        },
-        diff: {
-          added: diff.added.length,
-          removed: diff.removed.length,
-          promotedToNaib: diff.promotedToNaib.length,
-          demotedFromNaib: diff.demotedFromNaib.length,
-        },
-        naib: naibEvaluation ? {
-          changes: naibEvaluation.changes.length,
-          emptySeats: naibEvaluation.emptySeats,
-          currentNaib: naibEvaluation.currentNaib.length,
-        } : null,
-        threshold: thresholdSnapshot ? {
-          entryThreshold: thresholdSnapshot.entryThresholdBgt,
-          eligibleCount: thresholdSnapshot.eligibleCount,
-          waitlistCount: thresholdSnapshot.waitlistCount,
-        } : null,
-        waitlist: waitlistCheck ? {
-          newlyEligible: waitlistCheck.newlyEligible.length,
-          droppedOut: waitlistCheck.droppedOut.length,
-        } : null,
-        notifications: notificationStats,
-        tiers: tierStats.updated > 0 ? tierStats : null,
+        proxy_mode: true,
+        snapshotId: result.snapshotId,
+        duration_ms: result.duration_ms,
+        stats: result.stats,
+        diff: result.diff,
       };
     } catch (error) {
-      // Update health status - failure
-      updateHealthStatusFailure();
-
-      triggerLogger.error('Eligibility sync failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      triggerLogger.error(`Eligibility sync HTTP call failed: ${errorMessage}`);
 
       // Re-throw to trigger retry logic
       throw error;

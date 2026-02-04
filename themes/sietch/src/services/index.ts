@@ -119,3 +119,62 @@ export type { CommunityAnalytics } from './AnalyticsService.js';
 
 // Sprint 23: Billing Services (v5.0 - Paddle Migration)
 export { createBillingProvider, webhookService, gatekeeperService } from './billing/index.js';
+
+// Sprint 140: Authentication Services (Gom Jabbar)
+export {
+  // UserService
+  UserService,
+  UserServiceError,
+  getUserService,
+  resetUserService,
+  // AuthService
+  AuthService,
+  getAuthService,
+  resetAuthService,
+  // Types
+  type CreateUserInput,
+  type CreateUserResult,
+  type UpdateUserInput,
+  type ChangePasswordInput,
+  type ResetPasswordResult,
+  type UserServiceConfig,
+  type ActorContext,
+  type LoginRequest,
+  type LoginResult,
+  type SessionValidationResult,
+  type AuthContext,
+  type AuthServiceConfig,
+} from './auth/index.js';
+
+// Sprint 176: Global User Registry
+export {
+  // Service
+  UserRegistryService,
+  setUserRegistryDb,
+  getUserRegistryService,
+  isUserRegistryServiceInitialized,
+  // Recovery
+  recoverIdentityAtTimestamp,
+  rebuildIdentityFromEvents,
+  verifyIdentityIntegrity,
+  // Types
+  IdentityEventType,
+  type EventSource,
+  type IdentityStatus,
+  type WalletStatus,
+  type CreateIdentityParams,
+  type VerifyWalletParams,
+  type SuspendIdentityParams,
+  type RestoreIdentityParams,
+  type ListUsersParams,
+  type PaginatedResult,
+  type IdentityWithWallets,
+  type IdentityEventRecord,
+  type RecoveredIdentityState,
+  // Errors
+  UserRegistryError,
+  IdentityNotFoundError,
+  WalletAlreadyLinkedError,
+  IdentityAlreadyExistsError,
+  IdentitySuspendedError,
+} from './user-registry/index.js';

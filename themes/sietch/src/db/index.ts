@@ -234,6 +234,102 @@ export * from './boost-queries.js';
 export * from './badge-queries.js';
 
 // =============================================================================
+// User Management Queries (Sprint 139: Gom Jabbar)
+// =============================================================================
+export {
+  // User CRUD
+  createUser,
+  getUserById,
+  getUserByUsername,
+  listUsers,
+  updateUser,
+  updateUserPassword,
+  updateLastLogin,
+  deleteUser,
+  // Session Management
+  createSession,
+  getSessionById,
+  getSessionByTokenHash,
+  getActiveSession,
+  getUserSessions,
+  updateSessionActivity,
+  revokeSession,
+  revokeAllUserSessions,
+  cleanupExpiredSessions,
+  // Audit Logging
+  logUserAuditEvent,
+  queryUserAuditLog,
+  getRecentLoginFailures,
+  // Rate Limiting
+  getRateLimitStatus,
+  recordFailedLogin,
+  clearRateLimit,
+  isRateLimited,
+  cleanupOldRateLimits,
+} from './queries/user-queries.js';
+
+// Re-export user types
+export type {
+  User,
+  UserPublic,
+  UserSession,
+  UserAuditEntry,
+  LoginRateLimit,
+  UserRole,
+  SessionType,
+  AuditAction,
+  AuditMetadata,
+  CreateUserInput,
+  UpdateUserInput,
+  ChangePasswordInput,
+  ResetPasswordInput,
+  LoginInput,
+  LoginResult,
+  ListUsersQuery,
+  AuditLogQuery,
+  PaginatedResult,
+} from './types/user.types.js';
+
+// =============================================================================
+// PostgreSQL Eligibility Queries (Sprint 175)
+// =============================================================================
+// These are the PostgreSQL versions of eligibility queries that persist
+// data across container restarts (unlike in-memory SQLite).
+export {
+  // Database instance management
+  setEligibilityPgDb,
+  getEligibilityPgDb,
+  isEligibilityPgDbInitialized,
+  // Snapshot queries
+  saveEligibilitySnapshotPg,
+  getLatestEligibilitySnapshotPg,
+  // Current eligibility queries
+  getEligibilityByAddressPg,
+  getEligibilityFromSnapshotPg,
+  getCurrentEligibilityPg,
+  // Health status queries
+  updateHealthStatusSuccessPg,
+  updateHealthStatusFailurePg,
+  getHealthStatusPg,
+  enterGracePeriodPg,
+  exitGracePeriodPg,
+  // Admin override queries
+  getActiveAdminOverridesPg,
+  createAdminOverridePg,
+  deactivateAdminOverridePg,
+  // Wallet verification queries
+  saveWalletVerificationPg,
+  getWalletByDiscordIdPg,
+  getDiscordIdByWalletPg,
+  deleteWalletVerificationPg,
+} from './queries/pg-eligibility-queries.js';
+
+// =============================================================================
+// PostgreSQL Schema (Sprint 175)
+// =============================================================================
+export * from './pg-schema.js';
+
+// =============================================================================
 // Legacy re-export from queries.ts for backward compatibility
 // Will be removed after all consumers migrate to new structure
 // =============================================================================

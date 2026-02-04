@@ -98,6 +98,35 @@ Example:
 ```
 </tool_result_clearing>
 
+<attention_budget>
+## Attention Budget
+
+This skill follows the **Tool Result Clearing Protocol** (`.claude/protocols/tool-result-clearing.md`).
+
+### Token Thresholds
+
+| Context Type | Limit | Action |
+|--------------|-------|--------|
+| Single search result | 2,000 tokens | Apply 4-step clearing |
+| Accumulated results | 5,000 tokens | MANDATORY clearing |
+| Full file load | 3,000 tokens | Single file, synthesize immediately |
+| Session total | 15,000 tokens | STOP, synthesize to NOTES.md |
+
+### Clearing Triggers for Sprint Planning
+
+- [ ] PRD/SDD combined >3K tokens
+- [ ] Task breakdown search >10 matches
+- [ ] Dependency mapping >20 items
+- [ ] Any analysis exceeding 2K tokens
+
+### 4-Step Clearing
+
+1. **Extract**: Max 10 files, 20 words per finding
+2. **Synthesize**: Write to `grimoires/loa/NOTES.md`
+3. **Clear**: Remove raw output from context
+4. **Summary**: `"Planning: N requirements → M tasks → sprint.md"`
+</attention_budget>
+
 <trajectory_logging>
 ## Trajectory Logging
 
@@ -459,3 +488,39 @@ br sync --flush-only  # Export SQLite → JSONL before commit
 
 **Protocol Reference**: See `.claude/protocols/beads-integration.md`
 </beads_workflow>
+
+<visual_communication>
+## Visual Communication (Optional)
+
+Follow `.claude/protocols/visual-communication.md` for diagram standards.
+
+### When to Include Diagrams
+
+Sprint plans may benefit from visual aids for:
+- **Task Dependencies** (flowchart) - Show task blocking relationships
+- **Sprint Workflow** (flowchart) - Illustrate sprint execution flow
+
+### Output Format
+
+If including diagrams, use Mermaid with preview URLs:
+
+```markdown
+## Appendix A: Task Dependencies
+
+```mermaid
+graph TD
+    T1[Task 1.1] --> T2[Task 1.2]
+    T1 --> T3[Task 1.3]
+    T2 --> T4[Task 1.4]
+    T3 --> T4
+```
+
+> **Preview**: [View diagram](https://agents.craft.do/mermaid?code=...&theme=github)
+```
+
+### Theme Configuration
+
+Read theme from `.loa.config.yaml` visual_communication.theme setting.
+
+Diagram inclusion is **optional** for sprint plans - use agent discretion.
+</visual_communication>

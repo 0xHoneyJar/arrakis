@@ -173,3 +173,21 @@ export {
   TELEGRAM_IDENTITY_SAFE_SQL,
   TELEGRAM_IDENTITY_ROLLBACK_SQL,
 } from './migrations/012_telegram_identity.js';
+
+// Re-export Dashboard Config schema for cycle-004 (Sprint 117)
+export {
+  DASHBOARD_CONFIG_SCHEMA_SQL,
+  DASHBOARD_CONFIG_ROLLBACK_SQL,
+} from './migrations/019_dashboard_config.js';
+
+// Re-export Gom Jabbar User Management schema for cycle-004 (Sprint 139)
+export {
+  GOM_JABBAR_USERS_SCHEMA_SQL,
+  GOM_JABBAR_USERS_ROLLBACK_SQL,
+} from './migrations/020_gom_jabbar_users.js';
+
+// Re-export Crypto Payments schema for cycle-005 (Sprint 155: NOWPayments Integration)
+export {
+  CRYPTO_PAYMENTS_SCHEMA_SQL,
+  CRYPTO_PAYMENTS_ROLLBACK_SQL,
+} from './migrations/021_crypto_payments.js';

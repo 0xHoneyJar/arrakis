@@ -16,6 +16,9 @@ import {
   getWalletByDiscordId,
   getEligibilityByAddress,
   logAuditEvent,
+  // PostgreSQL queries (Sprint 175)
+  isEligibilityPgDbInitialized,
+  getEligibilityByAddressPg,
 } from '../db/index.js';
 import type {
   MemberProfile,
@@ -139,8 +142,13 @@ class ProfileService {
       return { canCreate: false, reason: 'No verified wallet found. Please verify your wallet first.' };
     }
 
-    // Check eligibility
-    const eligibility = getEligibilityByAddress(walletAddress);
+    // Check eligibility (Sprint 175: Use PostgreSQL if initialized)
+    let eligibility;
+    if (isEligibilityPgDbInitialized()) {
+      eligibility = await getEligibilityByAddressPg(walletAddress);
+    } else {
+      eligibility = getEligibilityByAddress(walletAddress);
+    }
     if (!eligibility || eligibility.rank === undefined || eligibility.rank > 69) {
       return {
         canCreate: false,
@@ -433,7 +441,13 @@ class ProfileService {
         continue;
       }
 
-      const eligibility = getEligibilityByAddress(wallet);
+      // Sprint 175: Use PostgreSQL if initialized
+      let eligibility;
+      if (isEligibilityPgDbInitialized()) {
+        eligibility = await getEligibilityByAddressPg(wallet);
+      } else {
+        eligibility = getEligibilityByAddress(wallet);
+      }
       if (!eligibility || eligibility.rank === undefined || eligibility.rank > 69) {
         markedForRemoval.push(member.memberId);
         continue;

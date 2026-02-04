@@ -1,0 +1,59 @@
+{
+  "name": "@arrakis/worker",
+  "version": "1.0.0",
+  "description": "Queue consumer service for Gateway Proxy pattern - processes Discord events from RabbitMQ",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "discord",
+    "worker",
+    "rabbitmq",
+    "consumer",
+    "gateway-proxy"
+  ],
+  "author": "0xHoneyJar",
+  "license": "AGPL-3.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@arrakis/sandbox": "file:../../packages/sandbox",
+    "@discordjs/rest": "^2.6.0",
+    "amqplib": "^0.10.4",
+    "cassandra-driver": "^4.7.2",
+    "discord-api-types": "^0.37.100",
+    "drizzle-orm": "^0.35.3",
+    "ioredis": "^5.4.1",
+    "nats": "^2.28.2",
+    "opossum": "^8.1.4",
+    "pino": "^9.5.0",
+    "postgres": "^3.4.4",
+    "prom-client": "^15.1.0",
+    "rate-limiter-flexible": "^9.0.1",
+    "viem": "^2.21.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.5",
+    "@types/node": "^22.19.5",
+    "@types/opossum": "^8.1.7",
+    "@vitest/coverage-v8": "^4.0.17",
+    "msw": "^2.6.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^4.0.17"
+  },
+  "overrides": {
+    "undici": "^6.23.0"
+  }
+}

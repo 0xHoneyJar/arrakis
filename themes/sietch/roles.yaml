@@ -1,0 +1,172 @@
+# Sietch Theme - Role Hierarchy v3.0
+#
+# Full 9-tier BGT token-gated community with Fremen-inspired naming.
+# All tier names draw from Frank Herbert's Dune universe.
+#
+# Tier System:
+#   - Naib: Top 7 by rank (tribal leaders)
+#   - Fedaykin: Top 8-69 by rank (elite warriors)
+#   - Usul: 1111+ BGT (innermost identity)
+#   - Sayyadina: 888+ BGT (spiritual guides)
+#   - Mushtamal: 690+ BGT (inner garden)
+#   - Sihaya: 420+ BGT (desert spring)
+#   - Qanat: 222+ BGT (underground channels)
+#   - Ichwan: 69+ BGT (brotherhood)
+#   - Hajra: 6.9+ BGT (journey of seeking)
+#
+# Reference: grimoires/pub/docs/DISCORD-SETUP-GUIDE.md
+
+roles:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BGT TIER ROLES (9 tiers)
+  # Position hierarchy: higher number = more power in Discord
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Tier 9: Top 7 by rank - Tribal leaders
+  - name: Naib
+    color: "${color_naib}"
+    hoist: true
+    mentionable: true
+    position: 100
+    permissions:
+      - ADMINISTRATOR
+
+  # Bot role - positioned just below Naib, above all other roles
+  - name: Shai-Hulud
+    color: "${color_naib}"
+    hoist: false
+    mentionable: false
+    position: 99
+    permissions:
+      - MANAGE_ROLES
+      - MANAGE_CHANNELS
+      - VIEW_CHANNEL
+      - SEND_MESSAGES
+      - EMBED_LINKS
+      - ATTACH_FILES
+      - READ_MESSAGE_HISTORY
+      - ADD_REACTIONS
+      - USE_APPLICATION_COMMANDS
+      - MANAGE_MESSAGES
+
+  # Tier 8: Top 8-69 by rank - Elite warriors
+  - name: Fedaykin
+    color: "${color_fedaykin}"
+    hoist: true
+    mentionable: true
+    position: 95
+    permissions:
+      - VIEW_CHANNEL
+      - SEND_MESSAGES
+      - EMBED_LINKS
+      - ATTACH_FILES
+      - ADD_REACTIONS
+      - USE_EXTERNAL_EMOJIS
+      - READ_MESSAGE_HISTORY
+      - CONNECT
+      - SPEAK
+      - STREAM
+      - USE_VAD
+      - CREATE_PUBLIC_THREADS
+      - SEND_MESSAGES_IN_THREADS
+
+  # Tier 7: 1111+ BGT - Innermost identity (Paul's sietch name)
+  - name: Usul
+    color: "${color_usul}"
+    hoist: true
+    mentionable: true
+    position: 90
+    permissions: []
+
+  # Tier 6: 888+ BGT - Spiritual guides, near-leaders
+  - name: Sayyadina
+    color: "${color_sayyadina}"
+    hoist: true
+    mentionable: true
+    position: 85
+    permissions: []
+
+  # Tier 5: 690+ BGT - Inner garden of the sietch
+  - name: Mushtamal
+    color: "${color_mushtamal}"
+    hoist: true
+    mentionable: true
+    position: 80
+    permissions: []
+
+  # Tier 4: 420+ BGT - Desert spring (Chani's secret name)
+  - name: Sihaya
+    color: "${color_sihaya}"
+    hoist: true
+    mentionable: true
+    position: 75
+    permissions: []
+
+  # Tier 3: 222+ BGT - Underground water channels
+  - name: Qanat
+    color: "${color_qanat}"
+    hoist: true
+    mentionable: true
+    position: 70
+    permissions: []
+
+  # Tier 2: 69+ BGT - Brotherhood (from Ichwan Bedwine)
+  - name: Ichwan
+    color: "${color_ichwan}"
+    hoist: true
+    mentionable: true
+    position: 65
+    permissions: []
+
+  # Tier 1: 6.9+ BGT - Journey of seeking
+  - name: Hajra
+    color: "${color_hajra}"
+    hoist: true
+    mentionable: false
+    position: 60
+    permissions: []
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SPECIAL ROLES
+  # Non-BGT based roles for achievements and status
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Previously held Naib seat
+  - name: Former Naib
+    color: "${color_former_naib}"
+    hoist: false
+    mentionable: false
+    position: 55
+    permissions: []
+
+  # Waitlist registration
+  - name: Taqwa
+    color: "${color_taqwa}"
+    hoist: false
+    mentionable: false
+    position: 50
+    permissions: []
+
+  # Badge holder - can share with one other member
+  - name: Water Sharer
+    color: "${color_water_sharer}"
+    hoist: false
+    mentionable: false
+    position: 45
+    permissions: []
+
+  # 5+ badges earned
+  - name: Engaged
+    color: "${color_engaged}"
+    hoist: false
+    mentionable: false
+    position: 40
+    permissions: []
+
+  # 90+ days tenure
+  - name: Veteran
+    color: "${color_veteran}"
+    hoist: false
+    mentionable: false
+    position: 35
+    permissions: []

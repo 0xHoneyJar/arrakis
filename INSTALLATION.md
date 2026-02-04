@@ -134,6 +134,81 @@ memory:
 
 **Note**: Memory Stack is opt-in by default. Enable via config after setup.
 
+#### Flatline Protocol - NotebookLM Integration (Optional) {#notebooklm-optional}
+
+**What it does**: Enables Tier 2 knowledge retrieval from Google NotebookLM for the Flatline Protocol's multi-model adversarial review.
+
+**Benefits**:
+- **Curated knowledge**: Query your own NotebookLM notebooks with domain expertise
+- **Two-tier knowledge**: Combines local learnings (Tier 1) with NotebookLM (Tier 2)
+- **Better context**: Models receive relevant domain knowledge before reviewing
+
+**Without NotebookLM**: Flatline Protocol works perfectly with local knowledge only (Tier 1). NotebookLM adds supplementary context for specialized domains.
+
+**Prerequisites**:
+- Python 3.8+
+- A Google account (any gmail or workspace account)
+- Optionally: A NotebookLM notebook with uploaded sources
+
+> **Note**: NotebookLM is NOT Gemini. It's a separate Google product (notebooklm.google.com) for creating personal knowledge bases. No API key required - uses browser session authentication.
+
+**Installation**:
+
+```bash
+# Install patchright (browser automation) - must be accessible as Python module
+pip install --user patchright
+# OR in a virtual environment: pip install patchright
+
+# Install browser binaries (Chromium)
+patchright install chromium
+# OR: python3 -m patchright install chromium
+
+# One-time authentication (opens browser for Google sign-in)
+python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py --setup-auth
+```
+
+**Authentication Process**:
+1. Browser window opens to notebooklm.google.com
+2. Sign in with your Google account
+3. Navigate to any notebook (confirms access)
+4. Close the browser when done
+5. Session saved to `~/.claude/notebooklm-auth/` (with 0700 permissions)
+
+**Configuration** (`.loa.config.yaml`):
+
+```yaml
+flatline_protocol:
+  enabled: true
+  knowledge:
+    notebooklm:
+      enabled: true                    # Enable Tier 2 knowledge
+      notebook_id: "your-notebook-id"  # Optional: specific notebook
+      timeout_ms: 30000                # Query timeout
+```
+
+**Getting a Notebook ID** (optional):
+1. Go to notebooklm.google.com
+2. Open or create a notebook
+3. Copy the ID from the URL: `notebooklm.google.com/notebook/NOTEBOOK_ID`
+
+**Security Notes**:
+- Auth session stored with restrictive permissions (0700)
+- Uses isolated browser profile
+- No credentials stored in plain text
+- Session can be revoked by deleting `~/.claude/notebooklm-auth/`
+
+**Testing**:
+
+```bash
+# Dry run (no browser needed)
+python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py \
+  --dry-run --domain "your domain" --phase prd
+
+# Live query (requires auth setup)
+python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py \
+  --domain "your domain" --phase prd --json
+```
+
 **Updating existing repos**: If you're updating Loa to v0.8.0+ in an existing repository, you'll need to manually initialize the ck index:
 
 ```bash
@@ -213,6 +288,115 @@ git commit -m "Initial commit from Loa template"
 # Start Claude Code
 claude
 ```
+
+## Ownership Model (v1.15.0)
+
+Loa uses a **Projen-style ownership model** where framework-managed files are clearly separated from user-owned files. This prevents conflicts during updates and makes ownership explicit.
+
+### File Ownership Types
+
+| Type | Owner | Updates | How to Identify |
+|------|-------|---------|-----------------|
+| **Framework-managed** | Loa | Auto-updated | Has `@loa-managed` marker or `loa-` prefix |
+| **User-owned** | You | Never touched | No marker, no `loa-` prefix |
+| **Override** | You | Preserved | In `.claude/overrides/` |
+
+### Namespace Separation
+
+Framework files use the `loa-` prefix namespace to avoid collisions with user content:
+
+```
+.claude/skills/
+├── loa-implementing-tasks/    # Framework skill (auto-updated)
+├── loa-designing-architecture/  # Framework skill (auto-updated)
+├── my-custom-skill/           # Your skill (never touched)
+└── team-review-process/       # Your skill (never touched)
+
+.claude/commands/
+├── loa-implement.md           # Framework command (auto-updated)
+├── loa-architect.md           # Framework command (auto-updated)
+├── my-deploy.md               # Your command (never touched)
+└── team-standup.md            # Your command (never touched)
+```
+
+**Why `loa-` prefix?** Claude Code only scans `.claude/skills/` - there's no support for nested directories like `.claude/loa/skills/`. The prefix provides logical separation while ensuring all skills are discovered.
+
+### CLAUDE.md Import Pattern
+
+Framework instructions are loaded via Claude Code's `@` import syntax:
+
+```markdown
+@.claude/loa/CLAUDE.loa.md
+
+# Project-Specific Instructions
+
+Your customizations here take precedence over imported content.
+```
+
+**How it works**:
+1. Claude Code loads `.claude/loa/CLAUDE.loa.md` first (framework instructions)
+2. Then loads the rest of `CLAUDE.md` (your project instructions)
+3. Your instructions **take precedence** over framework defaults
+
+**File locations**:
+- `.claude/loa/CLAUDE.loa.md` - Framework-managed (auto-updated)
+- `CLAUDE.md` - User-owned (never modified by updates)
+
+### Migration from Legacy Format
+
+If you have an existing `CLAUDE.md` with `<!-- LOA:BEGIN -->` markers:
+
+1. Remove the `<!-- LOA:BEGIN -->` ... `<!-- LOA:END -->` section
+2. Add `@.claude/loa/CLAUDE.loa.md` at the top of your file
+3. Keep your project-specific content after the import
+
+**Before** (legacy):
+```markdown
+<!-- LOA:BEGIN - Framework instructions -->
+[Framework content here]
+<!-- LOA:END -->
+
+<!-- PROJECT:BEGIN -->
+Your content here
+<!-- PROJECT:END -->
+```
+
+**After** (v1.15.0+):
+```markdown
+@.claude/loa/CLAUDE.loa.md
+
+# Project-Specific Instructions
+Your content here
+```
+
+### Pack Namespace Convention
+
+Commercial packs from the Loa Constructs Registry use vendor prefixes:
+
+```
+.claude/skills/
+├── loa-implementing-tasks/      # Core Loa (loa- prefix)
+├── gtm-market-analyst/          # GTM Collective pack (gtm- prefix)
+├── sec-threat-model/            # Security pack (sec- prefix)
+└── my-custom-skill/             # Your skill (no prefix)
+```
+
+### Feature Gates
+
+Optional framework features can be disabled to reduce context overhead:
+
+```yaml
+# .loa.config.yaml
+feature_gates:
+  security_audit: false       # Disable security auditing skill
+  deployment: false           # Disable deployment skill
+  run_mode: false             # Disable autonomous run mode
+  constructs: false           # Disable Loa Constructs integration
+  continuous_learning: false  # Disable learning extraction
+  executive_translation: false # Disable executive summaries
+```
+
+Disabled skills are moved to `.claude/.skills-disabled/` (gitignored) and don't load into Claude Code context.
 
 ## Configuration
 
@@ -435,7 +619,25 @@ echo '{"api_key": "sk_your_api_key_here"}' > ~/.loa/credentials.json
 
 Contact the THJ team for API key access.
 
-### Installing Packs
+### Browse and Install with `/constructs` (Recommended)
+
+The easiest way to discover and install packs:
+
+```bash
+/constructs              # Browse available packs with multi-select UI
+/constructs install <pack>   # Install a specific pack directly
+/constructs list         # Show installed packs
+/constructs update       # Check for updates
+/constructs uninstall <pack> # Remove a pack
+/constructs auth         # Check authentication status
+/constructs auth setup   # Interactive API key setup
+```
+
+The `/constructs` command provides a guided experience with multi-select UI for choosing which packs to install.
+
+### Installing Packs via Script
+
+Alternatively, use the install script directly:
 
 ```bash
 # Install a pack (downloads and symlinks commands)

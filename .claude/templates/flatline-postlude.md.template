@@ -1,0 +1,250 @@
+## Post-Generation Validation (Flatline Protocol)
+
+After document generation completes, execute the Flatline Protocol for adversarial review.
+
+**CRITICAL**: This postlude executes AFTER main workflow. Never skip, never fail silently.
+
+### Step 0: Determine Execution Mode (v1.22.0)
+
+Detect whether to execute in interactive or autonomous mode:
+
+```bash
+mode_result=$(.claude/scripts/flatline-mode-detect.sh --json)
+execution_mode=$(echo "$mode_result" | jq -r '.mode')
+mode_reason=$(echo "$mode_result" | jq -r '.reason')
+
+# Log mode detection
+echo "[flatline-postlude] Execution mode: $execution_mode (reason: $mode_reason)"
+```
+
+**Mode precedence:**
+1. CLI flags (`--interactive`, `--autonomous`)
+2. Environment variable (`LOA_FLATLINE_MODE`)
+3. Config (`autonomous_mode.enabled`)
+4. Auto-detection (strong AI signals only)
+5. Default (interactive)
+
+### Step 1: Check Configuration
+
+Read `.loa.config.yaml`:
+
+```yaml
+flatline_protocol:
+  enabled: true|false
+  auto_trigger: true|false
+  phases:
+    {{PHASE}}: true|false
+
+autonomous_mode:  # v1.22.0
+  enabled: true|false
+  auto_enable_for_ai: true
+  actions:
+    high_consensus: integrate|log|skip
+    disputed: halt|log|skip
+    blocker: halt|log|continue
+    low_value: log|skip
+```
+
+**Exit Conditions** (skip if any are true):
+- `flatline_protocol.enabled: false` → Log DISABLED, exit
+- `flatline_protocol.auto_trigger: false` → Log DISABLED, exit
+- `flatline_protocol.phases.{{PHASE}}: false` → Log DISABLED, exit
+
+If skipping, surface to user:
+> "Flatline Protocol is disabled for this phase. Run `/flatline-review {{PHASE}}` manually if desired."
+
+### Step 2: Extract Domain
+
+Extract domain keywords from the generated document:
+- From PRD: Product name, industry, key technologies
+- From SDD: Tech stack, frameworks, protocols
+- From Sprint: Task domains, components
+
+```bash
+domain=$(grep -iE "^#|product|technology|framework|feature" "$OUTPUT_DOC" | \
+    head -5 | tr -cs '[:alnum:]' ' ' | cut -d' ' -f1-5)
+```
+
+### Step 3: Execute Flatline Protocol
+
+```bash
+# Execute with mode flag (v1.22.0)
+result=$(.claude/scripts/flatline-orchestrator.sh \
+    --doc "{{OUTPUT_DOC}}" \
+    --phase "{{PHASE}}" \
+    --domain "$domain" \
+    ${execution_mode:+--$execution_mode} \
+    --json)
+```
+
+### Step 4: Process Results (Interactive Mode)
+
+**For interactive mode only.** Skip to Step 4B if `execution_mode == "autonomous"`.
+
+### Step 4B: Process Results (Autonomous Mode) - v1.22.0
+
+When `execution_mode == "autonomous"`:
+
+```bash
+# Create run manifest
+manifest_result=$(.claude/scripts/flatline-manifest.sh create \
+    --phase "{{PHASE}}" \
+    --document "{{OUTPUT_DOC}}")
+run_id=$(echo "$manifest_result" | jq -r '.run_id')
+
+# Process results via result handler
+handler_result=$(.claude/scripts/flatline-result-handler.sh \
+    --mode autonomous \
+    --result "$result" \
+    --document "{{OUTPUT_DOC}}" \
+    --phase "{{PHASE}}" \
+    --run-id "$run_id")
+
+handler_exit=$?
+```
+
+**Exit code handling:**
+
+| Exit | Meaning | Action |
+|------|---------|--------|
+| 0 | Success | Continue workflow |
+| 1 | BLOCKER halt | Generate escalation, HALT workflow |
+| 4 | Disputed threshold | Generate escalation, HALT workflow |
+| 5 | Integration failed | Log error, continue |
+
+**On BLOCKER halt (exit 1):**
+```bash
+# Generate escalation report
+blockers=$(echo "$result" | jq '.blockers')
+disputed=$(echo "$result" | jq '.disputed')
+
+.claude/scripts/flatline-escalation.sh create \
+    --run-id "$run_id" \
+    --phase "{{PHASE}}" \
+    --reason "BLOCKER item triggered workflow halt" \
+    --document "{{OUTPUT_DOC}}" \
+    --blockers "$blockers" \
+    --disputed "$disputed"
+
+# Log to NOTES.md
+echo "## Flatline Halt - {{PHASE}}" >> grimoires/loa/NOTES.md
+echo "" >> grimoires/loa/NOTES.md
+echo "**Run ID:** $run_id" >> grimoires/loa/NOTES.md
+echo "**Reason:** BLOCKER halt" >> grimoires/loa/NOTES.md
+echo "**Report:** grimoires/loa/a2a/flatline/escalation-*.md" >> grimoires/loa/NOTES.md
+
+# HALT workflow (return error to parent)
+exit 1
+```
+
+**On success (exit 0):**
+```bash
+# Log summary
+integrated=$(echo "$handler_result" | jq '.metrics.integrated')
+disputed=$(echo "$handler_result" | jq '.metrics.disputed')
+blockers=$(echo "$handler_result" | jq '.metrics.blockers')
+
+echo "[flatline-postlude] Autonomous processing complete"
+echo "  Integrated: $integrated"
+echo "  Disputed (logged): $disputed"
+echo "  Blockers (logged): $blockers"
+
+# Continue workflow
+```
+
+### Step 4: Process Results
+
+**HIGH_CONSENSUS items** (score >700 both models):
+- Present to user with option to auto-integrate:
+  ```
+  Flatline Protocol found improvements with high consensus:
+
+  1. [IMP-001] Add hardware wallet support section
+     GPT: 850 | Opus: 920 | Action: Auto-integrate? [Y/n]
+
+  2. [IMP-002] Clarify error handling requirements
+     GPT: 780 | Opus: 810 | Action: Auto-integrate? [Y/n]
+  ```
+- If user approves, apply the improvement to the document
+
+**DISPUTED items** (delta >300):
+- Present via AskUserQuestion with details:
+  ```
+  Flatline Protocol found a disputed improvement:
+
+  Improvement: Split into mobile/desktop PRDs
+  GPT Score: 780  |  Opus Score: 420  |  Delta: 360
+
+  GPT says: "Different platforms have different constraints"
+  Opus says: "Premature optimization, handle platform differences in SDD"
+
+  Would you like to integrate this? [Yes/No/Modify]
+  ```
+
+**BLOCKER items** (skeptic concern >700):
+- Present blockers prominently:
+  ```
+  ⚠️ Flatline Protocol detected potential blockers:
+
+  1. [SKP-001] No key rotation strategy defined
+     Severity: CRITICAL (850)
+     Recommendation: Add key rotation requirements
+
+  Please address these concerns before continuing.
+  ```
+- Do NOT block workflow, but ensure user acknowledges
+
+**LOW_VALUE items** (score <400 both):
+- Log to trajectory
+- Do NOT surface to user (noise reduction)
+
+### Step 5: Trajectory Logging
+
+Always log results:
+
+```json
+{
+    "type": "flatline_protocol",
+    "timestamp": "{{ISO8601}}",
+    "phase": "{{PHASE}}",
+    "document": "{{OUTPUT_DOC}}",
+    "consensus_items": N,
+    "disputed_items": N,
+    "discarded_items": N,
+    "blocker_items": N,
+    "latency_ms": N,
+    "token_usage": N,
+    "cost_usd": N,
+    "model_agreement_percent": N
+}
+```
+
+### Step 6: Error Handling
+
+**On postlude error**:
+1. Log error to trajectory (action: ERROR)
+2. Surface warning to user: "Flatline Protocol encountered an error. Review may be incomplete."
+3. **Do NOT block workflow** - document is still valid
+4. Offer manual retry: "Run `/flatline-review {{PHASE}}` to try again."
+
+**On API timeout**:
+1. Log timeout (which models failed)
+2. Calculate partial consensus with available data
+3. Surface warning: "Partial review (X model unavailable)"
+
+**On budget exceeded**:
+1. Calculate how many more calls needed
+2. Present choice via AskUserQuestion:
+   ```
+   Flatline Protocol budget would exceed $X. Options:
+   1. Continue anyway (additional ~$Y)
+   2. Complete with partial results
+   3. Skip remaining phases
+   ```
+
+### Invariants
+
+1. **Never fail silently** - Always log to trajectory, always surface warnings
+2. **Never block workflow** - Document is valid regardless of review outcome
+3. **Always offer manual control** - User can re-run with `/flatline-review`
+4. **Respect budget limits** - Don't exceed configured budget without permission

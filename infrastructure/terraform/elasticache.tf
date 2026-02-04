@@ -25,7 +25,7 @@ resource "aws_elasticache_replication_group" "main" {
   description          = "Arrakis Redis cluster"
 
   node_type            = var.redis_node_type
-  num_cache_clusters   = 1  # Single node for small scale
+  num_cache_clusters   = 1 # Single node for small scale
   parameter_group_name = "default.redis7"
   engine_version       = "7.0"
   port                 = 6379
@@ -37,7 +37,7 @@ resource "aws_elasticache_replication_group" "main" {
   transit_encryption_enabled = true
   auth_token                 = random_password.redis_auth.result
 
-  automatic_failover_enabled = false  # Single node
+  automatic_failover_enabled = false # Single node
 
   snapshot_retention_limit = 7
   snapshot_window          = "02:00-03:00"
@@ -47,13 +47,19 @@ resource "aws_elasticache_replication_group" "main" {
 
 resource "random_password" "redis_auth" {
   length  = 32
-  special = false  # Redis auth token restrictions
+  special = false # Redis auth token restrictions
 }
 
 # Store Redis credentials in AWS Secrets Manager
 resource "aws_secretsmanager_secret" "redis_credentials" {
   name                    = "${local.name_prefix}/redis"
   recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.secrets.id # Sprint 95: A-94.1 - Customer-managed KMS encryption
+
+  tags = merge(local.common_tags, {
+    Service = "Redis"
+    Sprint  = "95"
+  })
 }
 
 resource "aws_secretsmanager_secret_version" "redis_credentials" {

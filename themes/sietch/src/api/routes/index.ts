@@ -16,6 +16,9 @@ import { notificationRouter } from './notification.routes.js';
 import { billingRouter } from '../billing.routes.js';
 import { badgeRouter } from '../badge.routes.js';
 import { boostRouter } from '../boost.routes.js';
+import { themeRouter } from './theme.routes.js';
+import { componentRouter } from './component.routes.js';
+import { internalRouter } from './internal.routes.js';
 
 /**
  * Combined API router that mounts all sub-routers
@@ -49,6 +52,12 @@ apiRouter.use('/badges', badgeRouter);
 // Mount boost routes at /boost (v4.0 - Sprint 28)
 apiRouter.use('/boost', boostRouter);
 
+// Mount theme builder routes at /themes (Sprint 1 - WYSIWYG Theme Builder)
+apiRouter.use('/themes', themeRouter);
+
+// Mount component routes at /components (Sprint 5 - Component Registry)
+apiRouter.use('/components', componentRouter);
+
 /**
  * Re-export individual routers for backward compatibility and direct access
  */
@@ -62,6 +71,9 @@ export {
   billingRouter,
   badgeRouter,
   boostRouter,
+  themeRouter,
+  componentRouter,
+  internalRouter,
 };
 
 /**
@@ -72,3 +84,35 @@ export { createVerifyRouter } from './verify.routes.js';
 export { createVerifyIntegration } from './verify.integration.js';
 export type { VerifyRouter } from './verify.routes.js';
 export type { VerificationIntegrationDeps, VerifyIntegration } from './verify.integration.js';
+
+/**
+ * Simulation routes (Sprint 110 - QA Sandbox Testing)
+ * Factory function that requires Redis dependency injection
+ */
+export { createSimulationRouter } from './simulation.routes.js';
+export type { SimulationRouterDeps } from './simulation.routes.js';
+
+/**
+ * Dashboard routes (Sprint 114 - Web Configuration Dashboard)
+ * Factory function that requires Redis and guildId dependency injection
+ */
+export { createDashboardRouter, createDashboardAuthRouter } from './dashboard/index.js';
+export type {
+  DashboardRouterDeps,
+  DashboardAuthDeps,
+  DashboardSession,
+  DashboardAuthRequest,
+} from './dashboard/index.js';
+
+/**
+ * Local authentication routes (Sprint 141 - Gom Jabbar CLI Authentication)
+ * Username/password authentication for CLI and dashboard
+ */
+export { createAuthRouter, requireLocalAuth, requireRoles, addApiKeyVerifyRoute } from './auth.routes.js';
+export type { AuthenticatedRequest } from './auth.routes.js';
+
+/**
+ * User management routes (Sprint 142 - Gom Jabbar CLI User Management)
+ * Admin endpoints for managing local user accounts
+ */
+export { createUsersRouter } from './users.routes.js';

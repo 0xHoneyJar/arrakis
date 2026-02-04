@@ -374,7 +374,8 @@
       "Bash(.:*)",
       "Bash(bash:*)",
       "Bash(sh:*)",
-      "Bash(zsh:*)"
+      "Bash(zsh:*)",
+      "Bash(cd:*)"
     ],
     "deny": [
       "Bash(sudo:*)",
@@ -463,6 +464,17 @@
           {
             "type": "command",
             "command": ".claude/scripts/cleanup-context.sh --prompt"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/scripts/gpt-review-hook.sh"
           }
         ]
       }

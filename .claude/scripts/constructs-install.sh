@@ -57,64 +57,7 @@ EXIT_ERROR=6
 # Authentication
 # =============================================================================
 
-# Check if file permissions are secure (MED-001)
-# Args: $1 - file path
-# Returns: 0 if secure, 1 if too permissive
-check_file_permissions() {
-    local file="$1"
-    local perms
-    perms=$(stat -c "%a" "$file" 2>/dev/null || stat -f "%Lp" "$file" 2>/dev/null)
-
-    # Check if permissions are 600 (owner read/write only) or more restrictive
-    case "$perms" in
-        600|400) return 0 ;;  # Secure permissions
-        *)
-            print_warning "SECURITY: Credentials file has insecure permissions ($perms): $file"
-            print_warning "  Recommended: chmod 600 $file"
-            return 1
-            ;;
-    esac
-}
-
-# Get API key from environment or credentials file
-# Returns: API key or empty string
-get_api_key() {
-    # Check environment variable first
-    if [[ -n "${LOA_CONSTRUCTS_API_KEY:-}" ]]; then
-        echo "$LOA_CONSTRUCTS_API_KEY"
-        return 0
-    fi
-
-    # Check credentials file
-    local creds_file="${HOME}/.loa/credentials.json"
-    if [[ -f "$creds_file" ]]; then
-        # SECURITY (MED-001): Warn if file permissions are too open
-        check_file_permissions "$creds_file" || true
-
-        local key
-        key=$(jq -r '.api_key // empty' "$creds_file" 2>/dev/null)
-        if [[ -n "$key" ]]; then
-            echo "$key"
-            return 0
-        fi
-    fi
-
-    # Alternative credentials location
-    local alt_creds="${HOME}/.loa-constructs/credentials.json"
-    if [[ -f "$alt_creds" ]]; then
-        # SECURITY (MED-001): Warn if file permissions are too open
-        check_file_permissions "$alt_creds" || true
-
-        local key
-        key=$(jq -r '.api_key // .apiKey // empty' "$alt_creds" 2>/dev/null)
-        if [[ -n "$key" ]]; then
-            echo "$key"
-            return 0
-        fi
-    fi
-
-    echo ""
-}
+# NOTE: check_file_permissions() and get_api_key() moved to constructs-lib.sh (Issue #104)
 
 # =============================================================================
 # Directory Management
@@ -314,10 +257,13 @@ unlink_pack_commands() {
 }
 
 # =============================================================================
-# Skill Symlinking (for loader compatibility)
+# Skill Symlinking (for Claude Code discovery)
 # =============================================================================
+# Fixed: Skills are now symlinked directly to .claude/skills/ (flat structure)
+# instead of .claude/constructs/skills/<pack>/ which Claude Code doesn't discover.
+# See: https://github.com/0xHoneyJar/loa-constructs/issues/76
 
-# Symlink pack skills to constructs/skills for loader discovery
+# Symlink pack skills to .claude/skills for Claude Code discovery
 # Args:
 #   $1 - Pack slug
 # Returns: Number of skills linked
@@ -325,7 +271,10 @@ symlink_pack_skills() {
     local pack_slug="$1"
     local pack_dir="$(get_packs_dir)/$pack_slug"
     local skills_source="$pack_dir/skills"
-    local skills_target="$(get_skills_dir)/$pack_slug"
+    # Use repo root to ensure correct path regardless of cwd
+    local repo_root
+    repo_root="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    local skills_target="$repo_root/.claude/skills"
     local linked=0
 
     # Check if pack has skills
@@ -334,7 +283,7 @@ symlink_pack_skills() {
         return 0
     fi
 
-    # Create target directory
+    # Create target directory (should already exist but ensure it does)
     mkdir -p "$skills_target"
 
     # Symlink each skill directory
@@ -343,19 +292,23 @@ symlink_pack_skills() {
 
         local skill_name
         skill_name=$(basename "$skill")
-        local relative_path="../../packs/$pack_slug/skills/$skill_name"
+        # Relative path from .claude/skills/ to .claude/constructs/packs/<pack>/skills/<skill>
+        local relative_path="../constructs/packs/$pack_slug/skills/$skill_name"
         local target_link="$skills_target/$skill_name"
 
-        # Remove existing symlink if present
-        if [[ -L "$target_link" ]]; then
-            rm -f "$target_link"
-        elif [[ -d "$target_link" ]]; then
-            print_warning "  Skipping skill $skill_name: directory exists"
+        # Check for collision with existing non-symlink path (directory, file, etc.)
+        if [[ -e "$target_link" ]] && [[ ! -L "$target_link" ]]; then
+            print_warning "  Skipping skill $skill_name: existing non-symlink path present"
             continue
         fi
 
+        # Remove existing symlink if present (from same or different pack)
+        if [[ -L "$target_link" ]]; then
+            rm -f "$target_link"
+        fi
+
         # Validate symlink target (M-003)
-        if ! validate_symlink_target "$relative_path" "packs/$pack_slug/skills"; then
+        if ! validate_symlink_target "$relative_path" "constructs/packs/$pack_slug/skills" "$skills_target"; then
             print_warning "  Skipping skill $skill_name: symlink validation failed"
             continue
         fi
@@ -368,16 +321,45 @@ symlink_pack_skills() {
     echo "$linked"
 }
 
-# Remove pack skill symlinks
+# Remove pack skill symlinks from .claude/skills/
 # Args:
 #   $1 - Pack slug
 unlink_pack_skills() {
     local pack_slug="$1"
-    local skills_target="$(get_skills_dir)/$pack_slug"
+    local pack_dir="$(get_packs_dir)/$pack_slug"
+    local skills_source="$pack_dir/skills"
+    # Use repo root to ensure correct path regardless of cwd
+    local repo_root
+    repo_root="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    local skills_target="$repo_root/.claude/skills"
 
-    # Remove the pack's skill symlinks directory
-    if [[ -d "$skills_target" ]]; then
-        rm -rf "$skills_target"
+    # Check if pack has skills directory
+    if [[ ! -d "$skills_source" ]]; then
+        return 0
+    fi
+
+    # Remove symlinks for each skill in this pack
+    for skill in "$skills_source"/*/; do
+        [[ -d "$skill" ]] || continue
+
+        local skill_name
+        skill_name=$(basename "$skill")
+        local target_link="$skills_target/$skill_name"
+
+        # Only remove if it's a symlink pointing to this pack
+        if [[ -L "$target_link" ]]; then
+            local link_target
+            link_target=$(readlink "$target_link" 2>/dev/null || echo "")
+            if [[ "$link_target" == *"constructs/packs/$pack_slug/skills/"* ]]; then
+                rm -f "$target_link"
+            fi
+        fi
+    done
+
+    # Also clean up legacy location if it exists
+    local legacy_target="$(get_skills_dir)/$pack_slug"
+    if [[ -d "$legacy_target" ]]; then
+        rm -rf "$legacy_target"
     fi
 }
 
@@ -427,25 +409,32 @@ do_install_pack() {
     echo "  Downloading from $registry_url/packs/$pack_slug/download..."
 
     # Download pack
-    # SECURITY (HIGH-002): Use process substitution for auth header to avoid shell history exposure
+    # SECURITY (MEDIUM-001): Use environment variable for auth header
+    # Avoids process substitution file descriptor exposure via lsof
     local response
     local http_code
     local tmp_file
-    tmp_file=$(mktemp)
+    tmp_file=$(mktemp) || { print_error "mktemp failed"; return 1; }
+    chmod 600 "$tmp_file"  # CRITICAL-001 FIX
 
     # Disable command tracing during API call to prevent key leakage
     { set +x; } 2>/dev/null || true
 
-    http_code=$(curl -s -w "%{http_code}" \
-        -H @<(echo "Authorization: Bearer $api_key") \
+    # Use environment variable instead of process substitution for security
+    local auth_header="Authorization: Bearer $api_key"
+    # HIGH-002 FIX: Enforce HTTPS and TLS 1.2+
+    http_code=$(curl -s -w "%{http_code}" --proto =https --tlsv1.2 --max-time 300 \
+        -H "$auth_header" \
         -H "Accept: application/json" \
         "$registry_url/packs/$pack_slug/download" \
         -o "$tmp_file" 2>/dev/null) || {
+        unset auth_header
         rm -f "$tmp_file"
         print_error "ERROR: Network error while downloading pack"
         echo "  Check your network connection and try again"
         return $EXIT_NETWORK_ERROR
     }
+    unset auth_header
 
     # Check HTTP status
     case "$http_code" in
@@ -753,23 +742,29 @@ do_install_skill() {
     echo "  Downloading from $registry_url/skills/$skill_slug/download..."
 
     # Download skill
-    # SECURITY (HIGH-002): Use process substitution for auth header
     local http_code
     local tmp_file
-    tmp_file=$(mktemp)
+    tmp_file=$(mktemp) || { print_error "mktemp failed"; return 1; }
+    chmod 600 "$tmp_file"  # CRITICAL-001 FIX
 
     # Disable command tracing during API call to prevent key leakage
     { set +x; } 2>/dev/null || true
 
-    http_code=$(curl -s -w "%{http_code}" \
-        -H @<(echo "Authorization: Bearer $api_key") \
+    # Use local variable instead of process substitution for security (MED-002)
+    # Process substitution creates a temporary file descriptor readable by other processes
+    local auth_header="Authorization: Bearer $api_key"
+    # HIGH-002 FIX: Enforce HTTPS and TLS 1.2+
+    http_code=$(curl -s -w "%{http_code}" --proto =https --tlsv1.2 --max-time 300 \
+        -H "$auth_header" \
         -H "Accept: application/json" \
         "$registry_url/skills/$skill_slug/download" \
         -o "$tmp_file" 2>/dev/null) || {
+        unset auth_header
         rm -f "$tmp_file"
         print_error "ERROR: Network error while downloading skill"
         return $EXIT_NETWORK_ERROR
     }
+    unset auth_header
 
     # Check HTTP status
     case "$http_code" in

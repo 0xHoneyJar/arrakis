@@ -4,20 +4,42 @@ import helmet from 'helmet';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { IncomingMessage, ServerResponse } from 'http';
-import { config } from '../config.js';
+import { config, hasLegacyKeys, LEGACY_KEY_SUNSET_DATE } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { initDatabase, closeDatabase } from '../db/index.js';
-import { publicRouter, adminRouter, memberRouter, billingRouter, badgeRouter, boostRouter } from './routes.js';
+import { publicRouter, adminRouter, memberRouter, billingRouter, cryptoBillingRouter, badgeRouter, boostRouter, componentRouter, themeRouter, internalRouter } from './routes.js';
 import { telegramRouter } from './telegram.routes.js';
 import { adminRouter as billingAdminRouter } from './admin.routes.js';
 import { docsRouter } from './docs/swagger.js';
 import { createVerifyIntegration } from './routes/verify.integration.js';
+import { createAuthRouter, addApiKeyVerifyRoute } from './routes/auth.routes.js';
 import {
   errorHandler,
   notFoundHandler,
   requestIdMiddleware,
 } from './middleware.js';
-import { saveWalletMapping, logAuditEvent } from '../db/index.js';
+import {
+  saveWalletMapping,
+  logAuditEvent,
+  getEligibilityByAddress,
+  // PostgreSQL eligibility queries (Sprint 175)
+  setEligibilityPgDb,
+  getEligibilityByAddressPg,
+  getEligibilityFromSnapshotPg,
+  isEligibilityPgDbInitialized,
+} from '../db/index.js';
+// Sprint 176: User Registry Service
+import {
+  setUserRegistryDb,
+  isUserRegistryServiceInitialized,
+  getUserRegistryService,
+  IdentityAlreadyExistsError,
+  WalletAlreadyLinkedError,
+} from '../services/user-registry/index.js';
+import { discordService } from '../services/discord.js';
+import { onboardingService } from '../services/onboarding.js';
+import { profileService } from '../services/profile.js';
+import { EmbedBuilder } from 'discord.js';
 
 /**
  * Express application instance
@@ -181,8 +203,28 @@ function createApp(): Application {
     },
   }));
 
-  // JSON body parsing
-  expressApp.use(express.json({ limit: '10kb' }));
+  // Raw body parser for crypto webhook (Sprint 158: NOWPayments Integration)
+  // NOWPayments requires raw body for HMAC-SHA512 signature verification
+  expressApp.use('/api/crypto/webhook', express.raw({
+    type: 'application/json',
+    verify: (req: any, _res, buf) => {
+      // Attach raw body buffer to request for signature verification
+      req.rawBody = buf;
+    },
+  }));
+
+  // ==========================================================================
+  // Input Size Limits (Sprint 10 - HIGH-7 Security Hardening)
+  // ==========================================================================
+  // Prevents DoS attacks via large payloads.
+  // Different limits for different content types:
+  // - General JSON: 1MB (default)
+  // - Theme data: 500KB (validated separately)
+  // - Component props: 100KB (validated separately)
+  //
+  // @security HIGH-7: Allocation of Resources Without Limits (CWE-770)
+  expressApp.use(express.json({ limit: '1mb' }));
+  expressApp.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   // Public routes
   expressApp.use('/', publicRouter);
@@ -193,11 +235,20 @@ function createApp(): Application {
   // Billing routes (v4.0 - Sprint 23)
   expressApp.use('/api/billing', billingRouter);
 
+  // Crypto Billing routes (Sprint 158: NOWPayments Integration)
+  expressApp.use('/api/crypto', cryptoBillingRouter);
+
   // Badge routes (v4.0 - Sprint 27)
   expressApp.use('/api/badge', badgeRouter);
 
   // Boost routes (v4.0 - Sprint 28)
   expressApp.use('/api/boosts', boostRouter);
+
+  // Component routes (Sprint 5 - WYSIWYG Theme Builder)
+  expressApp.use('/api/components', componentRouter);
+
+  // Theme routes (Sprint 1 - WYSIWYG Theme Builder)
+  expressApp.use('/api/themes', themeRouter);
 
   // Telegram routes (v4.1 - Sprint 30)
   expressApp.use('/telegram', telegramRouter);
@@ -215,9 +266,23 @@ function createApp(): Application {
     });
 
     const verifyDb = drizzle(verifyPostgresClient);
+
+    // Sprint 175: Initialize PostgreSQL for eligibility queries
+    // NOTE: Tables are created in startServer() after createApp() returns
+    if (!isEligibilityPgDbInitialized()) {
+      setEligibilityPgDb(verifyDb);
+      logger.info('PostgreSQL initialized for eligibility queries');
+    }
+
+    // Sprint 176: Initialize User Registry Service
+    if (!isUserRegistryServiceInitialized()) {
+      setUserRegistryDb(verifyDb);
+      logger.info('User Registry Service initialized');
+    }
+
     const verifyRouter = createVerifyIntegration({
       db: verifyDb,
-      onWalletLinked: async ({ communityId, discordUserId, walletAddress }) => {
+      onWalletLinked: async ({ communityId, discordUserId, walletAddress, discordUsername, signature, message }) => {
         // Sprint 79.4: Save wallet mapping to SQLite (legacy) and log audit event
         try {
           saveWalletMapping(discordUserId, walletAddress);
@@ -234,6 +299,153 @@ function createApp(): Application {
             { communityId, discordUserId, walletAddress },
             'Wallet verified and linked to Discord user'
           );
+
+          // Sprint 176: Create/update identity in User Registry
+          if (isUserRegistryServiceInitialized()) {
+            try {
+              const userRegistry = getUserRegistryService();
+
+              // Try to get existing identity
+              let identityWithWallets = await userRegistry.getIdentityByDiscordId(discordUserId);
+
+              if (!identityWithWallets) {
+                // Create new identity
+                identityWithWallets = await userRegistry.createIdentity({
+                  discordId: discordUserId,
+                  discordUsername: discordUsername || 'unknown',
+                  source: 'discord_verification',
+                  actorId: discordUserId,
+                });
+                logger.info(
+                  { identityId: identityWithWallets.identity.identityId, discordUserId },
+                  'Created new identity in User Registry'
+                );
+              }
+
+              // Verify wallet for the identity
+              await userRegistry.verifyWallet({
+                identityId: identityWithWallets.identity.identityId,
+                walletAddress,
+                signature: signature || 'verification_completed',
+                message: message || 'wallet_verification',
+                isPrimary: true, // First wallet is always primary
+                source: 'discord_verification',
+                actorId: discordUserId,
+              });
+              logger.info(
+                { identityId: identityWithWallets.identity.identityId, walletAddress },
+                'Wallet verified in User Registry'
+              );
+            } catch (registryError) {
+              if (registryError instanceof IdentityAlreadyExistsError) {
+                logger.debug({ discordUserId }, 'Identity already exists in User Registry');
+              } else if (registryError instanceof WalletAlreadyLinkedError) {
+                logger.warn({ walletAddress, discordUserId }, 'Wallet already linked to another identity');
+              } else {
+                logger.error(
+                  { error: registryError, discordUserId, walletAddress },
+                  'Failed to update User Registry'
+                );
+              }
+              // Don't fail the overall verification - registry is supplementary
+            }
+          }
+
+          // Send Discord DM notification to user with eligibility status
+          if (discordService.isConnected()) {
+            try {
+              const client = discordService.getClient();
+              const user = await client.users.fetch(discordUserId);
+
+              if (user) {
+                const truncatedAddress = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+
+                // Check eligibility first so we can include it in the DM
+                // Sprint 175: Use PostgreSQL for eligibility check (persistent across restarts)
+                let eligibility = null;
+                let snapshotEligibility = null;
+                if (isEligibilityPgDbInitialized()) {
+                  // First check top 69 (eligibility_current)
+                  eligibility = await getEligibilityByAddressPg(walletAddress.toLowerCase());
+                  // If not in top 69, check full snapshot for their rank
+                  if (!eligibility) {
+                    snapshotEligibility = await getEligibilityFromSnapshotPg(walletAddress.toLowerCase());
+                  }
+                } else {
+                  // Fallback to SQLite (may be empty after restart)
+                  eligibility = getEligibilityByAddress(walletAddress.toLowerCase());
+                }
+
+                const isEligible = eligibility && eligibility.rank && eligibility.rank <= 69;
+                const rank = eligibility?.rank ?? snapshotEligibility?.rank;
+
+                // Build the DM message based on eligibility
+                let description = `Your wallet has been successfully linked to your Discord account.\n\n`;
+                description += `**Wallet:** \`${truncatedAddress}\`\n\n`;
+
+                if (isEligible && eligibility && eligibility.rank !== undefined) {
+                  // User is in top 69 - they're getting onboarding
+                  const userRank = eligibility.rank;
+                  const tier = userRank <= 7 ? 'Naib' : 'Fedaykin';
+                  description += `**BGT Position:** #${userRank} of 69\n`;
+                  description += `**Tier:** ${tier}\n\n`;
+                  description += `**You're eligible for Sietch!** An onboarding wizard will start shortly to set up your profile (nym, PFP, bio).`;
+                } else if (rank) {
+                  // User has a rank but isn't in top 69
+                  description += `**BGT Position:** #${rank}\n\n`;
+                  description += `**Not Yet Eligible**\n`;
+                  description += `Sietch membership requires being in the top 69 BGT holders. `;
+                  description += `You're currently at position #${rank}.\n\n`;
+                  description += `Keep accumulating BGT! When you reach the top 69, you'll automatically receive the onboarding wizard.`;
+                } else {
+                  // Wallet not found in any eligibility data
+                  description += `**BGT Position:** Not ranked\n\n`;
+                  description += `**Not Yet Eligible**\n`;
+                  description += `Sietch membership requires being in the top 69 BGT holders. `;
+                  description += `Your wallet wasn't found in the BGT holder rankings.\n\n`;
+                  description += `Start accumulating BGT to become eligible! Rankings update periodically.`;
+                }
+
+                description += `\n\nUse \`/verify status\` to check your verification status anytime.`;
+
+                const embed = new EmbedBuilder()
+                  .setTitle('✅ Wallet Verified!')
+                  .setDescription(description)
+                  .setColor(isEligible ? 0x00FF00 : 0xFFA500) // Green if eligible, orange if not
+                  .setTimestamp()
+                  .setFooter({ text: 'Powered by Arrakis' });
+
+                await user.send({ embeds: [embed] });
+                logger.info({ discordUserId, rank, isEligible }, 'Sent verification success DM to user');
+
+                // Trigger onboarding if eligible
+                if (isEligible && eligibility && eligibility.rank !== undefined) {
+                  const existingProfile = profileService.getProfileByDiscordId(discordUserId);
+                  if (!existingProfile) {
+                    const onboardTier = eligibility.rank <= 7 ? 'naib' : 'fedaykin';
+                    await onboardingService.startOnboarding(user, onboardTier);
+                    logger.info(
+                      { discordUserId, walletAddress, rank: eligibility.rank, tier: onboardTier },
+                      'Triggered onboarding after wallet verification - user is eligible'
+                    );
+                  } else {
+                    logger.debug({ discordUserId }, 'User already has profile, skipping onboarding');
+                  }
+                } else {
+                  logger.info(
+                    { discordUserId, walletAddress, rank },
+                    'Wallet verified but not in top 69 - onboarding not triggered'
+                  );
+                }
+              }
+            } catch (dmError) {
+              // User may have DMs disabled or eligibility check failed
+              logger.warn(
+                { error: dmError, discordUserId },
+                'Could not send verification DM or check eligibility (DMs may be disabled)'
+              );
+            }
+          }
         } catch (error) {
           logger.error(
             { error, discordUserId, walletAddress },
@@ -263,6 +475,22 @@ function createApp(): Application {
   // API Documentation (v5.1 - Sprint 52)
   expressApp.use('/docs', docsRouter);
 
+  // ==========================================================================
+  // Authentication Routes (Sprint 9 - CRIT-3 Frontend Auth)
+  // ==========================================================================
+  const authRouter = createAuthRouter();
+  addApiKeyVerifyRoute(authRouter); // Add /api/auth/verify for frontend auth
+  expressApp.use('/api/auth', authRouter);
+  logger.info('Auth routes mounted at /api/auth');
+
+  // ==========================================================================
+  // Internal Routes (Sprint 175 - Trigger.dev -> ECS Communication)
+  // ==========================================================================
+  // Internal endpoints called by Trigger.dev workers via HTTP.
+  // These run on ECS which has VPC access to RDS.
+  expressApp.use('/internal', internalRouter);
+  logger.info('Internal routes mounted at /internal');
+
   // 404 handler
   expressApp.use(notFoundHandler);
 
@@ -281,6 +509,133 @@ export async function startServer(): Promise<void> {
 
   // Create Express app
   app = createApp();
+
+  // Sprint 175: Create eligibility tables if they don't exist
+  // This runs on ECS startup which has VPC access to RDS
+  // Trigger.dev workers cannot connect to RDS directly due to VPC isolation
+  if (verifyPostgresClient) {
+    try {
+      logger.info('Ensuring eligibility tables exist...');
+      await verifyPostgresClient`
+        CREATE TABLE IF NOT EXISTS eligibility_current (
+          address TEXT PRIMARY KEY,
+          rank INTEGER NOT NULL,
+          bgt_claimed BIGINT NOT NULL,
+          bgt_burned BIGINT NOT NULL,
+          bgt_held BIGINT NOT NULL,
+          role TEXT NOT NULL CHECK (role IN ('naib', 'fedaykin', 'none')),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+        )
+      `;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_current_rank ON eligibility_current(rank)`;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_current_role ON eligibility_current(role)`;
+
+      await verifyPostgresClient`
+        CREATE TABLE IF NOT EXISTS eligibility_snapshots (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          data JSONB NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+        )
+      `;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_snapshots_created ON eligibility_snapshots(created_at DESC)`;
+
+      await verifyPostgresClient`
+        CREATE TABLE IF NOT EXISTS eligibility_admin_overrides (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          address TEXT NOT NULL,
+          action TEXT NOT NULL CHECK (action IN ('add', 'remove')),
+          reason TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          expires_at TIMESTAMP WITH TIME ZONE,
+          active BOOLEAN DEFAULT TRUE NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+        )
+      `;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_overrides_address ON eligibility_admin_overrides(address)`;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_overrides_active ON eligibility_admin_overrides(active, expires_at)`;
+
+      await verifyPostgresClient`
+        CREATE TABLE IF NOT EXISTS eligibility_health_status (
+          id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+          last_success TIMESTAMP WITH TIME ZONE,
+          last_failure TIMESTAMP WITH TIME ZONE,
+          consecutive_failures INTEGER DEFAULT 0 NOT NULL,
+          in_grace_period BOOLEAN DEFAULT FALSE NOT NULL,
+          last_synced_block BIGINT,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+        )
+      `;
+      await verifyPostgresClient`
+        INSERT INTO eligibility_health_status (id, consecutive_failures, in_grace_period)
+        VALUES (1, 0, FALSE)
+        ON CONFLICT (id) DO NOTHING
+      `;
+
+      await verifyPostgresClient`
+        CREATE TABLE IF NOT EXISTS wallet_verifications (
+          discord_user_id TEXT PRIMARY KEY,
+          wallet_address TEXT NOT NULL,
+          verified_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+          signature TEXT,
+          message TEXT
+        )
+      `;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_wallet_verifications_address ON wallet_verifications(wallet_address)`;
+
+      await verifyPostgresClient`
+        CREATE TABLE IF NOT EXISTS eligibility_claim_events (
+          tx_hash TEXT NOT NULL,
+          log_index INTEGER NOT NULL,
+          block_number BIGINT NOT NULL,
+          address TEXT NOT NULL,
+          amount BIGINT NOT NULL,
+          vault_address TEXT NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+          PRIMARY KEY (tx_hash, log_index)
+        )
+      `;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_claim_events_address ON eligibility_claim_events(address)`;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_claim_events_block ON eligibility_claim_events(block_number)`;
+
+      await verifyPostgresClient`
+        CREATE TABLE IF NOT EXISTS eligibility_burn_events (
+          tx_hash TEXT NOT NULL,
+          log_index INTEGER NOT NULL,
+          block_number BIGINT NOT NULL,
+          from_address TEXT NOT NULL,
+          amount BIGINT NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+          PRIMARY KEY (tx_hash, log_index)
+        )
+      `;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_burn_events_address ON eligibility_burn_events(from_address)`;
+      await verifyPostgresClient`CREATE INDEX IF NOT EXISTS idx_eligibility_burn_events_block ON eligibility_burn_events(block_number)`;
+
+      logger.info('Eligibility tables verified/created successfully');
+    } catch (tableError) {
+      logger.error({ err: tableError }, 'Failed to create eligibility tables');
+      // Don't throw - allow server to continue even if tables already exist or creation fails
+    }
+  }
+
+  // ==========================================================================
+  // Sprint 152: Security startup checks
+  // ==========================================================================
+
+  // M-4: Log startup warning for legacy plaintext API keys
+  if (hasLegacyKeys()) {
+    const legacyKeyCount = config.api.adminApiKeys.legacyKeys.size;
+    logger.warn(
+      {
+        legacyKeyCount,
+        sunsetDate: LEGACY_KEY_SUNSET_DATE,
+        metric: 'sietch_legacy_api_keys_configured',
+      },
+      `SECURITY WARNING: ${legacyKeyCount} legacy plaintext API key(s) configured. ` +
+        `Migrate to bcrypt-hashed keys before ${LEGACY_KEY_SUNSET_DATE}. ` +
+        'Use POST /admin/api-keys/rotate to generate secure bcrypt-hashed keys.'
+    );
+  }
 
   // Start listening
   const { port, host } = config.api;

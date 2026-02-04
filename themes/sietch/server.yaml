@@ -1,0 +1,6 @@
+# Sietch Theme - Server Configuration
+#
+# Server metadata with variable interpolation
+
+name: "${community_name} Sietch"
+description: "A Fremen community inspired by the deserts of Arrakis. Bless the Maker and His water."

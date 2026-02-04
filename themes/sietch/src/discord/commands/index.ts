@@ -21,6 +21,8 @@ import { adminWaterShareCommand } from './admin-water-share.js';
 import { adminStatsCommand } from './admin-stats.js';
 // Sprint 79: Native Wallet Verification
 import { verifyCommand } from './verify.js';
+// Sprint 107: QA Sandbox Simulation
+import { simulationCommand } from './simulation.js';
 
 /**
  * All registered slash commands
@@ -46,6 +48,8 @@ export const commands: RESTPostAPIChatInputApplicationCommandsJSONBody[] = [
   adminStatsCommand.toJSON(),
   // Sprint 79: Native Wallet Verification
   verifyCommand,
+  // Sprint 107: QA Sandbox Simulation
+  simulationCommand.toJSON(),
 ];
 
 /**
@@ -87,6 +91,9 @@ export { handleAdminStatsCommand } from './admin-stats.js';
 
 // Sprint 79: Native Wallet Verification
 export { handleVerifyCommand, cleanupVerifyCommand } from './verify.js';
+
+// Sprint 107: QA Sandbox Simulation
+export { handleSimulationCommand, initializeSimulationCommand } from './simulation.js';
 
 /**
  * Register slash commands with Discord API

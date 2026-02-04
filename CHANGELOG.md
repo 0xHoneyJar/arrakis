@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-01-20
+
+### Added
+
+#### Crysknife Edge: CLI Ergonomics (Sprints 146-148, 154)
+- **Gaib CLI** (`packages/cli`) - Complete CLI tooling for Discord IaC
+  - `gaib server` - Terraform-like workflow (init, plan, diff, apply, destroy, teardown)
+  - `gaib sandbox` - Developer sandbox management (new, ls, rm, env, link, unlink, status)
+  - `gaib user` - User management (create, ls, show, rm, grant, revoke, passwd, on, off, set, access)
+  - `gaib auth` - Authentication (login, logout, whoami)
+  - `gaib restore` - Configuration restore from checkpoints
+- **Typo detection** with Levenshtein distance suggestions
+- **Next-step suggestions** after key commands (e.g., `sandbox link` → suggests `sandbox status`)
+- **CLI Noun Clarity** (Sprint 154): Full noun subcommands (`workspace`, `state`, `theme`) with hidden backward-compatible aliases (`ws`, `st`, `th`)
+
+#### Sietch Vault: Configuration Safety (Sprints 149-150)
+- **CheckpointService** (`packages/cli/src/services/checkpoint.ts`) - Pre-destructive checkpoint management
+- **Automatic checkpoints** before `destroy` and `teardown` commands
+- **Fail-safe behavior**: Destructive operations blocked if checkpoint creation fails
+- **`--skip-checkpoint`** option for emergency bypass (with warning)
+- **Restore commands** wired to Dashboard API:
+  - `gaib restore ls` - List available checkpoints
+  - `gaib restore preview` - Impact analysis before restore
+  - `gaib restore exec` - Execute restore with confirmation flow
+- **High-impact confirmation** with confirmation codes for restores affecting >10 users
+
+#### Gom Jabbar: QA Authentication (Sprints 139-145)
+- **Username/Password authentication** for QA dashboards
+- **User management API** (`/api/users/*`) with full CRUD operations
+- **AuthService** with bcrypt password hashing and pepper rotation
+- **UserService** for user lifecycle management
+- **Role-based access control** (admin, operator, viewer roles)
+- **Session management** with secure token handling
+- **Dashboard login flow** with credential-based authentication
+
+#### Simstim: Telegram Bridge
+- **Telegram bot integration** for Claude Code session monitoring
+- **Permission queue** for HITL (human-in-the-loop) approvals via Telegram
+- **Offline queue** for handling messages when Telegram is unavailable
+- **Rate limiting** to prevent API abuse
+- **Comprehensive security hardening** (redaction, audit logging, command injection prevention)
+
+#### Security Audit Remediation (Sprints 151-153)
+- **Input validation** utilities (`discord-validators.ts`, `url-validator.ts`)
+- **Error sanitization** to prevent information leakage (`error-sanitizer.ts`)
+- **Rate limiting** utilities for API protection (`rate-limiter.ts`)
+- **Pepper manager** for secure password hashing rotation
+
+### Changed
+
+- **CLI command structure** refined for discoverability and Unix conventions
+- **Dashboard authentication** migrated from API-key-only to username/password
+- **Export `LEGACY_KEY_SUNSET_DATE`** from config.ts (was causing build failures)
+
+### Fixed
+
+- **SandboxHealthStatus type alignment** with @arrakis/sandbox interface
+- **Missing logger argument** in getSandboxManager calls
+- **Next-step suggestion** in `sandbox link` now suggests `status` instead of `env`
+
+### Why Major Version?
+
+This release introduces **three major feature sets**:
+1. **Crysknife Edge** - Complete CLI ergonomics overhaul with new command groups
+2. **Sietch Vault** - Configuration safety with automatic checkpoints and restore
+3. **Gom Jabbar** - Full authentication system for QA dashboards
+
+These represent significant new capabilities and architectural changes warranting a major version bump.
+
 ## [6.0.0] - 2026-01-13
 
 ### Added

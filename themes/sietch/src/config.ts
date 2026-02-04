@@ -122,6 +122,15 @@ const configSchema = z.object({
   chain: z.object({
     rpcUrls: urlListSchema, // Support multiple RPC URLs for resilience
     bgtAddress: addressSchema,
+    // Start block for historical event queries (default: last 2 million blocks)
+    // This prevents timeout when querying from block 0 on long-running chains
+    // Set to 0 to query all history (may timeout on public RPCs)
+    startBlock: z.coerce.number().int().min(0).default(0),
+    // Chain provider mode (Sprint 17: Dune Sim Migration)
+    // - 'rpc': Direct RPC calls via viem (default, no API key needed)
+    // - 'dune_sim': Dune Sim API exclusively (best performance, requires API key)
+    // - 'hybrid': Dune Sim primary with RPC fallback (production recommended)
+    provider: z.enum(['rpc', 'dune_sim', 'hybrid']).default('rpc'),
     // DEPRECATED: rewardVaultAddresses is no longer used
     // Eligibility is now determined by balanceOf + burn detection
     rewardVaultAddresses: z
@@ -157,6 +166,24 @@ const configSchema = z.object({
       boost6Month: z.string().optional(),
       boost12Month: z.string().optional(),
     }),
+  }),
+
+  // NOWPayments Configuration (Sprint 155: Crypto Payment Integration)
+  // Parallel payment provider for cryptocurrency payments
+  nowpayments: z.object({
+    // API key for NOWPayments authentication
+    apiKey: z.string().min(1).optional(),
+    // IPN secret key for webhook signature verification (HMAC-SHA512)
+    // SECURITY: Required when crypto payments are enabled
+    ipnSecretKey: z.string().min(1).optional(),
+    // Public key for client-side operations (optional)
+    publicKey: z.string().min(1).optional(),
+    // Environment: sandbox for testing, production for live payments
+    environment: z.enum(['sandbox', 'production']).default('sandbox'),
+    // Default cryptocurrency for payments (btc, eth, usdt, etc.)
+    defaultPayCurrency: z.string().min(1).default('btc'),
+    // Payment expiration in minutes (NOWPayments default is 20)
+    paymentExpirationMinutes: z.coerce.number().int().min(5).max(1440).default(20),
   }),
 
   // Redis Configuration (v4.0 - Sprint 23)
@@ -200,6 +227,11 @@ const configSchema = z.object({
     telegramEnabled: envBooleanSchema.default(false),
     // Enable Vault secrets management (Sprint 71)
     vaultEnabled: envBooleanSchema.default(false),
+    // Enable Gateway Proxy pattern (Sprint GW-5)
+    // When enabled, sietch delegates Discord Gateway to Ingestor service
+    gatewayProxyEnabled: envBooleanSchema.default(false),
+    // Enable NOWPayments crypto payment integration (Sprint 155)
+    cryptoPaymentsEnabled: envBooleanSchema.default(false),
   }),
 
   // Telegram Configuration (v4.1 - Sprint 30)
@@ -422,6 +454,7 @@ function parseConfig() {
       rpcUrls: process.env.BERACHAIN_RPC_URLS ?? process.env.BERACHAIN_RPC_URL ?? '',
       bgtAddress: process.env.BGT_ADDRESS ?? '',
       rewardVaultAddresses: process.env.REWARD_VAULT_ADDRESSES ?? '',
+      provider: process.env.CHAIN_PROVIDER ?? 'rpc',
     },
     triggerDev: {
       projectId: process.env.TRIGGER_PROJECT_ID ?? '',
@@ -442,6 +475,15 @@ function parseConfig() {
         boost6Month: process.env.PADDLE_BOOST_6_MONTH_PRICE_ID,
         boost12Month: process.env.PADDLE_BOOST_12_MONTH_PRICE_ID,
       },
+    },
+    // NOWPayments Configuration (Sprint 155: Crypto Payment Integration)
+    nowpayments: {
+      apiKey: process.env.NOWPAYMENTS_API_KEY,
+      ipnSecretKey: process.env.NOWPAYMENTS_IPN_SECRET,
+      publicKey: process.env.NOWPAYMENTS_PUBLIC_KEY,
+      environment: process.env.NOWPAYMENTS_ENVIRONMENT ?? 'sandbox',
+      defaultPayCurrency: process.env.NOWPAYMENTS_DEFAULT_PAY_CURRENCY ?? 'btc',
+      paymentExpirationMinutes: process.env.NOWPAYMENTS_PAYMENT_EXPIRATION_MINUTES ?? '20',
     },
     // Redis Configuration (v4.0 - Sprint 23)
     redis: {
@@ -466,6 +508,8 @@ function parseConfig() {
       redisEnabled: process.env.FEATURE_REDIS_ENABLED ?? 'false',
       telegramEnabled: process.env.FEATURE_TELEGRAM_ENABLED ?? 'false',
       vaultEnabled: process.env.FEATURE_VAULT_ENABLED ?? 'false',
+      gatewayProxyEnabled: process.env.USE_GATEWAY_PROXY ?? 'false',
+      cryptoPaymentsEnabled: process.env.FEATURE_CRYPTO_PAYMENTS_ENABLED ?? 'false',
     },
     // Telegram Configuration (v4.1 - Sprint 30)
     telegram: {
@@ -597,6 +641,31 @@ function parseConfig() {
   const result = configSchema.safeParse(rawConfig);
 
   if (!result.success) {
+    // Skip validation errors during Trigger.dev builds (env vars not available at build time)
+    if (process.env.TRIGGER_BUILD === 'true' || process.env.BUILDING === 'true') {
+      logger.warn('Skipping config validation during build (TRIGGER_BUILD=true)');
+      // Return a minimal config for build-time type checking
+      // Apply necessary transformations for array fields to avoid runtime errors
+      const buildConfig = {
+        ...rawConfig,
+        chain: {
+          ...rawConfig.chain,
+          rpcUrls: typeof rawConfig.chain.rpcUrls === 'string'
+            ? rawConfig.chain.rpcUrls.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : rawConfig.chain.rpcUrls,
+          rewardVaultAddresses: typeof rawConfig.chain.rewardVaultAddresses === 'string'
+            ? rawConfig.chain.rewardVaultAddresses.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : rawConfig.chain.rewardVaultAddresses,
+        },
+        cors: {
+          ...rawConfig.cors,
+          allowedOrigins: typeof rawConfig.cors.allowedOrigins === 'string'
+            ? rawConfig.cors.allowedOrigins.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : rawConfig.cors.allowedOrigins,
+        },
+      };
+      return buildConfig as unknown as ReturnType<typeof configSchema.parse>;
+    }
     const errors = result.error.issues.map(
       (issue) => `  - ${issue.path.join('.')}: ${issue.message}`
     );
@@ -614,6 +683,10 @@ export interface Config {
   chain: {
     rpcUrls: string[];
     bgtAddress: Address;
+    /** Start block for historical event queries (0 = use default 2M block lookback) */
+    startBlock: number;
+    /** Chain provider mode: 'rpc', 'dune_sim', or 'hybrid' */
+    provider: 'rpc' | 'dune_sim' | 'hybrid';
     /** @deprecated No longer used - eligibility now uses balanceOf + burn detection */
     rewardVaultAddresses: Address[];
   };
@@ -636,6 +709,15 @@ export interface Config {
       boost6Month?: string;
       boost12Month?: string;
     };
+  };
+  // NOWPayments Configuration (Sprint 155: Crypto Payment Integration)
+  nowpayments: {
+    apiKey?: string;
+    ipnSecretKey?: string;
+    publicKey?: string;
+    environment: 'sandbox' | 'production';
+    defaultPayCurrency: string;
+    paymentExpirationMinutes: number;
   };
   // Redis Configuration (v4.0 - Sprint 23)
   redis: {
@@ -661,6 +743,10 @@ export interface Config {
     badgesEnabled: boolean;
     telegramEnabled: boolean;
     vaultEnabled: boolean;
+    /** Enable Gateway Proxy pattern (Sprint GW-5) */
+    gatewayProxyEnabled: boolean;
+    /** Enable NOWPayments crypto payment integration (Sprint 155) */
+    cryptoPaymentsEnabled: boolean;
   };
   // Telegram Configuration (v4.1 - Sprint 30)
   telegram: {
@@ -824,23 +910,26 @@ function validateStartupConfig(cfg: typeof parsedConfig): void {
   // Sprint 70: Validate DATABASE_URL is set in production (when not in test mode)
   const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
   const isProduction = process.env.NODE_ENV === 'production';
-  if (isProduction && !cfg.database.url) {
+  // Skip database validation during Trigger.dev builds (env vars not available)
+  const isBuild = process.env.TRIGGER_BUILD === 'true' || process.env.BUILDING === 'true';
+
+  if (isProduction && !cfg.database.url && !isBuild) {
     logger.fatal('DATABASE_URL is required in production for PostgreSQL with RLS');
     throw new Error(
       'Missing required configuration: DATABASE_URL must be set in production. PostgreSQL with Row-Level Security is required for multi-tenant isolation.'
     );
   }
 
-  // Sprint 70: Validate one database config is present (except in test mode)
-  if (!isTest && !cfg.database.url && !cfg.database.path) {
+  // Sprint 70: Validate one database config is present (except in test mode or build)
+  if (!isTest && !isBuild && !cfg.database.url && !cfg.database.path) {
     logger.fatal('No database configuration provided');
     throw new Error(
       'Missing required configuration: Either DATABASE_URL (PostgreSQL) or DATABASE_PATH (SQLite - deprecated) must be set.'
     );
   }
 
-  // Sprint 71: Validate Vault configuration when enabled
-  if (cfg.features.vaultEnabled) {
+  // Sprint 71: Validate Vault configuration when enabled (skip during builds)
+  if (cfg.features.vaultEnabled && !isBuild) {
     if (!cfg.vault.addr) {
       logger.fatal('VAULT_ADDR is required when Vault is enabled');
       throw new Error(
@@ -859,6 +948,34 @@ function validateStartupConfig(cfg: typeof parsedConfig): void {
   if (isProduction && !cfg.features.vaultEnabled) {
     logger.warn(
       'SECURITY WARNING: Running in production without Vault. Sensitive secrets are stored in environment variables. Consider enabling FEATURE_VAULT_ENABLED=true for enhanced security.'
+    );
+  }
+
+  // ==========================================================================
+  // Sprint 137: Redis Session Store Startup Validation (MED-001)
+  // ==========================================================================
+  // Dashboard sessions require Redis in production to prevent in-memory fallback
+  // which would cause session loss on restarts and security issues with scaling
+
+  if (isProduction && cfg.features.redisEnabled) {
+    // Validate Redis URL is configured when Redis is enabled
+    if (!cfg.redis.url) {
+      logger.fatal('REDIS_URL is required when FEATURE_REDIS_ENABLED=true in production');
+      throw new Error(
+        'SECURITY ERROR: Redis is enabled (FEATURE_REDIS_ENABLED=true) but REDIS_URL is not configured. ' +
+          'Redis is required for secure session management in production. ' +
+          'Set REDIS_URL or disable Redis with FEATURE_REDIS_ENABLED=false (not recommended for dashboard).'
+      );
+    }
+    logger.info('Sprint 137 (MED-001): Redis session store configuration validated');
+  }
+
+  // Sprint 137: Warn if Redis is NOT enabled in production (recommended for dashboard)
+  if (isProduction && !cfg.features.redisEnabled) {
+    logger.warn(
+      'SECURITY WARNING: Redis is disabled in production. Dashboard sessions will use in-memory storage ' +
+        'which does not persist across restarts and cannot scale across multiple instances. ' +
+        'Set FEATURE_REDIS_ENABLED=true and configure REDIS_URL for production deployments.'
     );
   }
 
@@ -894,12 +1011,49 @@ function validateStartupConfig(cfg: typeof parsedConfig): void {
     );
   }
 
-  // MED-7: Warn about wildcard CORS in production
-  if (isProduction && cfg.cors.allowedOrigins.includes('*')) {
-    logger.warn(
-      'SECURITY WARNING: CORS is configured to allow all origins (*). ' +
-        'Consider setting CORS_ALLOWED_ORIGINS to specific domains in production.'
+  // ==========================================================================
+  // Sprint 155: NOWPayments Crypto Payment Validation
+  // ==========================================================================
+
+  // SECURITY: Require IPN secret when crypto payments are enabled (skip during builds)
+  if (!isBuild && cfg.features.cryptoPaymentsEnabled && cfg.nowpayments.apiKey && !cfg.nowpayments.ipnSecretKey) {
+    logger.fatal('NOWPAYMENTS_IPN_SECRET is required when crypto payments are enabled');
+    throw new Error(
+      'Missing required configuration: NOWPAYMENTS_IPN_SECRET must be set when ' +
+        'FEATURE_CRYPTO_PAYMENTS_ENABLED=true and NOWPAYMENTS_API_KEY is configured. ' +
+        'This prevents forged webhook calls from malicious actors.'
     );
+  }
+
+  // SECURITY: Validate crypto payments config completeness when enabled (skip during builds)
+  if (!isBuild && cfg.features.cryptoPaymentsEnabled && !cfg.nowpayments.apiKey) {
+    logger.fatal('NOWPAYMENTS_API_KEY is required when crypto payments are enabled');
+    throw new Error(
+      'Missing required configuration: NOWPAYMENTS_API_KEY must be set when ' +
+        'FEATURE_CRYPTO_PAYMENTS_ENABLED=true.'
+    );
+  }
+
+  // Sprint 133 (HIGH-001): CORS wildcard check - ENFORCE in production
+  // MED-7 upgraded to HIGH-001: Wildcard CORS must not be allowed in production
+  if (isProduction && cfg.cors.allowedOrigins.includes('*')) {
+    // Allow bypass via explicit environment variable
+    if (process.env.CORS_ALLOW_WILDCARD_IN_PRODUCTION === 'true') {
+      logger.warn(
+        'SECURITY WARNING: CORS wildcard (*) explicitly allowed in production via CORS_ALLOW_WILDCARD_IN_PRODUCTION. ' +
+          'This is NOT recommended and exposes the API to cross-origin attacks.'
+      );
+    } else {
+      logger.fatal(
+        'SECURITY ERROR: CORS is configured to allow all origins (*) in production. ' +
+          'Set CORS_ALLOWED_ORIGINS to specific domains (comma-separated) or ' +
+          'set CORS_ALLOW_WILDCARD_IN_PRODUCTION=true to bypass (NOT recommended).'
+      );
+      throw new Error(
+        'CORS_ALLOWED_ORIGINS must not be wildcard (*) in production. ' +
+          'Configure specific allowed origins or set CORS_ALLOW_WILDCARD_IN_PRODUCTION=true to bypass.'
+      );
+    }
   }
 
   // ==========================================================================
@@ -938,6 +1092,9 @@ function validateStartupConfig(cfg: typeof parsedConfig): void {
       { name: 'RATE_LIMIT_SALT', value: cfg.security.rateLimitSalt },
       { name: 'WEBHOOK_SECRET', value: cfg.security.webhookSecret },
       { name: 'DUO_SECRET_KEY', value: cfg.mfa.duo.secretKey },
+      // Sprint 155: NOWPayments sensitive fields
+      { name: 'NOWPAYMENTS_API_KEY', value: cfg.nowpayments.apiKey },
+      { name: 'NOWPAYMENTS_IPN_SECRET', value: cfg.nowpayments.ipnSecretKey },
     ];
 
     for (const field of sensitiveFields) {
@@ -967,10 +1124,13 @@ export const config: Config = {
   chain: {
     rpcUrls: parsedConfig.chain.rpcUrls,
     bgtAddress: parsedConfig.chain.bgtAddress as Address,
+    startBlock: parsedConfig.chain.startBlock,
+    provider: parsedConfig.chain.provider,
     rewardVaultAddresses: parsedConfig.chain.rewardVaultAddresses as Address[],
   },
   triggerDev: parsedConfig.triggerDev,
   paddle: parsedConfig.paddle,
+  nowpayments: parsedConfig.nowpayments,
   redis: parsedConfig.redis,
   vault: parsedConfig.vault,
   features: parsedConfig.features,
@@ -1018,7 +1178,7 @@ function getApiKeyService(): AdminApiKeyService {
  */
 // Sprint 83 (LOW-1): Legacy API key sunset tracking
 // Sunset date: 90 days from January 14, 2026 = April 14, 2026
-const LEGACY_KEY_SUNSET_DATE = '2026-04-14';
+export const LEGACY_KEY_SUNSET_DATE = '2026-04-14';
 let legacyKeyUsageCount = 0;
 
 /**
@@ -1490,4 +1650,87 @@ export function getVaultClientConfig(): VaultClientConfig {
     requestTimeout: config.vault.requestTimeout,
     secretCacheTtl: config.vault.secretCacheTtl,
   };
+}
+
+// =============================================================================
+// NOWPayments Configuration Helpers (Sprint 155: Crypto Payment Integration)
+// =============================================================================
+
+/**
+ * Check if NOWPayments crypto payments are enabled and configured
+ */
+export function isCryptoPaymentsEnabled(): boolean {
+  return config.features.cryptoPaymentsEnabled && !!config.nowpayments.apiKey;
+}
+
+/**
+ * Check if all required NOWPayments configuration is present
+ * Returns list of missing configuration keys
+ */
+export function getMissingNOWPaymentsConfig(): string[] {
+  const missing: string[] = [];
+
+  if (!config.nowpayments.apiKey) missing.push('NOWPAYMENTS_API_KEY');
+  if (!config.nowpayments.ipnSecretKey) missing.push('NOWPAYMENTS_IPN_SECRET');
+
+  return missing;
+}
+
+/**
+ * Get NOWPayments API URL based on environment
+ * Returns sandbox URL for sandbox environment, production URL otherwise
+ */
+export function getNOWPaymentsApiUrl(): string {
+  return config.nowpayments.environment === 'sandbox'
+    ? 'https://api-sandbox.nowpayments.io/v1'
+    : 'https://api.nowpayments.io/v1';
+}
+
+/**
+ * NOWPayments configuration for creating adapters
+ */
+export interface NOWPaymentsClientConfig {
+  apiKey: string;
+  ipnSecretKey: string;
+  publicKey?: string;
+  environment: 'sandbox' | 'production';
+  defaultPayCurrency: string;
+  paymentExpirationMinutes: number;
+  apiUrl: string;
+}
+
+/**
+ * Get complete NOWPayments client configuration
+ * Throws if NOWPayments is not properly configured
+ */
+export function getNOWPaymentsClientConfig(): NOWPaymentsClientConfig {
+  if (!config.nowpayments.apiKey) {
+    throw new Error(
+      'NOWPayments is not configured. Set NOWPAYMENTS_API_KEY environment variable.'
+    );
+  }
+  if (!config.nowpayments.ipnSecretKey) {
+    throw new Error(
+      'NOWPayments IPN secret is not configured. Set NOWPAYMENTS_IPN_SECRET environment variable.'
+    );
+  }
+
+  return {
+    apiKey: config.nowpayments.apiKey,
+    ipnSecretKey: config.nowpayments.ipnSecretKey,
+    publicKey: config.nowpayments.publicKey,
+    environment: config.nowpayments.environment,
+    defaultPayCurrency: config.nowpayments.defaultPayCurrency,
+    paymentExpirationMinutes: config.nowpayments.paymentExpirationMinutes,
+    apiUrl: getNOWPaymentsApiUrl(),
+  };
+}
+
+/**
+ * Get subscription tier price in USD for crypto payments
+ * Uses same pricing as Paddle tiers
+ */
+export function getCryptoPaymentPrice(tier: string): number | undefined {
+  const tierInfo = getSubscriptionTierInfo(tier);
+  return tierInfo?.price;
 }

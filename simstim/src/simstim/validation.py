@@ -138,7 +138,7 @@ def _validate_command_args(command: str, args: str) -> str | None:
         Error message if invalid, None if valid
     """
     # Commands that require sprint argument
-    sprint_commands = {"/implement", "/review-sprint", "/audit-sprint", "/run"}
+    sprint_commands = {"/implement", "/review-sprint", "/audit-sprint"}
 
     if command in sprint_commands:
         if not args:
@@ -150,6 +150,18 @@ def _validate_command_args(command: str, args: str) -> str | None:
             return (
                 f"Invalid sprint format: {first_arg}. "
                 "Expected format: sprint-N where N is 1-99"
+            )
+
+    # /run command accepts either "sprint-N" or "sprint-plan"
+    if command == "/run":
+        if not args:
+            return "/run requires an argument (e.g., sprint-1 or sprint-plan)"
+
+        first_arg = args.split()[0]
+        if first_arg != "sprint-plan" and not SPRINT_PATTERN.match(first_arg):
+            return (
+                f"Invalid argument for /run: {first_arg}. "
+                "Expected: sprint-N (where N is 1-99) or sprint-plan"
             )
 
     # Commands that require a label argument

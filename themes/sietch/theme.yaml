@@ -1,0 +1,128 @@
+# Sietch Theme Manifest v3.0
+# A Dune-inspired Discord server theme for BGT token-gated communities
+#
+# This theme implements the full 9-tier Sietch v3.0 "The Great Expansion" structure
+# with BGT-based tiers, special achievement roles, and tiered channel access.
+#
+# Reference: grimoires/pub/docs/DISCORD-SETUP-GUIDE.md
+# PRD: grimoires/loa/prd.md
+
+name: sietch
+version: 3.0.0
+description: Full Sietch v3.0 theme - 9-tier BGT community with Fremen hierarchy
+author: The Honey Jar
+license: AGPL-3.0
+
+tags:
+  - dune
+  - fremen
+  - bgt
+  - token-gated
+  - tiered-access
+  - berachain
+
+# Theme variables - customize for your community
+variables:
+  community_name:
+    type: string
+    description: Name of your community
+    default: "Sietch"
+    required: false
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BGT TIER COLORS (9 tiers)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  color_naib:
+    type: color
+    description: Naib role color (Gold) - Top 7 by rank
+    default: "#FFD700"
+
+  color_fedaykin:
+    type: color
+    description: Fedaykin role color (Blue) - Top 8-69 by rank
+    default: "#4169E1"
+
+  color_usul:
+    type: color
+    description: Usul role color (Purple) - 1111+ BGT
+    default: "#9B59B6"
+
+  color_sayyadina:
+    type: color
+    description: Sayyadina role color (Indigo) - 888+ BGT
+    default: "#6610F2"
+
+  color_mushtamal:
+    type: color
+    description: Mushtamal role color (Teal) - 690+ BGT
+    default: "#20C997"
+
+  color_sihaya:
+    type: color
+    description: Sihaya role color (Green) - 420+ BGT
+    default: "#28A745"
+
+  color_qanat:
+    type: color
+    description: Qanat role color (Cyan) - 222+ BGT
+    default: "#17A2B8"
+
+  color_ichwan:
+    type: color
+    description: Ichwan role color (Orange) - 69+ BGT
+    default: "#FD7E14"
+
+  color_hajra:
+    type: color
+    description: Hajra role color (Sand) - 6.9+ BGT
+    default: "#C2B280"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SPECIAL ROLE COLORS
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  color_former_naib:
+    type: color
+    description: Former Naib role color (Silver)
+    default: "#C0C0C0"
+
+  color_taqwa:
+    type: color
+    description: Taqwa/Waitlist role color (Sand)
+    default: "#C2B280"
+
+  color_water_sharer:
+    type: color
+    description: Water Sharer badge role color (Aqua)
+    default: "#00D4FF"
+
+  color_engaged:
+    type: color
+    description: Engaged badge role color (Green)
+    default: "#28A745"
+
+  color_veteran:
+    type: color
+    description: Veteran badge role color (Purple)
+    default: "#9B59B6"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # FEATURE FLAGS
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  enable_voice:
+    type: boolean
+    description: Include voice channels
+    default: true
+
+  enable_badge_channels:
+    type: boolean
+    description: Include badge-holder exclusive channels
+    default: true
+
+# Component file references
+files:
+  server: server.yaml
+  roles: roles.yaml
+  channels: channels.yaml
