@@ -193,3 +193,29 @@ app/package.json
 app/package-lock.json
 app/tsconfig.json
 app/ecosystem.config.js
+
+# =============================================================================
+# NESTED PROJECT GRIMOIRES (monorepo subprojects)
+# =============================================================================
+# Subprojects (themes/*, packages/*) may have their own grimoires.
+# These follow the same exclusion rules as root grimoires.
+**/grimoires/loa/prd*.md
+**/grimoires/loa/sdd*.md
+**/grimoires/loa/sprint*.md
+**/grimoires/loa/NOTES.md
+**/grimoires/loa/ledger.json
+**/grimoires/loa/ledger.json.bak
+**/grimoires/loa/a2a/*
+!**/grimoires/loa/a2a/README.md
+**/grimoires/pub/**/*
+!**/grimoires/pub/**/README.md
+
+# Terraform plan files and state (contain sensitive state)
+*.tfplan
+*.tfstate
+*.tfstate.backup
+**/.terraform/
+
+# GAIB workspace state
+.gaib/
+**/.gaib/
