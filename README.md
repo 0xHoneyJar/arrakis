@@ -1,6 +1,6 @@
 # Arrakis
 
-[![Version](https://img.shields.io/badge/version-6.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-7.0.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE.md)
 
 Engagement intelligence platform for Web3 communities. Conviction scoring and tiered progression delivered as Discord roles.

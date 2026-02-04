@@ -5,7 +5,7 @@
  * Sprint 10 (Global ID 173): Comprehensive Tier Testing Suite
  */
 
-import { vi } from 'vitest';
+import { vi, expect } from 'vitest';
 import type { Collection, GuildMember, Guild, Role, TextChannel } from 'discord.js';
 import { MOCK_ROLE_IDS, MOCK_CHANNEL_IDS } from './fixtures.js';
 
@@ -58,10 +58,10 @@ export function createMockGuildMember(
     user?: { id: string; username: string };
   } = {}
 ): GuildMember {
-  const roleEntries: [string, Partial<Role>][] = (options.roles ?? []).map((roleId) => [
+  const roleEntries = (options.roles ?? []).map((roleId) => [
     roleId,
-    { id: roleId, name: `role-${roleId}` },
-  ]);
+    { id: roleId, name: `role-${roleId}` } as Partial<Role>,
+  ] as [string, Partial<Role>]);
 
   const mockRoles = {
     cache: createMockCollection(roleEntries),

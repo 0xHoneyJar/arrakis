@@ -103,32 +103,32 @@ let memberCounter = 0;
 
 /**
  * Create a test member profile with sensible defaults
+ * Note: MemberProfile.tier is restricted to 'naib' | 'fedaykin'
  */
 export function createMemberProfile(overrides: Partial<MemberProfile> = {}): MemberProfile {
   memberCounter++;
   return {
     memberId: overrides.memberId ?? `member-${memberCounter}`,
     discordUserId: overrides.discordUserId ?? `discord-${memberCounter}`,
-    discordUsername: overrides.discordUsername ?? `user${memberCounter}`,
-    walletAddress: overrides.walletAddress ?? `0x${memberCounter.toString().padStart(40, '0')}`,
-    nym: overrides.nym ?? null,
-    pfpUrl: overrides.pfpUrl ?? null,
+    nym: overrides.nym ?? `user${memberCounter}`,
     bio: overrides.bio ?? null,
-    tier: overrides.tier ?? 'hajra',
-    tierUpdatedAt: overrides.tierUpdatedAt ?? Date.now(),
-    onboardingComplete: overrides.onboardingComplete ?? true,
-    onboardingStep: overrides.onboardingStep ?? 'complete',
+    pfpUrl: overrides.pfpUrl ?? null,
+    pfpType: overrides.pfpType ?? 'generated',
+    tier: overrides.tier ?? 'fedaykin',
     createdAt: overrides.createdAt ?? new Date(),
     updatedAt: overrides.updatedAt ?? new Date(),
-    lastActive: overrides.lastActive ?? new Date(),
+    nymLastChanged: overrides.nymLastChanged ?? null,
+    onboardingComplete: overrides.onboardingComplete ?? true,
+    onboardingStep: overrides.onboardingStep ?? 3,
     ...overrides,
-  } as MemberProfile;
+  };
 }
 
 /**
  * Create a member at a specific tier
+ * Note: MemberProfile only supports 'naib' | 'fedaykin' tiers
  */
-export function createMemberAtTier(tier: Tier, overrides: Partial<MemberProfile> = {}): MemberProfile {
+export function createMemberAtTier(tier: 'naib' | 'fedaykin', overrides: Partial<MemberProfile> = {}): MemberProfile {
   return createMemberProfile({ tier, ...overrides });
 }
 

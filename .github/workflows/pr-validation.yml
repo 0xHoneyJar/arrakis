@@ -54,6 +54,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build workspace dependencies
+        run: |
+          # Build @arrakis/core first (required by adapters)
+          cd ../../packages/core
+          npm ci
+          npm run build
+          # Build @arrakis/adapters (required by sietch)
+          cd ../adapters
+          npm ci
+          npm run build
+
       - name: Type check
         run: npx tsc --noEmit
 
