@@ -79,7 +79,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: ./themes/sietch
+          context: .
           file: ./themes/sietch/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -225,6 +225,48 @@
 - Memory leaks
 - Infinite loops without base case
 
+## Resource Exhaustion Vulnerabilities (DoS)
+
+### Arrow Function Closure Memory Leak (HIGH)
+
+**CWE**: CWE-401 (Missing Release of Memory after Effective Lifetime)
+
+**Impact**: Memory exhaustion leading to service denial. Can accumulate 1GB+ memory in long-running processes.
+
+**Vulnerable Pattern**:
+```javascript
+// Arrow function captures entire surrounding scope
+signal.addEventListener('abort', () => controller.abort());
+const timeout = setTimeout(() => controller.abort(), ms);
+```
+
+**Attack Vector**: In long-running services or sessions, each arrow function retains references to large objects (request bodies, response data, options objects), preventing garbage collection.
+
+**Secure Pattern**:
+```javascript
+// .bind() only retains reference to the controller object
+const abort = controller.abort.bind(controller);
+signal.addEventListener('abort', abort, { once: true });
+const timeout = setTimeout(abort, ms);
+```
+
+**Detection**:
+- Flag `addEventListener` with arrow function calling `obj.method()`
+- Flag `setTimeout`/`setInterval` with arrow function calling `obj.method()`
+- Especially in request handlers, middleware, or long-lived processes
+
+**Audit Template**:
+```
+SEVERITY: HIGH
+CATEGORY: Resource Exhaustion (DoS)
+CWE: CWE-401
+LOCATION: {file}:{line}
+FINDING: Arrow function closure captures scope preventing GC
+FIX: Replace `() => obj.method()` with `obj.method.bind(obj)`
+```
+
+**Reference**: Claude Code memory optimization (2026)
+
 ## Severity Classification
 
 ### CRITICAL
@@ -270,3 +312,137 @@
 3. Sort by severity
 4. Calculate overall risk
 5. Generate unified report
+
+---
+
+## SAST Detection Patterns (Two-Pass Methodology v1.0)
+
+**⚠️ Language Scope**: These patterns are optimized for JavaScript/TypeScript/Node.js. For other languages, extend patterns in `.claude/overrides/security-patterns/`.
+
+### SQL Injection (CWE-89)
+
+```regex
+# String concatenation with user input
+query\s*\(\s*[`'"].*\$\{|query\s*\+\s*.*req\.|execute\s*\(\s*f['"]
+
+# Template literals in queries
+`SELECT.*\$\{.*\}`
+
+# ORM raw modes (still dangerous)
+\.raw\s*\(|\.literal\s*\(|QueryRaw
+```
+
+**Known False Positives**: Static strings, parameterized queries via ORM.
+**Required Sanitization**: Parameterized queries, ORM bindings (not `.raw()`).
+
+### Command Injection (CWE-78)
+
+```regex
+# Shell execution with variables
+exec\s*\(.*\$|system\s*\(.*\+|spawn\s*\([^,]+,\s*\[.*\$
+
+# Child process with user input
+child_process.*req\.|execSync.*\$\{
+
+# Backtick command execution
+`.*\$\{.*\}`\s*;?\s*$
+```
+
+**Known False Positives**: Hardcoded commands, allowlisted arguments.
+**Required Sanitization**: Allowlist validation, `shlex.quote()`, avoid shell=true.
+
+### XSS (CWE-79)
+
+```regex
+# Direct HTML assignment
+innerHTML\s*=.*req\.|\.html\s*\(.*req\.|dangerouslySetInnerHTML
+
+# Template rendering with user data
+render\s*\(.*req\.|ejs\.render.*req\.|handlebars\.compile.*\$\{
+
+# jQuery html injection
+\$\(.*\)\.html\s*\(.*req\.
+```
+
+**Known False Positives**: Sanitized output via DOMPurify, framework auto-escaping.
+**Required Sanitization**: HTML encoding, CSP headers, DOMPurify.
+
+### Path Traversal (CWE-22)
+
+```regex
+# File operations with user input
+readFile.*req\.|writeFile.*req\.|path\.join.*req\.
+
+# Path construction from user data
+__dirname.*\+.*req\.|path\.resolve.*req\.
+
+# File system access patterns
+fs\.(read|write|unlink|mkdir).*\$\{
+```
+
+**Known False Positives**: Validated/normalized paths, chroot jails.
+**Required Sanitization**: Path normalization, basename extraction, chroot.
+
+### SSRF (CWE-918)
+
+```regex
+# HTTP requests with user-controlled URLs
+fetch\s*\(.*req\.|axios\s*\(.*req\.|http\.get\s*\(.*req\.
+
+# URL construction from user input
+new URL\s*\(.*req\.|url\.parse\s*\(.*req\.
+```
+
+**Known False Positives**: Allowlisted URLs, internal service calls.
+**Required Sanitization**: URL allowlist, DNS rebinding protection.
+
+### Prompt Injection (LLM-Specific)
+
+```regex
+# User input concatenated into prompts
+prompt.*\+.*user|`.*\$\{user.*\}.*`.*chat|system:.*\$\{
+
+# Template strings with user content in LLM context
+messages\.push.*content.*req\.|completion.*prompt.*\$\{
+```
+
+**Known False Positives**: Properly sanitized/filtered user content.
+**Required Sanitization**: Input filtering, output validation, guardrails.
+
+---
+
+## LLM Safety Checks
+
+**When to Apply**: If codebase contains AI/LLM integration (OpenAI, Anthropic, etc.).
+
+| Check | What to Look For | Severity | CWE |
+|-------|------------------|----------|-----|
+| **Prompt Injection** | User input concatenated into prompts | HIGH | CWE-94 |
+| **Model Output Trust** | LLM responses used without validation | MEDIUM | CWE-20 |
+| **System Prompt Leakage** | Error messages exposing system prompts | MEDIUM | CWE-209 |
+| **Indirect Injection** | Documents/URLs processed by LLM | HIGH | CWE-94 |
+| **Data Exfiltration** | User data sent to external LLM APIs | HIGH | CWE-200 |
+| **Tool Abuse** | LLM controlling dangerous tools without bounds | CRITICAL | CWE-862 |
+
+### LLM Detection Patterns
+
+```regex
+# Unsafe tool execution (LLM output → exec/eval)
+eval\s*\(\s*.*response|exec\s*\(\s*.*completion|Function\s*\(.*llm
+
+# Unbounded tool access
+tools\s*=\s*\[.*exec|functions\s*:.*\{.*system
+
+# Direct prompt construction
+system_prompt.*=.*\+|messages\[0\]\.content.*req\.
+```
+
+### LLM Audit Checklist
+
+- [ ] Is user input filtered before inclusion in prompts?
+- [ ] Are LLM outputs validated before use in sensitive operations?
+- [ ] Are tool calls bounded (allowlist, rate limits)?
+- [ ] Is system prompt protected from extraction?
+- [ ] Are documents/URLs sanitized before LLM processing?
+- [ ] Is PII filtered before sending to external LLM APIs?
+- [ ] Are LLM errors handled without leaking context?

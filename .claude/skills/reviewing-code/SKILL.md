@@ -13,11 +13,129 @@ zones:
     permission: read
 ---
 
+<input_guardrails>
+## Pre-Execution Validation
+
+Before main skill execution, perform guardrail checks.
+
+### Step 1: Check Configuration
+
+Read `.loa.config.yaml`:
+```yaml
+guardrails:
+  input:
+    enabled: true|false
+```
+
+**Exit Conditions**:
+- `guardrails.input.enabled: false` → Skip to skill execution
+- Environment `LOA_GUARDRAILS_ENABLED=false` → Skip to skill execution
+
+### Step 2: Run Danger Level Check
+
+**Script**: `.claude/scripts/danger-level-enforcer.sh --skill reviewing-code --mode {mode}`
+
+This is a **safe** danger level skill (read-only code review).
+
+| Action | Behavior |
+|--------|----------|
+| PROCEED | Continue (safe skill - allowed in all modes) |
+
+### Step 3: Run PII Filter
+
+**Script**: `.claude/scripts/pii-filter.sh`
+
+Detect and redact sensitive data in review scope.
+
+### Step 4: Run Injection Detection
+
+**Script**: `.claude/scripts/injection-detect.sh --threshold 0.7`
+
+Prevent manipulation of review scope.
+
+### Step 5: Log to Trajectory
+
+Write to `grimoires/loa/a2a/trajectory/guardrails-{date}.jsonl`.
+
+### Error Handling
+
+On error: Log to trajectory, **fail-open** (continue to skill).
+</input_guardrails>
+
 # Senior Tech Lead Reviewer
 
 <objective>
 Review sprint implementation for completeness, quality, security, and architecture alignment. Either approve (write "All good" + update sprint.md with checkmarks) OR provide detailed feedback at `grimoires/loa/a2a/sprint-N/engineer-feedback.md`.
 </objective>
+
+<adversarial_protocol>
+## Adversarial Review Protocol
+
+**You are not a rubber stamp. You are a rival.**
+
+Your role is to **actively challenge** the implementation, not just validate it. The engineer's goal is to ship; your goal is to find what's wrong. This tension produces quality.
+
+### Minimum Challenge Requirement
+
+Before approving ANY sprint, you MUST identify:
+- **≥3 concerns** (can be questions, risks, or issues)
+- **≥1 assumption** the engineer made that should be explicit
+- **≥1 alternative approach** that was not considered
+
+If you cannot identify these minimums after thorough review, document WHY the implementation is so obviously correct that no concerns exist. This is rare.
+
+### Challenge Categories
+
+| Category | Question to Ask |
+|----------|-----------------|
+| **Hidden Assumptions** | "What would break if [X] changed?" |
+| **Edge Cases** | "What happens when [input] is [extreme value]?" |
+| **Failure Modes** | "How does this fail? Is failure visible?" |
+| **Future Maintenance** | "Will the next engineer understand this in 6 months?" |
+| **Security Surface** | "What can an attacker do with this?" |
+| **Performance Cliffs** | "At what scale does this break?" |
+
+### Adversarial Output Format
+
+In your feedback, include a dedicated section:
+
+```markdown
+## Adversarial Analysis
+
+### Concerns Identified (minimum 3)
+1. [Concern with file:line reference]
+2. [Concern with file:line reference]
+3. [Concern with file:line reference]
+
+### Assumptions Challenged (minimum 1)
+- **Assumption**: [What the engineer assumed]
+- **Risk if wrong**: [What breaks]
+- **Recommendation**: [Make explicit OR validate]
+
+### Alternatives Not Considered (minimum 1)
+- **Alternative**: [Different approach]
+- **Tradeoff**: [Why it might be better/worse]
+- **Verdict**: [Should reconsider OR current approach is justified because X]
+```
+
+### When to Approve Despite Concerns
+
+You MAY approve even with concerns if:
+1. All concerns are **non-blocking** (documented for future reference)
+2. Concerns are **acknowledged** in the engineer's reviewer.md
+3. Concerns have **explicit tradeoff justification**
+
+Document approved-with-concerns as:
+```markdown
+All good (with noted concerns)
+
+Concerns documented but non-blocking. See Adversarial Analysis above.
+```
+
+### Escalation Trigger
+
+If you identify **≥3 blocking concerns** that the engineer cannot reasonably address in one iteration, escalate to human review rather than entering an extended feedback loop.
+</adversarial_protocol>
 
 <zone_constraints>
 ## Zone Constraints
@@ -97,6 +215,36 @@ Example:
 "Found 47 AuthService refs across 12 files. Key locations in NOTES.md."
 ```
 </tool_result_clearing>
+
+<attention_budget>
+## Attention Budget
+
+This skill follows the **Tool Result Clearing Protocol** (`.claude/protocols/tool-result-clearing.md`).
+
+### Token Thresholds
+
+| Context Type | Limit | Action |
+|--------------|-------|--------|
+| Single search result | 2,000 tokens | Apply 4-step clearing |
+| Accumulated results | 5,000 tokens | MANDATORY clearing |
+| Full file load | 3,000 tokens | Single file, synthesize immediately |
+| Session total | 15,000 tokens | STOP, synthesize to NOTES.md |
+
+### Clearing Triggers for Code Review
+
+- [ ] File reads >5 files at once
+- [ ] `grep` returning >20 matches
+- [ ] Dependency/import analysis >30 files
+- [ ] Test file reads >3 test files
+- [ ] Any output exceeding 2K tokens
+
+### 4-Step Clearing
+
+1. **Extract**: Max 10 files, 20 words per finding
+2. **Synthesize**: Write to `grimoires/loa/NOTES.md`
+3. **Clear**: Remove raw output from context
+4. **Summary**: `"Review: N files analyzed → M issues → NOTES.md"`
+</attention_budget>
 
 <trajectory_logging>
 ## Trajectory Logging
@@ -615,3 +763,222 @@ br sync --flush-only  # Export SQLite → JSONL before commit
 
 **Protocol Reference**: See `.claude/protocols/beads-integration.md`
 </beads_workflow>
+
+<visual_communication>
+## Visual Communication (Optional)
+
+Follow `.claude/protocols/visual-communication.md` for diagram standards.
+
+### When to Include Diagrams
+
+Code review feedback may benefit from visual aids for:
+- **Code Flow** (flowchart) - Illustrate data or control flow issues
+- **Architecture Concerns** (flowchart) - Show structural problems
+
+### Output Format
+
+If including diagrams in feedback, use Mermaid with preview URLs:
+
+```markdown
+### Suggested Refactoring
+
+Current flow has unnecessary complexity:
+
+```mermaid
+graph TD
+    A[Input] --> B[Validate]
+    B --> C[Process]
+    C --> D[Transform]
+    D --> E[Output]
+```
+
+> **Preview**: [View diagram](https://agents.craft.do/mermaid?code=...&theme=github)
+```
+
+### Theme Configuration
+
+Read theme from `.loa.config.yaml` visual_communication.theme setting.
+
+Diagram inclusion is **optional** for code reviews - use when visual explanation helps.
+</visual_communication>
+
+<retrospective_postlude>
+## Invisible Retrospective
+
+After completing main skill logic, scan session for learning opportunities.
+
+**CRITICAL**: This postlude executes SILENTLY. Only surface findings that pass quality gates.
+
+### Step 1: Check Configuration
+
+Read `.loa.config.yaml`:
+```yaml
+invisible_retrospective:
+  enabled: true|false
+  skills:
+    reviewing-code: true|false
+```
+
+**Exit Conditions** (skip all processing if any are true):
+- `invisible_retrospective.enabled: false` → Log action: DISABLED, exit
+- `invisible_retrospective.skills.reviewing-code: false` → Log action: DISABLED, exit
+- **RECURSION GUARD**: If skill is `continuous-learning` → Exit silently (but this skill is `reviewing-code`, so proceed)
+
+### Step 2: Scan Session for Learning Signals
+
+Search the current conversation for these patterns:
+
+| Signal | Detection Patterns | Weight |
+|--------|-------------------|--------|
+| Error Resolution | "bug", "issue", "fixed", "corrected", "the problem was" | 3 |
+| Multiple Attempts | "tried", "attempted", "finally", "after reviewing", "looked at" | 3 |
+| Unexpected Behavior | "surprisingly", "actually", "turns out", "noticed", "realized" | 2 |
+| Workaround Found | "instead", "alternative", "better approach", "refactor to" | 2 |
+| Pattern Discovery | "pattern", "convention", "code style", "always use", "prefer" | 1 |
+
+**Scoring**: Sum weights for each candidate discovery.
+
+**Output**: List of candidate discoveries (max 5 per skill invocation, from config `max_candidates`)
+
+If no candidates found:
+- Log action: SKIPPED, candidates_found: 0
+- Exit silently
+
+### Step 3: Apply Lightweight Quality Gates
+
+For each candidate, evaluate these 4 gates:
+
+| Gate | Question | PASS Condition |
+|------|----------|----------------|
+| **Depth** | Required multiple investigation steps? | Not just a quick glance - involved analysis, comparison, tracing |
+| **Reusable** | Generalizable beyond this instance? | Applies to similar code patterns, not specific to this review |
+| **Trigger** | Can describe when to apply? | Clear code patterns or conditions that indicate this applies |
+| **Verified** | Solution confirmed working? | Fix verified or pattern validated in this session |
+
+**Scoring**: Each gate passed = 1 point. Max score = 4.
+
+**Threshold**: From config `surface_threshold` (default: 3)
+
+### Step 3.5: Sanitize Descriptions (REQUIRED)
+
+**CRITICAL**: Before logging or surfacing ANY candidate, sanitize descriptions to prevent sensitive data leakage.
+
+Apply these redaction patterns:
+
+| Pattern | Replacement |
+|---------|-------------|
+| API Keys (`sk-*`, `ghp_*`, `AKIA*`) | `[REDACTED_API_KEY]` |
+| Private Keys (`-----BEGIN...PRIVATE KEY-----`) | `[REDACTED_PRIVATE_KEY]` |
+| JWT Tokens (`eyJ...`) | `[REDACTED_JWT]` |
+| Webhook URLs (`hooks.slack.com/*`, `hooks.discord.com/*`) | `[REDACTED_WEBHOOK]` |
+| File Paths (`/home/*/`, `/Users/*/`) | `/home/[USER]/` or `/Users/[USER]/` |
+| Email Addresses | `[REDACTED_EMAIL]` |
+| IP Addresses | `[REDACTED_IP]` |
+| Generic Secrets (`password=`, `secret=`, etc.) | `$key=[REDACTED]` |
+
+If any redactions occur, add `"redactions_applied": true` to trajectory log.
+
+### Step 4: Log to Trajectory (ALWAYS)
+
+Write to `grimoires/loa/a2a/trajectory/retrospective-{YYYY-MM-DD}.jsonl`:
+
+```json
+{
+  "type": "invisible_retrospective",
+  "timestamp": "{ISO8601}",
+  "skill": "reviewing-code",
+  "action": "DETECTED|EXTRACTED|SKIPPED|DISABLED|ERROR",
+  "candidates_found": N,
+  "candidates_qualified": N,
+  "candidates": [
+    {
+      "id": "learning-{timestamp}-{hash}",
+      "signal": "error_resolution|multiple_attempts|unexpected_behavior|workaround|pattern_discovery",
+      "description": "Brief description of the review learning",
+      "score": N,
+      "gates_passed": ["depth", "reusable", "trigger", "verified"],
+      "gates_failed": [],
+      "qualified": true|false
+    }
+  ],
+  "extracted": ["learning-id-001"],
+  "latency_ms": N
+}
+```
+
+### Step 5: Surface Qualified Findings
+
+IF any candidates score >= `surface_threshold`:
+
+1. **Add to NOTES.md `## Learnings` section**:
+
+   **CRITICAL - Markdown Escape**: Before inserting description, escape these characters:
+   - `#` → `\#`, `*` → `\*`, `[` → `\[`, `]` → `\]`, `\n` → ` `
+
+   ```markdown
+   ## Learnings
+   - [{timestamp}] [reviewing-code] {ESCAPED Brief description} → skills-pending/{id}
+   ```
+
+   If `## Learnings` section doesn't exist, create it after `## Session Log`.
+
+2. **Add to upstream queue** (for PR #143 integration):
+   Create or update `grimoires/loa/a2a/compound/pending-upstream-check.json`:
+   ```json
+   {
+     "queued_learnings": [
+       {
+         "id": "learning-{timestamp}-{hash}",
+         "source": "invisible_retrospective",
+         "skill": "reviewing-code",
+         "queued_at": "{ISO8601}"
+       }
+     ]
+   }
+   ```
+
+3. **Show brief notification**:
+   ```
+   ────────────────────────────────────────────
+   Learning Captured
+   ────────────────────────────────────────────
+   Pattern: {brief description}
+   Score: {score}/4 gates passed
+
+   Added to: grimoires/loa/NOTES.md
+   ────────────────────────────────────────────
+   ```
+
+IF no candidates qualify:
+- Log action: SKIPPED
+- **NO user-visible output** (silent)
+
+### Error Handling
+
+On ANY error during postlude execution:
+
+1. Log to trajectory:
+   ```json
+   {
+     "type": "invisible_retrospective",
+     "timestamp": "{ISO8601}",
+     "skill": "reviewing-code",
+     "action": "ERROR",
+     "error": "{error message}",
+     "candidates_found": 0,
+     "candidates_qualified": 0
+   }
+   ```
+
+2. **Continue silently** - do NOT interrupt the main workflow
+3. Do NOT surface error to user
+
+### Session Limits
+
+Respect these limits from config:
+- `max_candidates`: Maximum candidates to evaluate per invocation (default: 5)
+- `max_extractions_per_session`: Maximum learnings to extract per session (default: 3)
+
+Track session extractions in trajectory log and skip extraction if limit reached.
+
+</retrospective_postlude>

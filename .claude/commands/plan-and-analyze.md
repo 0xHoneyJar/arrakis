@@ -19,6 +19,11 @@ agent: "discovering-requirements"
 agent_path: "skills/discovering-requirements/"
 
 context_files:
+  # GPT review instructions (conditional - only exists if enabled)
+  - path: ".claude/context/gpt-review-active.md"
+    required: false
+    purpose: "GPT cross-model review instructions (if enabled)"
+
   # Priority 1: Reality files (codebase understanding from /ride)
   - path: "grimoires/loa/reality/extracted-prd.md"
     required: false
@@ -295,6 +300,40 @@ This command automatically manages the Sprint Ledger:
 | `/ledger` | View current ledger status |
 | `/ledger history` | View all cycles |
 | `/archive-cycle "label"` | Archive current cycle manually |
+
+## Flatline Protocol Integration (v1.17.0)
+
+After PRD generation completes, the Flatline Protocol may execute automatically for adversarial multi-model review.
+
+### Automatic Trigger Conditions
+
+The postlude runs if ALL conditions are met:
+- `flatline_protocol.enabled: true` in `.loa.config.yaml`
+- `flatline_protocol.auto_trigger: true` in `.loa.config.yaml`
+- `flatline_protocol.phases.prd: true` in `.loa.config.yaml`
+
+### What Happens
+
+1. **Knowledge Retrieval**: Searches local grimoires for relevant context
+2. **Phase 1**: 4 parallel API calls (GPT review, Opus review, GPT skeptic, Opus skeptic)
+3. **Phase 2**: Cross-scoring between models
+4. **Consensus**: Categorizes improvements as HIGH_CONSENSUS, DISPUTED, or LOW_VALUE
+5. **Presentation**: Shows results and offers integration options
+
+### Output
+
+Results are saved to `grimoires/loa/a2a/flatline/prd-review.json`
+
+### Manual Alternative
+
+If auto-trigger is disabled, run manually:
+```bash
+/flatline-review prd
+```
+
+### Error Handling
+
+If Flatline fails, the PRD is still valid. A warning is surfaced but workflow continues.
 
 ## Next Step
 

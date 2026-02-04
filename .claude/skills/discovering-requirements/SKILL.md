@@ -13,6 +13,86 @@ zones:
     permission: read
 ---
 
+<prompt_enhancement_prelude>
+## Invisible Prompt Enhancement
+
+Before executing main skill logic, apply automatic prompt enhancement to user's request.
+
+### Step 1: Check Configuration
+
+Read `.loa.config.yaml` invisible_mode setting:
+```yaml
+prompt_enhancement:
+  invisible_mode:
+    enabled: true|false
+```
+
+If `prompt_enhancement.invisible_mode.enabled: false` (or not set), skip to main skill logic with original prompt.
+
+### Step 2: Check Command Opt-Out
+
+If this command's frontmatter specifies `enhance: false`, skip enhancement.
+
+### Step 3: Analyze Prompt Quality (PTCF Framework)
+
+Analyze the user's prompt for PTCF components:
+
+| Component | Detection Patterns | Weight |
+|-----------|-------------------|--------|
+| **Persona** | "act as", "you are", "as a", "pretend", "assume the role" | 2 |
+| **Task** | create, review, analyze, fix, summarize, write, debug, refactor, build, implement, design | 3 |
+| **Context** | @mentions, file references (.ts, .js, .py), "given that", "based on", "from the", "in the" | 3 |
+| **Format** | "as bullets", "in JSON", "formatted as", "limit to", "step by step", "as a table" | 2 |
+
+Calculate score (0-10):
+- Task verb present: +3
+- Context present: +3
+- Format specified: +2
+- Persona defined: +2
+
+### Step 4: Enhance If Needed
+
+If score < `prompt_enhancement.auto_enhance_threshold` (default 4):
+
+1. **Classify task type**: debugging, code_review, refactoring, summarization, research, generation, general
+2. **Load template** from `.claude/skills/enhancing-prompts/resources/templates/{task_type}.yaml`
+3. **Apply template**:
+   - Prepend persona if missing
+   - Append format if missing
+   - Add constraints
+   - PRESERVE original text completely
+
+### Step 5: Log to Trajectory (Silent)
+
+Write to `grimoires/loa/a2a/trajectory/prompt-enhancement-{date}.jsonl`:
+```json
+{
+  "type": "prompt_enhancement",
+  "timestamp": "ISO8601",
+  "command": "plan-and-analyze",
+  "action": "ENHANCED|SKIP|DISABLED|OPT_OUT|ERROR",
+  "original_score": N,
+  "enhanced_score": N,
+  "components_added": ["persona", "format"],
+  "task_type": "generation",
+  "latency_ms": N
+}
+```
+
+### Step 6: Continue with Prompt
+
+Use the (potentially enhanced) prompt for main skill execution.
+
+**CRITICAL**: Never show enhancement output to user. All analysis is internal only.
+
+### Error Handling
+
+On ANY error during enhancement:
+- Log `action: "ERROR"` to trajectory
+- Use original prompt unchanged (silent passthrough)
+- Continue with main skill execution
+</prompt_enhancement_prelude>
+
 # Discovering Requirements
 
 <objective>
@@ -103,6 +183,34 @@ Example:
 "Found 47 AuthService refs across 12 files. Key locations in NOTES.md."
 ```
 </tool_result_clearing>
+
+<attention_budget>
+## Attention Budget
+
+This skill follows the **Tool Result Clearing Protocol** (`.claude/protocols/tool-result-clearing.md`).
+
+### Token Thresholds
+
+| Context Type | Limit | Action |
+|--------------|-------|--------|
+| Single search result | 2,000 tokens | Apply 4-step clearing |
+| Accumulated results | 5,000 tokens | MANDATORY clearing |
+| Full file load | 3,000 tokens | Single file, synthesize immediately |
+| Session total | 15,000 tokens | STOP, synthesize to NOTES.md |
+
+### Clearing Triggers for Discovery
+
+- [ ] Document search returning >10 files
+- [ ] Code analysis returning >20 matches
+- [ ] Any API/tool output >2K tokens
+
+### 4-Step Clearing
+
+1. **Extract**: Max 10 files, 20 words per finding
+2. **Synthesize**: Write to `grimoires/loa/NOTES.md`
+3. **Clear**: Remove raw output from context
+4. **Summary**: `"Discovery: N sources → M requirements → NOTES.md"`
+</attention_budget>
 
 <trajectory_logging>
 ## Trajectory Logging
@@ -651,3 +759,42 @@ Every claim about existing context must include citation:
 | Brownfield detected but no reality | Run /ride before Phase -1 |
 | Greenfield project | Skip codebase grounding entirely, no message |
 </edge_cases>
+
+<visual_communication>
+## Visual Communication (Optional)
+
+Follow `.claude/protocols/visual-communication.md` for diagram standards.
+
+### When to Include Diagrams
+
+PRDs may benefit from visual aids for:
+- **User Journeys** (flowchart) - Show user flows through the product
+- **Process Flows** (flowchart) - Illustrate business processes
+- **Stakeholder Maps** (flowchart) - Show stakeholder relationships
+
+### Output Format
+
+If including diagrams, use Mermaid with preview URLs:
+
+```markdown
+### User Registration Journey
+
+```mermaid
+graph LR
+    A[Landing Page] --> B{Has Account?}
+    B -->|No| C[Sign Up Form]
+    B -->|Yes| D[Login]
+    C --> E[Email Verification]
+    E --> F[Onboarding]
+    F --> G[Dashboard]
+```
+
+> **Preview**: [View diagram](https://agents.craft.do/mermaid?code=...&theme=github)
+```
+
+### Theme Configuration
+
+Read theme from `.loa.config.yaml` visual_communication.theme setting.
+
+Diagram inclusion is **optional** for PRDs - use agent discretion based on complexity.
+</visual_communication>

@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# anthropic-oracle.sh - Monitor Anthropic updates for Loa improvements
+# anthropic-oracle.sh - Monitor Anthropic updates and query Loa learnings
 #
 # This script checks Anthropic's official sources for updates that could
-# benefit Loa and generates research documents for review.
+# benefit Loa, and queries Loa's own compound learnings for patterns.
 #
 # Usage:
-#   anthropic-oracle.sh check          # Check for updates (outputs JSON)
-#   anthropic-oracle.sh sources        # List monitored sources
-#   anthropic-oracle.sh generate       # Generate research PR (requires Claude)
-#   anthropic-oracle.sh history        # Show previous checks
+#   anthropic-oracle.sh check                    # Check for Anthropic updates
+#   anthropic-oracle.sh sources                  # List monitored sources
+#   anthropic-oracle.sh history                  # Show previous checks
+#   anthropic-oracle.sh template                 # Output research document template
+#   anthropic-oracle.sh query <terms> [options]  # Query knowledge sources
+#
+# Query Options:
+#   --scope <loa|anthropic|all>  Source scope (default: all)
+#   --format <json|text>         Output format (default: text)
+#   --limit <N>                  Max results (default: 10)
+#   --min-weight <0.0-1.0>       Minimum source weight filter
+#   --index <auto|qmd|grep>      Force specific indexer (default: auto)
 #
 # Environment:
 #   ANTHROPIC_ORACLE_CACHE  - Cache directory (default: ~/.loa/cache/oracle)
@@ -75,6 +83,83 @@ check_dependencies() {
 check_bash_version
 check_dependencies
 
+# Configuration file
+CONFIG_FILE="$PROJECT_ROOT/.loa.config.yaml"
+
+# Read config value with yq, fallback to default
+read_config() {
+    local path="$1"
+    local default="$2"
+    if [[ -f "$CONFIG_FILE" ]] && command -v yq &> /dev/null; then
+        local value
+        value=$(yq -r "$path // \"\"" "$CONFIG_FILE" 2>/dev/null)
+        if [[ -n "$value" && "$value" != "null" ]]; then
+            echo "$value"
+            return
+        fi
+    fi
+    echo "$default"
+}
+
+# Check if QMD is available
+qmd_available() {
+    command -v qmd &> /dev/null
+}
+
+# Get default indexer from config
+get_default_indexer() {
+    read_config '.oracle.query.default_indexer' 'auto'
+}
+
+# Get default scope from config
+get_default_scope() {
+    read_config '.oracle.query.default_scope' 'all'
+}
+
+# Get default limit from config
+get_default_limit() {
+    read_config '.oracle.query.default_limit' '10'
+}
+
+# Source weights (hierarchical - from Issue #76)
+# Loa learnings = 1.0 (highest - our own proven patterns)
+# Anthropic docs = 0.8 (authoritative external source)
+# Community = 0.5 (useful but less verified)
+declare -A SOURCE_WEIGHTS=(
+    ["loa"]="1.0"
+    ["anthropic"]="0.8"
+    ["community"]="0.5"
+)
+
+# Loa sources for compound learnings (Two-Tier Architecture v1.15.1)
+# Tier 1 (Framework): Ships with Loa, weight 1.0
+# Tier 2 (Project): Project-specific, weight 0.9
+declare -A LOA_SOURCES=(
+    # Framework Tier (always present)
+    ["framework_patterns"]=".claude/loa/learnings/patterns.json"
+    ["framework_antipatterns"]=".claude/loa/learnings/anti-patterns.json"
+    ["framework_decisions"]=".claude/loa/learnings/decisions.json"
+    ["framework_troubleshooting"]=".claude/loa/learnings/troubleshooting.json"
+    # Project Tier (accumulates over time)
+    ["project_learnings"]="grimoires/loa/a2a/compound/learnings.json"
+    ["project_feedback"]="grimoires/loa/feedback/*.yaml"
+    ["project_decisions"]="grimoires/loa/decisions.yaml"
+    # Skills (always present)
+    ["skills"]=".claude/skills/**/*.md"
+)
+
+# Source weights for two-tier learnings
+declare -A LOA_SOURCE_WEIGHTS=(
+    ["framework_patterns"]="1.0"
+    ["framework_antipatterns"]="1.0"
+    ["framework_decisions"]="1.0"
+    ["framework_troubleshooting"]="1.0"
+    ["project_learnings"]="0.9"
+    ["project_feedback"]="0.9"
+    ["project_decisions"]="0.9"
+    ["skills"]="1.0"
+)
+
 # Anthropic sources to monitor
 # Note: Claude Code docs moved from docs.anthropic.com to code.claude.com in early 2026
 declare -A SOURCES=(
@@ -110,8 +195,9 @@ INTEREST_AREAS=(
     "files"
 )
 
-# Initialize cache directory
+# Initialize cache directory (ORACLE-L-3: set restrictive umask before mkdir)
 init_cache() {
+    umask 077
     mkdir -p "$CACHE_DIR"
 }
 
@@ -171,7 +257,9 @@ fetch_source() {
         return 0
     fi
 
-    if curl -sL --max-time 30 "$url" -o "$cache_file" 2>/dev/null; then
+    # ORACLE-L-2: Add --fail-with-body to properly handle HTTP errors
+    # HIGH-002 FIX: Enforce HTTPS and TLS 1.2+
+    if curl -sL --proto =https --tlsv1.2 --fail-with-body --max-time 30 "$url" -o "$cache_file" 2>/dev/null; then
         echo "$cache_file"
         return 0
     else
@@ -234,10 +322,12 @@ check_updates() {
 
         if fetch_source "$key" "$url" > /dev/null; then
             echo -e "${GREEN}✓${NC}"
-            ((fetched++))
+            # Use assignment form to avoid exit code 1 when fetched=0
+            # (post-increment returns pre-value, which is falsy for 0)
+            fetched=$((fetched + 1))
         else
             echo -e "${YELLOW}⚠ (cached or failed)${NC}"
-            ((failed++))
+            failed=$((failed + 1))
         fi
     done
 
@@ -293,6 +383,342 @@ show_history() {
     done
 
     echo ""
+}
+
+# Query sources based on scope
+# Routes to appropriate indexer (loa-learnings-index.sh or grep on anthropic cache)
+query_sources() {
+    local terms="$1"
+    local scope="${2:-all}"
+    local format="${3:-text}"
+    local limit="${4:-10}"
+    local min_weight="${5:-0.0}"
+    local indexer="${6:-auto}"
+
+    local results=()
+    local loa_results=""
+    local anthropic_results=""
+
+    # Query Loa sources
+    if [[ "$scope" == "loa" || "$scope" == "all" ]]; then
+        if [[ -x "$SCRIPT_DIR/loa-learnings-index.sh" ]]; then
+            # Pass indexer flag to loa-learnings-index.sh
+            loa_results=$("$SCRIPT_DIR/loa-learnings-index.sh" query "$terms" --format json --index "$indexer" 2>/dev/null || echo "[]")
+        else
+            # Fallback: grep-based search on Loa sources
+            loa_results=$(query_loa_with_grep "$terms")
+        fi
+    fi
+
+    # Query Anthropic sources (cached content)
+    if [[ "$scope" == "anthropic" || "$scope" == "all" ]]; then
+        anthropic_results=$(query_anthropic_cache "$terms")
+    fi
+
+    # Merge and rank results
+    merge_and_rank "$loa_results" "$anthropic_results" "$format" "$limit" "$min_weight"
+}
+
+# Grep-based query for Loa sources (fallback when loa-learnings-index.sh not available)
+# Implements Two-Tier Learnings Architecture (v1.15.1)
+query_loa_with_grep() {
+    local terms="$1"
+    local results="[]"
+
+    # Convert OR-joined terms to grep pattern
+    local pattern
+    pattern=$(echo "$terms" | sed 's/|/\\|/g')
+
+    cd "$PROJECT_ROOT" || return
+
+    # ==========================================
+    # Framework Tier (Tier 1) - Always present
+    # ==========================================
+
+    # Search framework learnings JSON files (weight: 1.0)
+    if [[ -d ".claude/loa/learnings" ]]; then
+        for learnings_file in .claude/loa/learnings/*.json; do
+            [[ -f "$learnings_file" ]] || continue
+            [[ "$(basename "$learnings_file")" == "index.json" ]] && continue
+
+            local category
+            category=$(basename "$learnings_file" .json)
+
+            # Search within learnings array using jq
+            local matches
+            matches=$(jq --arg pattern "$pattern" '
+                [.learnings // [] | .[] | select(
+                    (.title // "" | test($pattern; "i")) or
+                    (.trigger // "" | test($pattern; "i")) or
+                    (.solution // "" | test($pattern; "i")) or
+                    (.id // "" | test($pattern; "i"))
+                ) | . + {"tier": "framework", "category": "'"$category"'"}]
+            ' "$learnings_file" 2>/dev/null || echo "[]")
+
+            # Transform to standard result format
+            matches=$(echo "$matches" | jq --arg file "$learnings_file" '
+                [.[] | {
+                    "source": "loa",
+                    "type": "framework_learning",
+                    "tier": "framework",
+                    "category": .category,
+                    "title": .title,
+                    "file": $file,
+                    "snippet": (.solution // .trigger | .[0:200]),
+                    "score": 0.9,
+                    "weight": 1.0
+                }]
+            ' 2>/dev/null || echo "[]")
+
+            results=$(echo "$results $matches" | jq -s 'add')
+        done
+    fi
+
+    # ==========================================
+    # Project Tier (Tier 2) - Accumulates over time
+    # ==========================================
+
+    # Search project learnings (weight: 0.9)
+    if [[ -f "grimoires/loa/a2a/compound/learnings.json" ]]; then
+        local matches
+        matches=$(jq --arg pattern "$pattern" '
+            [.learnings // [] | .[] | select(
+                (.title // "" | test($pattern; "i")) or
+                (.trigger // "" | test($pattern; "i")) or
+                (.solution // "" | test($pattern; "i")) or
+                (.id // "" | test($pattern; "i"))
+            )]
+        ' "grimoires/loa/a2a/compound/learnings.json" 2>/dev/null || echo "[]")
+
+        matches=$(echo "$matches" | jq '
+            [.[] | {
+                "source": "loa",
+                "type": "project_learning",
+                "tier": "project",
+                "title": .title,
+                "file": "grimoires/loa/a2a/compound/learnings.json",
+                "snippet": (.solution // .trigger | .[0:200]),
+                "score": 0.85,
+                "weight": 0.9
+            }]
+        ' 2>/dev/null || echo "[]")
+
+        results=$(echo "$results $matches" | jq -s 'add')
+    fi
+
+    # Search skills (ORACLE-M-1: use find with -print0 and read -d '' to handle filenames safely)
+    if [[ -d ".claude/skills" ]]; then
+        while IFS= read -r -d '' match; do
+            local snippet
+            snippet=$(grep -i -m 1 "$pattern" "$match" 2>/dev/null | head -c 200 || true)
+            results=$(echo "$results" | jq --arg file "$match" --arg snippet "$snippet" \
+                '. + [{"source": "loa", "type": "skill", "tier": "framework", "file": $file, "snippet": $snippet, "score": 0.7, "weight": 1.0}]')
+        done < <(find .claude/skills -name "*.md" -type f -exec grep -l -i "$pattern" {} + -print0 2>/dev/null || true)
+    fi
+
+    # Search feedback (ORACLE-M-1: use find with -print0 and read -d '' to handle filenames safely)
+    if [[ -d "grimoires/loa/feedback" ]]; then
+        while IFS= read -r -d '' match; do
+            local snippet
+            snippet=$(grep -i -m 1 "$pattern" "$match" 2>/dev/null | head -c 200 || true)
+            results=$(echo "$results" | jq --arg file "$match" --arg snippet "$snippet" \
+                '. + [{"source": "loa", "type": "feedback", "tier": "project", "file": $file, "snippet": $snippet, "score": 0.8, "weight": 0.9}]')
+        done < <(find grimoires/loa/feedback -name "*.yaml" -type f -exec grep -l -i "$pattern" {} + -print0 2>/dev/null || true)
+    fi
+
+    # Search decisions
+    if [[ -f "grimoires/loa/decisions.yaml" ]]; then
+        if grep -q -i "$pattern" grimoires/loa/decisions.yaml 2>/dev/null; then
+            local snippet
+            snippet=$(grep -i -m 1 "$pattern" grimoires/loa/decisions.yaml 2>/dev/null | head -c 200 || true)
+            results=$(echo "$results" | jq --arg snippet "$snippet" \
+                '. + [{"source": "loa", "type": "decision", "tier": "project", "file": "grimoires/loa/decisions.yaml", "snippet": $snippet, "score": 0.9, "weight": 0.9}]')
+        fi
+    fi
+
+    echo "$results"
+}
+
+# Query Anthropic cached content
+query_anthropic_cache() {
+    local terms="$1"
+    local results="[]"
+
+    # Convert OR-joined terms to grep pattern
+    local pattern
+    pattern=$(echo "$terms" | sed 's/|/\\|/g')
+
+    if [[ ! -d "$CACHE_DIR" ]]; then
+        echo "[]"
+        return
+    fi
+
+    # Search cached HTML files
+    for cache_file in "$CACHE_DIR"/*.html; do
+        [[ -f "$cache_file" ]] || continue
+
+        local name
+        name=$(basename "$cache_file" .html)
+
+        if grep -q -i "$pattern" "$cache_file" 2>/dev/null; then
+            local snippet
+            snippet=$(grep -i -m 1 "$pattern" "$cache_file" 2>/dev/null | sed 's/<[^>]*>//g' | head -c 200 || true)
+            local url="${SOURCES[$name]:-unknown}"
+            results=$(echo "$results" | jq --arg name "$name" --arg url "$url" --arg snippet "$snippet" \
+                '. + [{"source": "anthropic", "type": "doc", "name": $name, "url": $url, "snippet": $snippet, "score": 0.6, "weight": 0.8}]')
+        fi
+    done
+
+    echo "$results"
+}
+
+# Merge results from multiple sources and rank by weighted score
+merge_and_rank() {
+    local loa_results="${1:-[]}"
+    local anthropic_results="${2:-[]}"
+    local format="$3"
+    local limit="$4"
+    local min_weight="$5"
+
+    # Merge arrays
+    local merged
+    merged=$(jq -n --argjson loa "$loa_results" --argjson anthropic "$anthropic_results" \
+        '$loa + $anthropic')
+
+    # Calculate weighted scores and filter (handle null values)
+    local ranked
+    ranked=$(echo "$merged" | jq --argjson min_weight "$min_weight" '
+        [.[] |
+            . + {
+                score: (.score // 0.5),
+                weight: (.weight // 1.0)
+            } |
+            . + {weighted_score: (.score * .weight)} |
+            select(.weight >= $min_weight)
+        ] | sort_by(-.weighted_score)')
+
+    # Apply limit
+    local limited
+    limited=$(echo "$ranked" | jq --argjson limit "$limit" '.[:$limit]')
+
+    # Output based on format
+    if [[ "$format" == "json" ]]; then
+        echo "$limited"
+    else
+        # Text format
+        local count
+        count=$(echo "$limited" | jq 'length')
+
+        if [[ "$count" == "0" ]]; then
+            echo -e "${YELLOW}No results found.${NC}"
+            return 4
+        fi
+
+        echo -e "${BOLD}${CYAN}Oracle Query Results${NC}"
+        echo "─────────────────────────────────────────"
+        echo ""
+
+        echo "$limited" | jq -r '.[] | "\(.source)|\(.type)|\(.weighted_score)|\(.title // .file // .name // .source_file)|\(.trigger // .snippet // .solution // "")"' | \
+        while IFS='|' read -r source type score title snippet; do
+            local weight="${SOURCE_WEIGHTS[$source]:-0.5}"
+            local color="${GREEN}"
+            [[ "$source" == "anthropic" ]] && color="${BLUE}"
+            [[ "$source" == "community" ]] && color="${YELLOW}"
+
+            printf "  ${color}[%s]${NC} %-10s (%.2f) %s\n" "$source" "$type" "$score" "$title"
+            if [[ -n "$snippet" && "$snippet" != "null" ]]; then
+                printf "         ${CYAN}%s${NC}\n" "${snippet:0:80}..."
+            fi
+            echo ""
+        done
+
+        echo "─────────────────────────────────────────"
+        echo -e "Results: ${GREEN}$count${NC} (limit: $limit, min-weight: $min_weight)"
+    fi
+}
+
+# Parse query command arguments
+parse_query_args() {
+    local terms=""
+    local scope=""
+    local format="text"
+    local limit=""
+    local min_weight="0.0"
+    local indexer=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --scope)
+                scope="$2"
+                shift 2
+                ;;
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            --limit)
+                limit="$2"
+                shift 2
+                ;;
+            --min-weight)
+                min_weight="$2"
+                shift 2
+                ;;
+            --index)
+                indexer="$2"
+                shift 2
+                ;;
+            -*)
+                echo -e "${RED}Unknown option: $1${NC}" >&2
+                exit 1
+                ;;
+            *)
+                if [[ -z "$terms" ]]; then
+                    terms="$1"
+                else
+                    terms="$terms|$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$terms" ]]; then
+        echo -e "${RED}Error: Query terms required${NC}" >&2
+        echo "Usage: anthropic-oracle.sh query <terms> [--scope loa|anthropic|all] [--format json|text] [--limit N] [--index auto|qmd|grep]" >&2
+        exit 1
+    fi
+
+    # Read defaults from config if not specified
+    if [[ -z "$scope" ]]; then
+        scope=$(get_default_scope)
+    fi
+    if [[ -z "$limit" ]]; then
+        limit=$(get_default_limit)
+    fi
+    if [[ -z "$indexer" ]]; then
+        indexer=$(get_default_indexer)
+    fi
+
+    # Validate scope
+    if [[ ! "$scope" =~ ^(loa|anthropic|all)$ ]]; then
+        echo -e "${RED}Error: Invalid scope '$scope'. Use: loa, anthropic, or all${NC}" >&2
+        exit 1
+    fi
+
+    # Validate indexer
+    if [[ ! "$indexer" =~ ^(auto|qmd|grep)$ ]]; then
+        echo -e "${RED}Error: Invalid indexer '$indexer'. Use: auto, qmd, or grep${NC}" >&2
+        exit 1
+    fi
+
+    # Check QMD availability if requested
+    if [[ "$indexer" == "qmd" ]] && ! qmd_available; then
+        echo -e "${RED}Error: QMD requested but not available. Install qmd or use --index grep${NC}" >&2
+        exit 1
+    fi
+
+    query_sources "$terms" "$scope" "$format" "$limit" "$min_weight" "$indexer"
 }
 
 # Generate research document template
@@ -416,6 +842,10 @@ main() {
         template)
             generate_research_template
             ;;
+        query)
+            shift
+            parse_query_args "$@"
+            ;;
         generate)
             echo -e "${YELLOW}Note:${NC} Use '/oracle-analyze' command in Claude Code to generate research PR."
             echo ""
@@ -424,24 +854,47 @@ main() {
             ;;
         help|--help|-h)
             cat << 'HELP'
-anthropic-oracle.sh - Monitor Anthropic updates for Loa improvements
+anthropic-oracle.sh - Monitor Anthropic updates and query Loa learnings
 
 Usage:
-  anthropic-oracle.sh check      Check for updates (fetch sources)
-  anthropic-oracle.sh sources    List monitored sources
-  anthropic-oracle.sh history    Show previous checks
-  anthropic-oracle.sh template   Output research document template
-  anthropic-oracle.sh generate   Instructions for generating research PR
+  anthropic-oracle.sh check                    Check for updates (fetch Anthropic sources)
+  anthropic-oracle.sh sources                  List monitored sources
+  anthropic-oracle.sh history                  Show previous checks
+  anthropic-oracle.sh template                 Output research document template
+  anthropic-oracle.sh query <terms> [options]  Query knowledge sources
+
+Query Command:
+  anthropic-oracle.sh query "auth token" --scope loa      # Query Loa learnings only
+  anthropic-oracle.sh query "hooks" --scope anthropic     # Query Anthropic docs only
+  anthropic-oracle.sh query "agents|mcp" --scope all      # Query all sources (default)
+
+Query Options:
+  --scope <all|loa|anthropic>   Source scope: all (Recommended), loa, anthropic
+  --format <text|json>          Output format: text (Recommended), json
+  --limit <N>                   Max results (default: 10)
+  --min-weight <0.0-1.0>        Minimum source weight filter
+  --index <auto|qmd|grep>       Indexer: auto (Recommended), qmd, grep
+                                auto: use QMD if available, fallback to grep
+                                qmd: require QMD semantic search
+                                grep: force grep-based search
+
+Source Weights:
+  loa       1.0   Loa's own compound learnings (highest priority)
+  anthropic 0.8   Anthropic official documentation
+  community 0.5   Community contributions
 
 Environment Variables:
   ANTHROPIC_ORACLE_CACHE   Cache directory (default: ~/.loa/cache/oracle)
   ANTHROPIC_ORACLE_TTL     Cache TTL in hours (default: 24)
 
-Workflow:
-  1. Run 'anthropic-oracle.sh check' to fetch latest content
-  2. Run '/oracle-analyze' in Claude Code to analyze and generate PR
-  3. Review generated research document
-  4. Merge PR if improvements are valuable
+Workflows:
+  Anthropic Updates:
+    1. Run 'anthropic-oracle.sh check' to fetch latest content
+    2. Run '/oracle-analyze' in Claude Code to analyze and generate PR
+
+  Loa Learnings Query:
+    1. Run 'loa-learnings-index.sh index' to build/update index
+    2. Run 'anthropic-oracle.sh query <terms> --scope loa'
 
 HELP
             ;;
