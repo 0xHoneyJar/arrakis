@@ -2,15 +2,16 @@
 
 ## Purpose
 
-Execute all sprints in sequence for complete release cycles. Autonomous implementation of an entire sprint plan.
+Execute all sprints in sequence for complete release cycles. Autonomous implementation of an entire sprint plan with a **single consolidated PR** at the end (v1.15.1).
 
 ## Usage
 
 ```
-/run sprint-plan
+/run sprint-plan                      # Consolidated PR at end (default, recommended)
 /run sprint-plan --from 2
 /run sprint-plan --from 2 --to 4
 /run sprint-plan --max-cycles 15 --timeout 12
+/run sprint-plan --no-consolidate     # Legacy: separate PR per sprint
 ```
 
 ## Options
@@ -23,6 +24,23 @@ Execute all sprints in sequence for complete release cycles. Autonomous implemen
 | `--timeout H` | Maximum runtime in hours | 8 |
 | `--branch NAME` | Feature branch name | `feature/release` |
 | `--dry-run` | Validate but don't execute | false |
+| `--no-consolidate` | Create separate PR per sprint (legacy) | false |
+
+## Consolidated PR (Default - v1.15.1)
+
+By default, `/run sprint-plan` creates a **single consolidated PR** after all sprints complete:
+
+- All sprints execute on the same feature branch
+- Each sprint's work is committed with clear sprint markers (e.g., `feat(sprint-1): ...`)
+- A single draft PR is created at the end containing all changes
+- PR summary includes per-sprint breakdown table
+- Commits are grouped by sprint in the PR description
+
+**Benefits**:
+- Easier to review (single PR instead of scattered sprints)
+- Clean git history with sprint markers
+- Comprehensive overview of all changes
+- Matches how Loa handles release PRs
 
 ## Sprint Discovery
 
@@ -276,6 +294,10 @@ $(list_remaining_sprints)
 - Files changed: $(jq '.metrics.total_files_changed' .run/sprint-plan-state.json)
 - Findings fixed: $(jq '.metrics.total_findings_fixed' .run/sprint-plan-state.json)
 
+### Flatline Review Summary (v1.22.0)
+
+$(generate_flatline_summary)
+
 $(generate_deleted_tree)
 
 ---
@@ -293,25 +315,39 @@ $(generate_deleted_tree)
 
 ## Completion PR
 
-### On Full Success
+### Consolidated PR Format (Default - v1.15.1)
 
 ```bash
 create_plan_pr() {
   # 1. Clean context directory for next cycle
   cleanup_context_directory
 
-  local body="## Run Mode Sprint Plan - COMPLETE
+  local body="## 🚀 Run Mode: Sprint Plan Complete
 
 ### Summary
-- **Sprints Completed:** $(jq '.sprints.completed' .run/sprint-plan-state.json)
-- **Total Cycles:** $(jq '.metrics.total_cycles' .run/sprint-plan-state.json)
-- **Files Changed:** $(jq '.metrics.total_files_changed' .run/sprint-plan-state.json)
-- **Findings Fixed:** $(jq '.metrics.total_findings_fixed' .run/sprint-plan-state.json)
 
-### Sprint Details
-$(generate_sprint_summary)
+| Metric | Value |
+|--------|-------|
+| **Sprints Completed** | $(jq '.sprints.completed' .run/sprint-plan-state.json) |
+| **Total Cycles** | $(jq '.metrics.total_cycles' .run/sprint-plan-state.json) |
+| **Files Changed** | $(jq '.metrics.total_files_changed' .run/sprint-plan-state.json) |
+| **Findings Fixed** | $(jq '.metrics.total_findings_fixed' .run/sprint-plan-state.json) |
+
+### Sprint Breakdown
+
+| Sprint | Status | Cycles | Files Changed |
+|--------|--------|--------|---------------|
+$(generate_sprint_table)
 
 $(generate_deleted_tree)
+
+### Commits by Sprint
+
+$(generate_commits_by_sprint)
+
+### Flatline Review Summary (v1.22.0)
+
+$(generate_flatline_summary)
 
 ### Test Results
 All tests passing (verified by /audit-sprint for each sprint).
@@ -320,13 +356,123 @@ All tests passing (verified by /audit-sprint for each sprint).
 Discovery context cleaned and ready for next cycle.
 
 ---
-:robot: Generated autonomously with Run Mode
+🤖 Generated autonomously with Run Mode
 "
 
   .claude/scripts/run-mode-ice.sh pr-create \
     "Run Mode: Sprint Plan implementation" \
-    "$body" \
+    "\$body" \
     --draft
+}
+```
+
+### Commits by Sprint Section
+
+The consolidated PR groups commits by sprint for easy review:
+
+```markdown
+#### Sprint 1: User Authentication
+- `abc1234` feat(sprint-1): implement login endpoint
+- `def5678` feat(sprint-1): add JWT token generation
+- `ghi9012` fix(sprint-1): address review feedback
+
+#### Sprint 2: Dashboard
+- `jkl3456` feat(sprint-2): create dashboard layout
+- `mno7890` feat(sprint-2): add widgets
+...
+```
+
+### Sprint Table Generation
+
+```bash
+generate_sprint_table() {
+  jq -r '.sprints.list[] |
+    "| \(.id) | \(if .status == "completed" then "✅ Complete" else "⏳ \(.status)" end) | \(.cycles) | \(.files_changed // "-") |"
+  ' .run/sprint-plan-state.json
+}
+
+generate_commits_by_sprint() {
+  for sprint in $(jq -r '.sprints.list[].id' .run/sprint-plan-state.json); do
+    local title=$(get_sprint_title "$sprint")
+    echo "#### $sprint: $title"
+    echo ""
+    git log --oneline --grep="($sprint)" | while read -r line; do
+      echo "- \`${line%% *}\` ${line#* }"
+    done
+    echo ""
+  done
+}
+
+generate_flatline_summary() {
+  # Aggregate Flatline results from all phases
+  local flatline_dir=".flatline/runs"
+  local plan_id=$(jq -r '.plan_id' .run/sprint-plan-state.json)
+
+  if [[ ! -d "$flatline_dir" ]]; then
+    echo "_No Flatline reviews executed during this run._"
+    return
+  fi
+
+  # Find all run manifests from this sprint plan
+  local manifests=$(find "$flatline_dir" -name "*.json" -newer .run/sprint-plan-state.json 2>/dev/null)
+
+  if [[ -z "$manifests" ]]; then
+    echo "_No Flatline reviews executed during this run._"
+    return
+  fi
+
+  # Aggregate metrics
+  local total_high=0
+  local total_disputed=0
+  local total_blockers=0
+  local phases_reviewed=""
+
+  for manifest in $manifests; do
+    local phase=$(jq -r '.phase // "unknown"' "$manifest")
+    local high=$(jq -r '.metrics.high_consensus // 0' "$manifest")
+    local disputed=$(jq -r '.metrics.disputed // 0' "$manifest")
+    local blockers=$(jq -r '.metrics.blockers // 0' "$manifest")
+    local status=$(jq -r '.status // "unknown"' "$manifest")
+
+    total_high=$((total_high + high))
+    total_disputed=$((total_disputed + disputed))
+    total_blockers=$((total_blockers + blockers))
+
+    phases_reviewed="${phases_reviewed}| ${phase^^} | $high | $disputed | $blockers | $(echo $status | sed 's/completed/✅/; s/escalated/⚠️/') |\n"
+  done
+
+  # Output summary table
+  echo "| Phase | HIGH | DISPUTED | BLOCKER | Status |"
+  echo "|-------|------|----------|---------|--------|"
+  echo -e "$phases_reviewed"
+  echo ""
+  echo "**Totals:** $total_high integrated, $total_disputed disputed (logged), $total_blockers blockers"
+
+  # List disputed items for post-review if any
+  if [[ $total_disputed -gt 0 ]]; then
+    echo ""
+    echo "<details>"
+    echo "<summary>Disputed items for post-review ($total_disputed)</summary>"
+    echo ""
+    for manifest in $manifests; do
+      local run_id=$(jq -r '.run_id' "$manifest")
+      local disputed_file=".flatline/runs/${run_id}-disputed.json"
+      if [[ -f "$disputed_file" ]]; then
+        jq -r '.[] | "- **\(.id // "Item")**: \(.description // .text // "No description") (delta: \(.delta // "N/A"))"' "$disputed_file" 2>/dev/null
+      fi
+    done
+    echo ""
+    echo "</details>"
+  fi
+
+  # Add rollback command if integrations were made
+  if [[ $total_high -gt 0 ]]; then
+    echo ""
+    echo "**Rollback:** To revert Flatline integrations:"
+    echo "\`\`\`bash"
+    echo ".claude/scripts/flatline-rollback.sh run --run-id <run_id> --dry-run"
+    echo "\`\`\`"
+  fi
 }
 ```
 
@@ -448,4 +594,8 @@ run_mode:
   sprint_plan:
     branch_prefix: "feature/"
     default_branch_name: "release"
+    # Consolidated PR behavior (v1.15.1)
+    consolidate_pr: true           # Create single PR for all sprints (default)
+    commit_prefix: "feat"          # Prefix for sprint commits
+    include_commits_by_sprint: true  # Group commits by sprint in PR
 ```
