@@ -136,7 +136,7 @@
       "prd": "grimoires/loa/prd-docs-sprint.md",
       "sdd": "grimoires/loa/sdd-docs-sprint.md",
       "sprints": [
-        {"global_id": 177, "local_label": "sprint-1", "status": "pending"}
+        {"global_id": 177, "local_label": "sprint-1", "status": "completed"}
       ]
     }
   ]

@@ -1,29 +1,36 @@
 {
-  "plan_id": "plan-20260130-sprint13",
-  "branch": "staging",
-  "state": "COMPLETED",
+  "plan_id": "plan-20260204-docs",
+  "branch": "feature/docs-sprint-177",
+  "state": "JACKED_OUT",
   "timestamps": {
-    "started": "2026-01-30T00:15:00Z",
-    "last_activity": "2026-01-30T02:30:00Z",
-    "completed": "2026-01-30T02:30:00Z"
+    "started": "2026-02-04T05:45:00Z",
+    "last_activity": "2026-02-04T06:00:00Z",
+    "completed": "2026-02-04T06:00:00Z"
   },
   "sprints": {
     "total": 1,
     "completed": 1,
-    "current": "sprint-13",
+    "current": "sprint-1",
     "list": [
-      {"id": "sprint-13", "global_id": 176, "status": "completed", "cycles": 1}
+      {"id": "sprint-1", "global_id": 177, "status": "completed", "cycles": 1, "files_changed": 6}
     ]
   },
   "options": {
-    "from": 13,
-    "to": 13,
+    "from": 1,
+    "to": 1,
     "max_cycles": 20,
     "timeout_hours": 8
   },
   "metrics": {
     "total_cycles": 1,
-    "total_files_changed": 12,
-    "total_findings_fixed": 0
+    "total_files_changed": 6,
+    "total_findings_fixed": 0,
+    "lines_added": 1028,
+    "lines_removed": 74
+  },
+  "source": {
+    "prd": "grimoires/loa/prd-docs-sprint.md",
+    "sdd": "grimoires/loa/sdd-docs-sprint.md",
+    "sprint": "grimoires/loa/sprint-docs.md"
   }
 }
