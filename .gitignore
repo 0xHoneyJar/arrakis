@@ -219,3 +219,28 @@ app/ecosystem.config.js
 # GAIB workspace state
 .gaib/
 **/.gaib/
+
+# =============================================================================
+# SECRETS & SENSITIVE FILES
+# =============================================================================
+# Trigger.dev environment files (contain DB URLs, bot tokens, API keys)
+**/.env.trigger
+
+# Claude local settings backups
+.claude/settings.local.json.bak
+
+# =============================================================================
+# BINARY / GENERATED FILES
+# =============================================================================
+# Beads migration backups (contain binary .db files)
+.beads/.migration-backup-*/
+
+# Beads binary databases in subprojects
+**/themes/**/.beads/beads.db
+**/packages/**/.beads/beads.db
+
+# Next.js build output and artifacts (moved repos / stale builds)
+**/.next/
+
+# Vercel local state
+**/.vercel/
