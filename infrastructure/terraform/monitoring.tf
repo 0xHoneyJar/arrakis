@@ -131,6 +131,95 @@ resource "aws_cloudwatch_metric_alarm" "agent_redis_connections_high" {
   tags = local.common_tags
 }
 
+# =============================================================================
+# Agent Budget Business-Logic Alarms (S1-T3: Bridgebuilder Finding #5)
+# These alarm on financial correctness — the most expensive silent failures.
+# =============================================================================
+
+# Budget overspend: core invariant violation (committed + reserved > limit)
+resource "aws_cloudwatch_metric_alarm" "agent_budget_overspend" {
+  alarm_name          = "${local.name_prefix}-agent-budget-overspend"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "agent_budget_overspend_cents"
+  namespace           = "${local.name_prefix}/agent"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "Budget overspend detected — committed+reserved exceeds limit for a community"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = merge(local.common_tags, {
+    Service  = "AgentGateway"
+    Severity = "critical"
+  })
+}
+
+# Stream reconciliation failures — budget may be silently leaking
+resource "aws_cloudwatch_metric_alarm" "agent_reconciliation_failures" {
+  alarm_name          = "${local.name_prefix}-agent-reconciliation-failures"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "agent_reconciliation_errors_total"
+  namespace           = "${local.name_prefix}/agent"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 5
+  alarm_description   = "Stream reconciliation failures > 5 in 10 minutes — dropped streams not being recovered"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = merge(local.common_tags, {
+    Service  = "AgentGateway"
+    Severity = "high"
+  })
+}
+
+# Accounting drift — reserved counter went negative (double-decrement race)
+resource "aws_cloudwatch_metric_alarm" "agent_accounting_drift" {
+  alarm_name          = "${local.name_prefix}-agent-accounting-drift"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "agent_accounting_drift_cents"
+  namespace           = "${local.name_prefix}/agent"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Accounting drift detected — reserved counter went negative (finalize/reaper race)"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = merge(local.common_tags, {
+    Service  = "AgentGateway"
+    Severity = "high"
+  })
+}
+
+# Budget reaper failures — expired reservations not being cleaned up
+resource "aws_cloudwatch_metric_alarm" "agent_reaper_failures" {
+  alarm_name          = "${local.name_prefix}-agent-reaper-failures"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "agent_reaper_errors_total"
+  namespace           = "${local.name_prefix}/agent"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 3
+  alarm_description   = "Budget reaper errors > 3 in 5 minutes — reservations accumulating"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = merge(local.common_tags, {
+    Service  = "AgentGateway"
+    Severity = "high"
+  })
+}
+
 resource "aws_cloudwatch_metric_alarm" "agent_redis_evictions" {
   alarm_name          = "${local.name_prefix}-agent-redis-evictions"
   comparison_operator = "GreaterThanThreshold"

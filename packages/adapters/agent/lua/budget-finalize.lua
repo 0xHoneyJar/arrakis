@@ -49,9 +49,12 @@ if reservationExists == 1 then
 
   -- Decrement reserved by estimated cost
   redis.call('DECRBY', KEYS[2], estimatedCost)
-  -- Clamp reserved to 0 if negative
+  -- Clamp reserved to 0 if negative (ACCOUNTING_DRIFT detection — S1-T2)
   local reserved = tonumber(redis.call('GET', KEYS[2]) or '0') or 0
   if reserved < 0 then
+    -- Drift detected: reserved went negative, indicating a double-decrement race
+    -- or reaper/finalize overlap. Log magnitude for observability.
+    redis.log(redis.LOG_WARNING, 'ACCOUNTING_DRIFT finalize community=' .. ARGV[2] .. ' drift_cents=' .. tostring(math.abs(reserved)) .. ' operation=finalize')
     redis.call('SET', KEYS[2], '0')
     redis.call('PEXPIRE', KEYS[2], monthlyTtlMs)
   end

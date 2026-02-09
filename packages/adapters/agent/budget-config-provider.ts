@@ -45,6 +45,9 @@ export interface MonthlyResetResult {
 /** Distributed lock TTL for monthly reset (30s) */
 const RESET_LOCK_TTL_MS = 30_000;
 
+/** Pricing cache TTL — 5 minutes (S1-T5, same pattern as tier overrides) */
+const PRICING_CACHE_TTL_S = 300;
+
 /** Normalize a budget cents value: clamp negatives and non-finite to 0, truncate decimals */
 function normalizeBudgetCents(v: number): number {
   if (!Number.isFinite(v) || v < 0) return 0;
@@ -105,6 +108,36 @@ export class BudgetConfigProvider {
   }
 
   /**
+   * Get model pricing for a specific model alias, with runtime override support.
+   * Priority: per-community override → global pricing config → null (caller uses defaults).
+   * Results cached in Redis at agent:pricing:{communityId} with 5-minute TTL (S1-T5).
+   *
+   * @param modelAlias - Model alias to look up pricing for
+   * @param communityId - Optional community ID for per-community overrides
+   * @returns Pricing per 1K tokens, or null if no override configured
+   */
+  async getModelPricing(
+    modelAlias: string,
+    communityId?: string,
+  ): Promise<{ inputPer1k: number; outputPer1k: number } | null> {
+    // Check per-community overrides first (cached)
+    if (communityId) {
+      const overrides = await this.getCachedPricingOverrides(communityId);
+      if (overrides?.[modelAlias]) {
+        return overrides[modelAlias];
+      }
+    }
+
+    // Check global pricing defaults (cached at agent:pricing:global)
+    const globalPricing = await this.getCachedGlobalPricing();
+    if (globalPricing?.[modelAlias]) {
+      return globalPricing[modelAlias];
+    }
+
+    return null;
+  }
+
+  /**
    * Get pricing overrides for a community (for BudgetManager.estimateCost).
    * Returns null if no overrides configured.
    */
@@ -114,6 +147,50 @@ export class BudgetConfigProvider {
     const configs = await this.configSource.getActiveCommunityConfigs();
     const config = configs.find((c) => c.communityId === communityId);
     return config?.pricingOverrides ?? null;
+  }
+
+  // --------------------------------------------------------------------------
+  // Pricing Cache (S1-T5: Bridgebuilder Finding #7)
+  // --------------------------------------------------------------------------
+
+  private async getCachedPricingOverrides(
+    communityId: string,
+  ): Promise<Record<string, { inputPer1k: number; outputPer1k: number }> | null> {
+    const cacheKey = `agent:pricing:${communityId}`;
+
+    try {
+      const cached = await this.redis.get(cacheKey);
+      if (cached !== null) {
+        return cached === 'null' ? null : JSON.parse(cached);
+      }
+    } catch (err) {
+      this.logger.warn({ err, communityId }, 'budget-config: pricing cache read error');
+    }
+
+    // Cache miss — query source
+    const overrides = await this.getPricingOverrides(communityId);
+    try {
+      await this.redis.set(cacheKey, overrides ? JSON.stringify(overrides) : 'null', 'EX', PRICING_CACHE_TTL_S);
+    } catch (err) {
+      this.logger.warn({ err, communityId }, 'budget-config: pricing cache write error');
+    }
+
+    return overrides;
+  }
+
+  private async getCachedGlobalPricing(): Promise<Record<string, { inputPer1k: number; outputPer1k: number }> | null> {
+    const cacheKey = 'agent:pricing:global';
+
+    try {
+      const cached = await this.redis.get(cacheKey);
+      if (cached !== null) {
+        return cached === 'null' ? null : JSON.parse(cached);
+      }
+    } catch {
+      // Cache miss or error — return null (caller uses hardcoded defaults)
+    }
+
+    return null;
   }
 
   /**

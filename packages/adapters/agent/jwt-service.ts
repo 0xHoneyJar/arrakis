@@ -83,6 +83,8 @@ export class JwtService {
    */
   async initialize(): Promise<void> {
     const pem = await this.keyLoader.load();
+    // ES256 (ECDSA P-256): Chosen over RS256 for shorter signatures (64B vs 256B),
+    // faster verification, and NIST P-256 compatibility with JWKS tooling. See SDD §4.2.
     this.privateKey = await importPKCS8(pem, 'ES256');
 
     // Derive public key and export only public JWK parameters (excludes private `d` field)

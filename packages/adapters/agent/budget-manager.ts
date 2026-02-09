@@ -44,8 +44,14 @@ export type ReaperResult = {
   totalReclaimed: number;
 };
 
-/** Pricing table: cost per 1K tokens in cents */
-const PRICING_TABLE: Record<ModelAlias, { inputPer1k: number; outputPer1k: number }> = {
+/**
+ * Default pricing table: cost per 1K tokens in cents (S1-T5 / S1-T7).
+ * Sourced from Anthropic API pricing (2026-01): Claude 3.5 Haiku (cheap),
+ * Claude 3.5 Sonnet (fast-code/reviewer), Claude 3 Opus (reasoning/native).
+ * Retained as fallback when runtime pricing config is unavailable.
+ * Runtime overrides: BudgetConfigProvider.getModelPricing() → Redis cache.
+ */
+export const DEFAULT_MODEL_PRICING: Record<ModelAlias, { inputPer1k: number; outputPer1k: number }> = {
   cheap: { inputPer1k: 0.015, outputPer1k: 0.06 },
   'fast-code': { inputPer1k: 0.08, outputPer1k: 0.24 },
   reviewer: { inputPer1k: 0.15, outputPer1k: 0.60 },
@@ -252,7 +258,7 @@ export class BudgetManager {
     estimatedOutputTokens: number;
     hasTools: boolean;
   }): number {
-    const pricing = PRICING_TABLE[params.modelAlias] ?? PRICING_TABLE.cheap;
+    const pricing = DEFAULT_MODEL_PRICING[params.modelAlias] ?? DEFAULT_MODEL_PRICING.cheap;
     const inputTokens = Math.max(0, params.estimatedInputTokens);
     const outputTokens = Math.max(0, params.estimatedOutputTokens);
     const inputCost = (inputTokens / 1000) * pricing.inputPer1k;

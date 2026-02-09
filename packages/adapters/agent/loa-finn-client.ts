@@ -67,7 +67,9 @@ const streamEventSchema = z.discriminatedUnion('type', [
 /** Retryable HTTP status codes */
 const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
 
-/** Exponential backoff delays (ms) */
+// [1s, 2s, 4s]: Exponential backoff with 3 retries. Total worst-case wait = 7s.
+// Covers transient ALB 502s and brief loa-finn restarts without excessive delay.
+// Max 3 retries: beyond that, the issue is systemic (circuit breaker handles it).
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
 
 /** Maximum SSE event data size (64KB) — Flatline SKP-003 */
@@ -107,9 +109,17 @@ export class LoaFinnClient {
     this.breaker = new CircuitBreaker(
       async (fn: () => Promise<Response>): Promise<Response> => fn(),
       {
+        // 120s: loa-finn streams can run long (multi-turn agent conversations).
+        // Must exceed max expected response time. See SDD §4.6.
         timeout: this.config.timeoutMs || 120_000,
+        // 50%: Standard circuit breaker threshold. Opens after half of requests
+        // in the volume window fail, preventing cascading failures.
         errorThresholdPercentage: 50,
+        // 30s: Half-open probe interval after circuit opens. Allows loa-finn
+        // time to recover from transient overload before resuming traffic.
         resetTimeout: this.config.circuitBreakerResetMs || 30_000,
+        // 5: Minimum requests before circuit breaker evaluates error rate.
+        // Prevents premature tripping on low-volume startup traffic.
         volumeThreshold: this.config.circuitBreakerThreshold || 5,
       },
     );

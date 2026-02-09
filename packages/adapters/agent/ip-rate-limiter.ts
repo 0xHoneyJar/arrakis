@@ -4,7 +4,9 @@
  *
  * 100 requests/min per IP with burst capacity of 20.
  * Returns 429 with Retry-After header before any JWT/auth processing.
- * In-memory only — no Redis dependency for this layer.
+ * In-memory only — no Redis dependency for this layer. This is intentional:
+ * pre-auth rate limiting must not fail-open on Redis outages, and per-instance
+ * limits are acceptable since ALB sticky sessions distribute load evenly.
  *
  * Hardening (Sprint S0-T1): Validated IP extraction with loopback isolation.
  * Behind ALB, Express must have `trust proxy` set so req.ip reflects the

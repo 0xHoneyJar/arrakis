@@ -17,14 +17,32 @@ import { DEFAULT_TIER_MAP } from './tier-access-mapper.js';
 // Budget Constants (Flatline IMP-002)
 // --------------------------------------------------------------------------
 
-/** Budget reservation TTL — reservations expire after 5 minutes if not finalized */
+// 300_000ms (5min): Matches max expected loa-finn response time (30s timeout * 3 retries)
+// + reconciliation delay (30s) + buffer. See SDD §8.2 Reservation TTL.
 export const RESERVATION_TTL_MS = 300_000;
 
-/** Finalized marker TTL — prevents double-finalization for 24 hours */
+// 86_400s (24h): Prevents double-finalization across reaper cycles and retries.
+// Must exceed max retry window + max reconciliation delay. See SDD §8.3.
 export const FINALIZED_MARKER_TTL_S = 86_400;
 
-/** Budget warning threshold — warn when community reaches 80% of monthly limit */
+// 0.80 (80%): Industry standard warning threshold (AWS Budgets default).
+// Gives communities ~20% runway to react before hard cutoff.
 export const BUDGET_WARNING_THRESHOLD = 0.80;
+
+// --------------------------------------------------------------------------
+// Redis Connection Defaults (S1-T1: Bridgebuilder Finding #8)
+// --------------------------------------------------------------------------
+
+// 500ms: p99 Redis latency is ~2ms; 500ms allows for GC pauses and network jitter
+// without blocking the Node.js event loop indefinitely. See SDD §4.4.
+export const REDIS_COMMAND_TIMEOUT_MS = 500;
+
+// 5000ms: Initial connection timeout. Generous to handle cold starts and DNS resolution.
+export const REDIS_CONNECT_TIMEOUT_MS = 5_000;
+
+// 1: Fail fast on Redis errors. In the request path, retrying slows all concurrent
+// requests. The circuit breaker handles repeated failures at a higher level.
+export const REDIS_MAX_RETRIES_PER_REQUEST = 1;
 
 // --------------------------------------------------------------------------
 // Configuration Types

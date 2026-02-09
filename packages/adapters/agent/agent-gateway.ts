@@ -106,6 +106,8 @@ export class AgentGateway implements IAgentGateway {
     const estimatedCost = this.budget.estimateCost({
       modelAlias: request.modelAlias ?? 'cheap',
       estimatedInputTokens: this.estimateInputTokens(request),
+      // 1000: Conservative sync estimate. Median Claude response is ~500 tokens;
+      // 1000 covers p90 without over-reserving budget. See SDD §4.3.
       estimatedOutputTokens: 1000,
       hasTools: (request.tools?.length ?? 0) > 0,
     });
@@ -197,6 +199,8 @@ export class AgentGateway implements IAgentGateway {
     const estimatedCost = this.budget.estimateCost({
       modelAlias: request.modelAlias ?? 'cheap',
       estimatedInputTokens: this.estimateInputTokens(request),
+      // 2000: Stream requests tend to produce longer responses (multi-turn, tool use).
+      // 2x sync estimate balances budget accuracy vs over-reservation. See SDD §4.3.
       estimatedOutputTokens: 2000,
       hasTools: (request.tools?.length ?? 0) > 0,
     });
@@ -341,7 +345,11 @@ export class AgentGateway implements IAgentGateway {
         traceId: context.traceId,
         reservedAt: Date.now(),
       }, {
+        // 30s: Delay before first reconciliation attempt. Gives loa-finn time to
+        // process the stream and record usage before we query. See SDD §4.7.1.
         delay: 30_000,
+        // 3 attempts with 10s exponential backoff (10s, 20s, 40s). Total window ~100s.
+        // After 3 failures, reservation falls through to reaper cleanup (§8.4).
         attempts: 3,
         backoff: { type: 'exponential', delay: 10_000 },
       });

@@ -26,7 +26,18 @@ export interface ReaperJobResult {
   totalReaped: number;
   totalReclaimed: number;
   errors: number;
+  circuitBroken: boolean;
 }
+
+// --------------------------------------------------------------------------
+// Constants
+// --------------------------------------------------------------------------
+
+// 10s: p99 reap() is ~50ms; 10s allows for Redis GC pauses + large sorted sets. See SDD §8.4.
+const PER_COMMUNITY_TIMEOUT_MS = 10_000;
+
+// 50%: if more than half of communities fail, something systemic is wrong (e.g. Redis down).
+const CIRCUIT_BREAKER_THRESHOLD = 0.5;
 
 // --------------------------------------------------------------------------
 // Reaper Job Processor
@@ -43,6 +54,7 @@ export class BudgetReaperJob {
    * Process a reaper job.
    * Iterates all active communities and runs reap() for each.
    * Individual errors are logged but do not fail the overall job.
+   * Circuit breaker: if >50% of communities fail, skip remaining.
    */
   async process(): Promise<ReaperJobResult> {
     const communityIds = await this.communityProvider.getActiveCommunityIds();
@@ -50,10 +62,27 @@ export class BudgetReaperJob {
     let totalReaped = 0;
     let totalReclaimed = 0;
     let errors = 0;
+    let circuitBroken = false;
 
     for (const communityId of communityIds) {
+      // Circuit breaker: if >50% of processed communities failed, abort remaining
+      const processed = totalReaped + totalReclaimed + errors;
+      if (processed > 0 && errors / (processed + errors) >= CIRCUIT_BREAKER_THRESHOLD) {
+        circuitBroken = true;
+        this.logger.error(
+          { errors, processed: processed + errors, total: communityIds.length },
+          'budget-reaper: circuit breaker tripped — >50% failure rate, skipping remaining communities',
+        );
+        break;
+      }
+
+      const start = Date.now();
       try {
-        const result = await this.budgetManager.reap(communityId);
+        const result = await Promise.race([
+          this.budgetManager.reap(communityId),
+          rejectAfterTimeout(PER_COMMUNITY_TIMEOUT_MS, communityId),
+        ]);
+        const durationMs = Date.now() - start;
 
         const logLevel = result.count > 0 ? 'info' : 'debug';
         this.logger[logLevel](
@@ -61,6 +90,7 @@ export class BudgetReaperJob {
             communityId,
             reaped_count: result.count,
             reclaimed_cents: result.totalReclaimed,
+            duration_ms: durationMs,
           },
           'budget-reaper: reaped expired reservations',
         );
@@ -68,9 +98,10 @@ export class BudgetReaperJob {
         totalReaped += result.count;
         totalReclaimed += result.totalReclaimed;
       } catch (err) {
+        const durationMs = Date.now() - start;
         errors++;
         this.logger.error(
-          { err, communityId },
+          { err, communityId, duration_ms: durationMs },
           'budget-reaper: error reaping community — continuing',
         );
       }
@@ -82,6 +113,7 @@ export class BudgetReaperJob {
         totalReaped,
         totalReclaimed,
         errors,
+        circuitBroken,
       },
       'budget-reaper: cycle complete',
     );
@@ -91,8 +123,16 @@ export class BudgetReaperJob {
       totalReaped,
       totalReclaimed,
       errors,
+      circuitBroken,
     };
   }
+}
+
+/** Rejects after timeout with a descriptive error */
+function rejectAfterTimeout(ms: number, communityId: string): Promise<never> {
+  return new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`reap() timed out after ${ms}ms for ${communityId}`)), ms),
+  );
 }
 
 /** BullMQ repeatable job configuration for the reaper */

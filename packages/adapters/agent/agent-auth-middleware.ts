@@ -50,8 +50,11 @@ export interface AgentAuthDeps {
   logger: Logger;
 }
 
-/** Conviction scorer config */
+// 5s: Conviction scoring is a network call to conviction service. 5s allows for
+// cold starts. Fail-closed to tier 1 on timeout preserves security. See SDD §4.6.
 const CONVICTION_TIMEOUT_MS = 5_000;
+// 60s: Tier changes are infrequent (NFT-based). 60s cache reduces conviction service
+// load by ~60x while keeping tier changes responsive within 1 minute.
 const CONVICTION_CACHE_TTL_MS = 60_000;
 
 // --------------------------------------------------------------------------

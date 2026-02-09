@@ -56,11 +56,13 @@ end
 -- Remove all expired members from the ZSET
 redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, nowMs)
 
--- Decrement reserved counter by total reclaimed; clamp to 0
+-- Decrement reserved counter by total reclaimed; clamp to 0 (ACCOUNTING_DRIFT detection — S1-T2)
 if totalReclaimed > 0 then
   redis.call('DECRBY', KEYS[1], totalReclaimed)
   local reserved = tonumber(redis.call('GET', KEYS[1]) or '0') or 0
   if reserved < 0 then
+    -- Drift detected: reserved went negative after reap, indicating finalize/reaper overlap
+    redis.log(redis.LOG_WARNING, 'ACCOUNTING_DRIFT reaper drift_cents=' .. tostring(math.abs(reserved)) .. ' operation=reap')
     redis.call('SET', KEYS[1], '0')
   end
   -- Refresh TTL

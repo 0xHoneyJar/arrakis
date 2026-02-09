@@ -18,18 +18,51 @@
 set -euo pipefail
 
 # --------------------------------------------------------------------------
-# Configuration
+# Configuration (S1-T4: parameterized — Bridgebuilder Finding #6)
 # --------------------------------------------------------------------------
 
-ENV="${2:-staging}"
-SECRET_NAME="arrakis-${ENV}/agent-jwt-signing-key"
-KEY_ID_PREFIX="arrakis-key"
 DRY_RUN=false
+ENV=""
+SECRET_NAME=""
+AWS_REGION="${AWS_REGION:-us-east-1}"
+KEY_ID_PREFIX="arrakis-key"
 OVERLAP_HOURS=48
 
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=true
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)       DRY_RUN=true; shift ;;
+    --env)           ENV="$2"; shift 2 ;;
+    --secret-name)   SECRET_NAME="$2"; shift 2 ;;
+    --region)        AWS_REGION="$2"; shift 2 ;;
+    --overlap-hours) OVERLAP_HOURS="$2"; shift 2 ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--dry-run] [--env staging|production] [--secret-name NAME] [--region REGION] [--overlap-hours N]"
+      exit 2
+      ;;
+  esac
+done
+
+# Defaults
+ENV="${ENV:-staging}"
+SECRET_NAME="${SECRET_NAME:-arrakis-${ENV}/agent-jwt-signing-key}"
+
+if [[ "${DRY_RUN}" == "true" ]]; then
   echo "[DRY RUN] No changes will be made"
+fi
+
+# Concurrent rotation prevention: check if rotation already in progress
+ROTATION_TAG=$(aws secretsmanager describe-secret \
+  --secret-id "${SECRET_NAME}" \
+  --region "${AWS_REGION}" \
+  --query 'Tags[?Key==`rotation-in-progress`].Value | [0]' \
+  --output text 2>/dev/null || echo "None")
+
+if [[ "${ROTATION_TAG}" != "None" && "${ROTATION_TAG}" != "null" && "${ROTATION_TAG}" != "" ]]; then
+  echo "ERROR: Rotation already in progress (started: ${ROTATION_TAG})"
+  echo "If this is stale, remove the 'rotation-in-progress' tag manually."
+  exit 1
 fi
 
 echo "=== Agent JWT Key Rotation ==="
@@ -63,10 +96,10 @@ echo "  Public key: ${TMPDIR}/public.pem"
 echo "[2/5] Reading current key from Secrets Manager..."
 
 CURRENT_SECRET=""
-if aws secretsmanager describe-secret --secret-id "${SECRET_NAME}" --region us-east-1 &>/dev/null; then
+if aws secretsmanager describe-secret --secret-id "${SECRET_NAME}" --region "${AWS_REGION}" &>/dev/null; then
   CURRENT_SECRET=$(aws secretsmanager get-secret-value \
     --secret-id "${SECRET_NAME}" \
-    --region us-east-1 \
+    --region "${AWS_REGION}" \
     --query 'SecretString' \
     --output text 2>/dev/null || echo "")
 
@@ -150,7 +183,7 @@ else
   aws secretsmanager put-secret-value \
     --secret-id "${SECRET_NAME}" \
     --secret-string "${NEW_SECRET}" \
-    --region us-east-1
+    --region "${AWS_REGION}"
 
   echo "  Secret updated successfully"
 fi
@@ -166,7 +199,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
 else
   VERIFY=$(aws secretsmanager get-secret-value \
     --secret-id "${SECRET_NAME}" \
-    --region us-east-1 \
+    --region "${AWS_REGION}" \
     --query 'SecretString' \
     --output text | jq -r '.key_id')
 
