@@ -84,3 +84,20 @@ export {
 
 // Tier Override Types (re-export from mapper)
 export { type TierOverrideProvider } from './tier-access-mapper.js';
+
+// Agent Gateway Facade
+export { AgentGateway, AgentGatewayError, type AgentGatewayDeps } from './agent-gateway.js';
+
+// Auth Middleware
+export {
+  requireAgentAuth,
+  buildAgentRequestContext,
+  type AgentAuthDeps,
+  type AgentAuthenticatedRequest,
+  type SessionContext,
+  type ConvictionScorer,
+  type SessionExtractor,
+} from './agent-auth-middleware.js';
+
+// Gateway Factory
+export { createAgentGateway, type CreateAgentGatewayOptions } from './factory.js';
