@@ -109,6 +109,12 @@ grimoires/loa/prd*.md
 grimoires/loa/sdd*.md
 grimoires/loa/sprint*.md
 grimoires/loa/NOTES.md
+grimoires/loa/BEAUVOIR.md
+grimoires/loa/SOUL.md
+grimoires/loa/decisions.yaml
+
+# User config (copy from .loa.config.yaml.example)
+.loa.config.yaml
 
 # Sprint Ledger (project-specific cycle/sprint history)
 # Created by /plan-and-analyze, tracks development cycles per-project
@@ -125,9 +131,11 @@ grimoires/loa/a2a/*
 !grimoires/loa/a2a/trajectory/
 grimoires/loa/a2a/trajectory/*
 !grimoires/loa/a2a/trajectory/README.md
-# Compound learning state (tracked for cross-session learning)
+# Compound learning state (project-specific, generated per-project)
 !grimoires/loa/a2a/compound/
+grimoires/loa/a2a/compound/*.json
 grimoires/loa/a2a/compound/review-markers/*
+!grimoires/loa/a2a/compound/.gitkeep
 !grimoires/loa/a2a/compound/review-markers/.gitkeep
 
 # Deployment artifacts (project-specific)
@@ -167,6 +175,13 @@ grimoires/pub/research/*
 # - Users should install via /skill-pack-install command
 .claude/constructs/
 
+# Development-specific docs (not part of template)
+docs/planning/
+docs/proposals/
+docs/research/
+docs/mockups/
+docs/screenshots/
+
 # =============================================================================
 # PROJECT-SPECIFIC EXCLUSIONS (for repos that use loa as a base)
 # =============================================================================
@@ -184,6 +199,13 @@ grimoires/pub/research/*
 # Beads task graph (template repo - exclude all)
 # For project repos, remove this line to track sprint tasks
 .beads/*.jsonl
+
+# Beads migration backups (contain binary .db files)
+.beads/.migration-backup-*/
+
+# Beads binary databases in subprojects
+**/themes/**/.beads/beads.db
+**/packages/**/.beads/beads.db
 
 # Application artifacts (app/)
 app/src/
@@ -219,3 +241,21 @@ app/ecosystem.config.js
 # GAIB workspace state
 .gaib/
 **/.gaib/
+
+# =============================================================================
+# SECRETS & SENSITIVE FILES
+# =============================================================================
+# Trigger.dev environment files (contain DB URLs, bot tokens, API keys)
+**/.env.trigger
+
+# Claude local settings backups
+.claude/settings.local.json.bak
+
+# =============================================================================
+# BINARY / GENERATED FILES
+# =============================================================================
+# Next.js build output and artifacts (moved repos / stale builds)
+**/.next/
+
+# Vercel local state
+**/.vercel/

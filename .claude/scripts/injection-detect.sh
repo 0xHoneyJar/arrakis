@@ -27,6 +27,14 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_NAME="$(basename "$0")"
 
+# Require bash 4.0+ (associative arrays)
+# shellcheck source=bash-version-guard.sh
+source "$SCRIPT_DIR/bash-version-guard.sh"
+
+# Source cross-platform time utilities
+# shellcheck source=time-lib.sh
+source "$SCRIPT_DIR/time-lib.sh"
+
 # Default threshold
 DEFAULT_THRESHOLD="0.7"
 
@@ -266,7 +274,7 @@ process_input() {
     local end_time
     local latency_ms
 
-    start_time=$(date +%s%3N 2>/dev/null || echo "0")
+    start_time=$(get_timestamp_ms)
 
     # Apply Unicode normalization (H-1 fix)
     # This handles homoglyphs, zero-width chars, and whitespace normalization
@@ -344,7 +352,7 @@ process_input() {
         status="DETECTED"
     fi
 
-    end_time=$(date +%s%3N 2>/dev/null || echo "0")
+    end_time=$(get_timestamp_ms)
     latency_ms=$((end_time - start_time))
     [[ $latency_ms -lt 0 ]] && latency_ms=0
 

@@ -1,4 +1,4 @@
-<!-- @loa-managed: true | version: 1.27.0 | hash: PLACEHOLDER -->
+<!-- @loa-managed: true | version: 1.31.0 | hash: 4f5b1b47bbe5ac0fd924653f493dcb3688d8f2089c0bcc9dd5e08717d310ece4PLACEHOLDER -->
 <!-- WARNING: This file is managed by the Loa Framework. Do not edit directly. -->
 
 # Loa Framework Instructions
@@ -14,6 +14,71 @@ Agent-driven development framework. Skills auto-load their SKILL.md when invoked
 | Protocols | `.claude/loa/reference/protocols-summary.md` |
 | Scripts | `.claude/loa/reference/scripts-reference.md` |
 
+## Beads-First Architecture (v1.29.0)
+
+**Beads task tracking is the EXPECTED DEFAULT, not an optional enhancement.**
+
+*"We're building spaceships. Safety of operators and users is paramount."*
+
+### Philosophy
+
+Working without beads is treated as an **abnormal state** requiring explicit, time-limited acknowledgment. Health checks run at every workflow boundary.
+
+### Health Check
+
+```bash
+# Check beads status
+.claude/scripts/beads/beads-health.sh --json
+```
+
+| Status | Exit Code | Meaning | Action |
+|--------|-----------|---------|--------|
+| `HEALTHY` | 0 | All checks pass | Proceed |
+| `NOT_INSTALLED` | 1 | br binary not found | Prompt install |
+| `NOT_INITIALIZED` | 2 | No .beads directory | Prompt br init |
+| `MIGRATION_NEEDED` | 3 | Schema incompatible | Must fix |
+| `DEGRADED` | 4 | Partial functionality | Warn, proceed |
+| `UNHEALTHY` | 5 | Critical issues | Must fix |
+
+### Autonomous Mode
+
+**Autonomous mode REQUIRES beads** (unless overridden):
+
+```bash
+# /run preflight will HALT if beads unavailable
+/run sprint-1  # Blocked if beads.autonomous.requires_beads: true
+
+# Override (not recommended)
+export LOA_BEADS_AUTONOMOUS_OVERRIDE=true
+# Or set beads.autonomous.requires_beads: false in config
+```
+
+### Opt-Out Workflow
+
+When beads unavailable, users can acknowledge and continue (24h expiry):
+
+```bash
+# Record opt-out with reason
+.claude/scripts/beads/update-beads-state.sh --opt-out "Reason"
+
+# Check if opt-out is valid
+.claude/scripts/beads/update-beads-state.sh --opt-out-check
+```
+
+### Configuration
+
+```yaml
+beads:
+  mode: recommended  # required | recommended | disabled
+  opt_out:
+    confirmation_interval_hours: 24
+    require_reason: true
+  autonomous:
+    requires_beads: true
+```
+
+**Protocol**: `.claude/protocols/beads-preflight.md`
+
 ## Three-Zone Model
 
 | Zone | Path | Permission |
@@ -24,7 +89,56 @@ Agent-driven development framework. Skills auto-load their SKILL.md when invoked
 
 **Critical**: Never edit `.claude/` - use `.claude/overrides/` or `.loa.config.yaml`.
 
-## Workflow
+## File Creation Safety
+
+**CRITICAL**: Bash heredocs silently corrupt source files containing `${...}` template literals.
+
+| Method | Shell Expansion | When to Use |
+|--------|-----------------|-------------|
+| **Write tool** | None | Source files (.tsx, .jsx, .ts, .js, etc.) - PREFERRED |
+| `<<'EOF'` (quoted) | None | Shell content with literal `${...}` |
+| `<< EOF` (unquoted) | Yes | Shell scripts needing variable expansion only |
+
+**Rule**: For source files, ALWAYS use Write tool. If heredoc required, ALWAYS quote the delimiter.
+
+**Protocol**: `.claude/protocols/safe-file-creation.md`
+
+## Configurable Paths (v1.27.0)
+
+Grimoire and state file locations are configurable via `.loa.config.yaml`:
+
+```yaml
+paths:
+  grimoire: grimoires/loa          # Default
+  beads: .beads                    # Default
+  soul:
+    source: grimoires/loa/BEAUVOIR.md
+    output: grimoires/loa/SOUL.md
+```
+
+**Environment overrides**: `LOA_GRIMOIRE_DIR`, `LOA_BEADS_DIR`, `LOA_SOUL_SOURCE`, `LOA_SOUL_OUTPUT`
+
+**Rollback**: Set `LOA_USE_LEGACY_PATHS=1` to bypass config and use hardcoded defaults.
+
+**Requirements**: yq v4+ (mikefarah/yq) for YAML parsing. Missing yq uses defaults with warning.
+
+## Golden Path (v1.30.0)
+
+**5 commands for 90% of users.** All existing truename commands remain available for power users.
+
+| Command | What It Does | Routes To |
+|---------|-------------|-----------|
+| `/loa` | Where am I? What's next? | Status + health + next step |
+| `/plan` | Plan your project | `/plan-and-analyze` → `/architect` → `/sprint-plan` |
+| `/build` | Build the current sprint | `/implement sprint-N` (auto-detected) |
+| `/review` | Review and audit your work | `/review-sprint` + `/audit-sprint` |
+| `/ship` | Deploy and archive | `/deploy-production` + `/archive-cycle` |
+
+**Design**: Porcelain & Plumbing (git model). Golden commands are zero-arg by default with auto-detection. Truenames accept specific arguments for power users.
+
+**Script**: `.claude/scripts/golden-path.sh` — shared state resolution helpers.
+
+## Workflow (Truenames)
 
 | Phase | Command | Output |
 |-------|---------|--------|
@@ -46,6 +160,44 @@ Agent-driven development framework. Skills auto-load their SKILL.md when invoked
 - **Feedback**: Check audit feedback FIRST, then engineer feedback
 - **Karpathy**: Think Before Coding, Simplicity First, Surgical Changes, Goal-Driven
 - **Git Safety**: 4-layer upstream detection with soft block
+
+## Process Compliance
+
+**CRITICAL**: These rules prevent the AI from bypassing Loa's quality gates.
+
+### NEVER Rules
+
+| Rule | Why |
+|------|-----|
+<!-- @constraint-generated: start process_compliance_never | hash:e3d8e87823f0d4cc -->
+<!-- DO NOT EDIT — generated from .claude/data/constraints.json -->
+| NEVER write application code outside of `/implement` skill invocation | Code written outside `/implement` bypasses review and audit gates |
+| NEVER use Claude's `TaskCreate`/`TaskUpdate` for sprint task tracking when beads (`br`) is available | Beads is the single source of truth for task lifecycle; TaskCreate is for session progress display only |
+| NEVER skip from sprint plan directly to implementation without `/run sprint-plan` or `/run sprint-N` | `/run` wraps implement+review+audit in a cycle loop with circuit breaker |
+| NEVER skip `/review-sprint` and `/audit-sprint` quality gates | These are the only validation that code meets acceptance criteria and security standards |
+<!-- @constraint-generated: end process_compliance_never -->
+### ALWAYS Rules
+
+| Rule | Why |
+|------|-----|
+<!-- @constraint-generated: start process_compliance_always | hash:c5aaf9a14fb386c7 -->
+<!-- DO NOT EDIT — generated from .claude/data/constraints.json -->
+| ALWAYS use `/run sprint-plan` or `/run sprint-N` for implementation | Ensures review+audit cycle with circuit breaker protection |
+| ALWAYS create beads tasks from sprint plan before implementation (if beads available) | Tasks without beads tracking are invisible to cross-session recovery |
+| ALWAYS complete the full implement → review → audit cycle | Partial cycles leave unreviewed code in the codebase |
+| ALWAYS check for existing sprint plan before writing code | Prevents ad-hoc implementation without requirements traceability |
+<!-- @constraint-generated: end process_compliance_always -->
+### Task Tracking Hierarchy
+
+| Tool | Use For | Do NOT Use For |
+|------|---------|----------------|
+<!-- @constraint-generated: start task_tracking_hierarchy | hash:441e3fde55f977ca -->
+<!-- DO NOT EDIT — generated from .claude/data/constraints.json -->
+| `br` (beads_rust) | Sprint task lifecycle: create, in-progress, closed | — |
+| `TaskCreate`/`TaskUpdate` | Session-level progress display to user | Sprint task tracking |
+| `grimoires/loa/NOTES.md` | Observations, blockers, cross-session memory | Task status |
+<!-- @constraint-generated: end task_tracking_hierarchy -->
+**Protocol**: `.claude/protocols/implementation-compliance.md`
 
 ## Run Mode State Recovery (v1.27.0)
 
@@ -93,6 +245,114 @@ fi
 ```
 
 **Rationale**: Run mode is designed for overnight/unattended execution. Context compaction should not interrupt autonomous operation.
+
+## Post-Compact Recovery Hooks (v1.28.0)
+
+Loa provides automatic context recovery after compaction via Claude Code hooks.
+
+### How It Works
+
+1. **PreCompact Hook**: Saves current state to `.run/compact-pending`
+2. **UserPromptSubmit Hook**: Detects marker, injects recovery reminder
+3. **One-shot delivery**: Reminder appears once, marker is deleted
+
+### Automatic Recovery
+
+When compaction is detected, you will see a recovery reminder instructing you to:
+1. Re-read this file (CLAUDE.md) for conventions
+2. Check `.run/sprint-plan-state.json` - resume if `state=RUNNING`
+3. Check `.run/simstim-state.json` - resume from last phase
+4. Review `grimoires/loa/NOTES.md` for learnings
+
+### Installation
+
+Hooks are in `.claude/hooks/`. To enable, add to `~/.claude/settings.json`:
+```json
+{
+  "hooks": {
+    "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": ".claude/hooks/pre-compact-marker.sh"}]}],
+    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": ".claude/hooks/post-compact-reminder.sh"}]}]
+  }
+}
+```
+
+See `.claude/hooks/README.md` for full documentation.
+
+## Flatline Beads Loop (v1.28.0)
+
+Iterative multi-model refinement of task graphs. "Check your beads N times, implement once."
+
+### How It Works
+
+1. Export beads to JSON (`br list --json`)
+2. Run Flatline Protocol review on task graph
+3. Apply HIGH_CONSENSUS suggestions automatically
+4. Repeat until changes "flatline" (< 5% change for 2 iterations)
+5. Sync final state to git
+
+### Usage
+
+```bash
+# Manual invocation
+.claude/scripts/beads-flatline-loop.sh --max-iterations 6 --threshold 5
+
+# In simstim workflow (Phase 6.5)
+# Automatically runs after FLATLINE SPRINT phase when beads_rust is installed
+```
+
+### Configuration
+
+```yaml
+simstim:
+  flatline:
+    beads_loop: true    # Enable Flatline Beads Loop
+```
+
+Requires beads_rust (`br`). See: https://github.com/Dicklesworthstone/beads_rust
+
+## Persistent Memory (v1.28.0)
+
+Session-spanning observation storage with progressive disclosure for cross-session recall.
+
+### How It Works
+
+1. **Memory Writer Hook**: Captures observations from tool outputs when learning signals detected
+2. **Observations File**: Stored in `grimoires/loa/memory/observations.jsonl`
+3. **Progressive Disclosure**: Query at different detail levels to manage token budget
+
+### Learning Signals
+
+Automatically captured: discovered, learned, fixed, resolved, pattern, insight
+
+### Query Interface
+
+```bash
+# Token-efficient index (~50 tokens per entry)
+.claude/scripts/memory-query.sh --index
+
+# Summary view (~200 tokens per entry)
+.claude/scripts/memory-query.sh --summary --limit 5
+
+# Full details (~500 tokens)
+.claude/scripts/memory-query.sh --full obs-1234567890-abc123
+
+# Filter by type
+.claude/scripts/memory-query.sh --type learning
+
+# Free-text search
+.claude/scripts/memory-query.sh "authentication pattern"
+```
+
+### Configuration
+
+```yaml
+memory:
+  enabled: true
+  max_observations: 10000
+  capture:
+    discoveries: true
+    errors: true
+```
 
 ## Invisible Prompt Enhancement (v1.17.0)
 
@@ -166,10 +426,11 @@ Pre-execution validation for skill invocations based on OpenAI's "A Practical Gu
 | `high` | Confirm | BLOCK (use `--allow-high`) |
 | `critical` | Confirm+Reason | ALWAYS BLOCK |
 
-**Skills by danger level**:
-- `safe`: discovering-requirements, designing-architecture, reviewing-code, auditing-security
-- `moderate`: implementing-tasks, planning-sprints, mounting-framework
-- `high`: deploying-infrastructure, run-mode, autonomous-agent
+**Skills by danger level** (synced with index.yaml 2026-02-06):
+- `safe`: continuous-learning, enhancing-prompts, flatline-knowledge, mounting-framework, translating-for-executives, browsing-constructs
+- `moderate`: discovering-requirements, designing-architecture, planning-sprints, implementing-tasks, reviewing-code, riding-codebase, simstim-workflow
+- `high`: auditing-security, deploying-infrastructure, run-mode
+- `critical`: autonomous-agent
 
 ### Run Mode Integration
 
@@ -201,7 +462,7 @@ guardrails:
 
 ## Flatline Protocol (v1.22.0)
 
-Multi-model adversarial review using Claude Opus 4.5 + GPT-5.2 for planning document quality assurance.
+Multi-model adversarial review using Claude Opus 4.6 + GPT-5.2 for planning document quality assurance.
 
 ### How It Works
 

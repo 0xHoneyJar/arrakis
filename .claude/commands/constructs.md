@@ -51,10 +51,11 @@ Browse and install packs from the Loa Constructs Registry with a multi-select UI
 ## Invocation
 
 ```
-/constructs                    # Browse and install (default)
+/constructs                    # Smart default: manage installed OR browse to install
 /constructs browse             # Browse available packs
 /constructs install <pack>     # Install specific pack
 /constructs list               # List installed packs
+/constructs search <query>     # Search packs by name/description
 /constructs update             # Check for updates
 /constructs uninstall <pack>   # Remove a pack
 ```
@@ -67,9 +68,17 @@ Browse and install packs from the Loa Constructs Registry with a multi-select UI
 
 ## Workflow
 
-### Action: browse (default)
+### Action: default (no args)
 
-Interactive pack selection with multi-select UI.
+Smart routing based on installed state. Check installed packs first:
+- **If packs installed**: Offer "Use installed" / "Browse & install more" / "Manage installed"
+- **If no packs**: Continue to browse flow
+
+See `SKILL.md` Phase 0 for full details.
+
+### Action: browse
+
+Interactive pack selection with table-based UI.
 
 #### Phase 1: Fetch Available Packs
 
@@ -100,33 +109,44 @@ Returns JSON array:
 ]
 ```
 
-#### Phase 2: Display Multi-Select UI
+#### Phase 2: Display Pack Table
 
-Use AskUserQuestion with multiSelect to allow pack selection:
+Display ALL packs in a numbered markdown table with full details:
+
+```markdown
+## Available Packs
+
+| # | Pack | Description | Skills | Version | Status |
+|---|------|-------------|--------|---------|--------|
+| 1 | 🎨 Artisan | Brand and UI craftsmanship skills for design systems and motion | 10 | 1.0.2 | Free |
+| 2 | 👁️ Observer | User truth capture skills for hypothesis-first research | 6 | 1.0.2 | Free |
+| 3 | 🔔 Sigil of the Beacon | Signal readiness to the agent network with AI-retrievable content | 6 | 1.0.2 | Free |
+| 4 | 🧪 Crucible | Validation and testing skills for journey verification | 5 | 1.0.2 | ✓ Installed |
+| 5 | 🚀 GTM Collective | Go-To-Market skills for product launches and developer relations | 8 | 1.0.0 | Free |
+```
+
+Then use AskUserQuestion (NOT multiSelect) for selection method:
 
 ```json
 {
   "questions": [{
-    "question": "Select packs to install:",
-    "header": "Packs",
-    "multiSelect": true,
+    "question": "How would you like to install packs?",
+    "header": "Install",
+    "multiSelect": false,
     "options": [
-      {
-        "label": "🔮 Observer (6 skills)",
-        "description": "User truth capture - interviews, personas, journey mapping"
-      },
-      {
-        "label": "⚗️ Crucible (5 skills)", 
-        "description": "Validation & testing - test plans, quality gates"
-      },
-      {
-        "label": "🎨 Artisan (10 skills)",
-        "description": "Brand/UI craftsmanship - design systems, components"
-      }
+      {"label": "Enter pack numbers", "description": "Type numbers like: 1,3,5"},
+      {"label": "Install all", "description": "Install all available packs"},
+      {"label": "Cancel", "description": "Exit without installing"}
     ]
   }]
 }
 ```
+
+If user selects "Enter pack numbers":
+1. **Output text directly** (do NOT use AskUserQuestion): `"Enter pack numbers (comma-separated, e.g., 1,3,5):"`
+2. Wait for user's text response
+3. Parse and validate the input
+4. Confirm selection before installing
 
 #### Phase 3: Install Selected Packs
 
@@ -195,7 +215,7 @@ Check or set up authentication for premium packs.
 ```
 
 **Getting an API key:**
-1. Visit https://loa-constructs.dev/account
+1. Visit https://www.constructs.network/account
 2. Sign in or create an account
 3. Generate an API key
 4. Run `/constructs auth setup` and paste the key

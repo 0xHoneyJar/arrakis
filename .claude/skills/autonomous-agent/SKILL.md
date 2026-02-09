@@ -54,6 +54,33 @@ Write to `grimoires/loa/a2a/trajectory/guardrails-{date}.jsonl`.
 On error: Log to trajectory, **fail-open** (continue to skill).
 </input_guardrails>
 
+<constraints>
+## Plan Mode Prevention
+
+This skill manages its own multi-phase autonomous workflow. DO NOT use Claude Code's native Plan Mode.
+
+**Why this matters**:
+- Plan Mode would bypass quality gates
+- PRD/SDD/Sprint artifacts would not be created
+- Multi-model Flatline reviews would be skipped
+
+**Correct behavior**: Execute phases sequentially with full quality gate compliance.
+
+## Constraint Rules
+
+<!-- @constraint-generated: start autonomous_agent_constraints | hash:b7e2794ac88635aa -->
+<!-- DO NOT EDIT — generated from .claude/data/constraints.json -->
+1. NEVER call `EnterPlanMode` — autonomous phases ARE the plan
+2. NEVER jump to implementation after any user confirmation
+3. Each phase MUST complete sequentially: 0→1→2→3→4→5→6→6.5→7→8
+4. This skill orchestrates OTHER skills — each has its own workflow
+5. Implementation phases MUST use `/run sprint-plan` or `/run sprint-N` — NEVER implement directly
+6. Do NOT use `/implement` without `/run` — `/run` provides the review→audit cycle
+7. Use `br` commands for task lifecycle, NOT `TaskCreate`/`TaskUpdate`
+8. If sprint plan exists but no beads tasks created, create them FIRST
+<!-- @constraint-generated: end autonomous_agent_constraints -->
+</constraints>
+
 # Autonomous Agent Orchestrator
 
 <objective>
@@ -500,6 +527,18 @@ ELSE:
 ## Phase 3: Implementation
 
 **Purpose:** Build the solution with quality.
+
+### Implementation Guard
+
+This phase hands off to `/run sprint-plan`. Do NOT implement directly.
+
+**Sequence**:
+1. Verify beads tasks exist for all sprint items
+2. Invoke `/run sprint-plan` (or `/run sprint-N` for individual sprints)
+3. Monitor run state — do NOT proceed until `/run` completes or halts
+4. If `/run` halts (circuit breaker), report to user — do NOT bypass
+
+**NEVER**: Write application code directly in this phase. All code must flow through `/run` → `/implement` → `/review-sprint` → `/audit-sprint`.
 
 ### 3.1 Task Execution
 

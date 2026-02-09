@@ -2,25 +2,48 @@
 
 Loa can be installed in two ways: **mounting onto an existing repository** (recommended) or **cloning the template**.
 
+**Time to first command**: ~2 minutes (one-liner install) | ~5 minutes (manual install with optional tools)
+
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Method 1: Mount onto Existing Repository](#method-1-mount-onto-existing-repository-recommended) (you want to adopt loa in an existing project)
+- [Method 2: Clone Template](#method-2-clone-template) (start a new project from scratch using loa)
+- [Ownership Model](#ownership-model-v1150)
+- [Configuration](#configuration)
+- [Updates](#updates)
+- [Customization](#customization)
+- [Validation](#validation)
+- [Troubleshooting](#troubleshooting)
+- [Loa Constructs (Commercial Skills)](#loa-constructs-commercial-skills)
+- [Frictionless Permissions](#frictionless-permissions)
+
 ## Prerequisites
 
 ### Required
+- **Claude Code** - Claude's official CLI ([install guide](https://docs.anthropic.com/en/docs/claude-code/overview))
 - **Git** (required)
 - **jq** (required) - JSON processor
-- **yq** (required) - YAML processor
-- **Claude Code** - Claude's official CLI
+- **yq v4+** (required) - YAML processor ([mikefarah/yq](https://github.com/mikefarah/yq), NOT the Python yq)
 
 ```bash
+# Claude Code
+npm install -g @anthropic-ai/claude-code
+
 # macOS
 brew install jq yq
 
 # Ubuntu/Debian
 sudo apt install jq
-pip install yq  # or snap install yq
+# yq — MUST be mikefarah/yq v4+, NOT `pip install yq` (different tool, incompatible)
+wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+# Or: sudo snap install yq
 
-# Verify
+# Verify all prerequisites
+claude --version
 jq --version
-yq --version
+yq --version   # Should show "mikefarah/yq"
+git --version
 ```
 
 ### Optional Enhancements
@@ -73,7 +96,7 @@ cargo install ck-search
 - **Dependency tracking**: Block tasks on others, track readiness
 - **Sprint integration**: Tasks linked to sprint plans
 
-**Without beads_rust**: Sprint state is tracked in markdown files only. Works fine for most projects.
+**Without beads_rust**: Sprint state is tracked in markdown files only. Loa works in this mode but will prompt you about beads at workflow boundaries. For autonomous/run mode, beads is required by default. **Recommended for all projects.**
 
 **Installation**:
 
@@ -209,15 +232,6 @@ python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py \
   --domain "your domain" --phase prd --json
 ```
 
-**Updating existing repos**: If you're updating Loa to v0.8.0+ in an existing repository, you'll need to manually initialize the ck index:
-
-```bash
-# From your project root
-ck --index .
-```
-
-This creates the `.ckignore` file and builds the initial semantic index.
-
 ## Method 1: Mount onto Existing Repository (Recommended)
 
 Mount Loa onto any existing git repository. This is the **sidecar pattern** - Loa rides alongside your project.
@@ -256,7 +270,7 @@ claude
 ```
 your-project/
 ├── .claude/                    # System Zone (framework-managed)
-│   ├── skills/                 # 8 agent skills
+│   ├── skills/                 # 17 agent skills
 │   ├── commands/               # Slash commands
 │   ├── protocols/              # Framework protocols
 │   ├── scripts/                # Helper scripts
@@ -288,6 +302,17 @@ git commit -m "Initial commit from Loa template"
 # Start Claude Code
 claude
 ```
+
+## Verify Installation
+
+After either install method, verify everything is working:
+
+```bash
+# Inside Claude Code
+/loa doctor
+```
+
+A healthy system shows all green checks. Any issues include structured error codes (LOA-E001+) with fix instructions.
 
 ## Ownership Model (v1.15.0)
 
@@ -566,12 +591,14 @@ Checks:
 # macOS
 brew install yq
 
-# Linux (Python yq)
-pip install yq
-
-# Linux (Go yq - recommended)
+# Linux (mikefarah/yq — required, NOT the Python yq)
 wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
 chmod +x /usr/local/bin/yq
+
+# Or: sudo snap install yq
+
+# Verify (should show "mikefarah/yq")
+yq --version
 ```
 
 ### "jq: command not found"
@@ -821,8 +848,11 @@ After installation:
 # 1. Start Claude Code
 claude
 
-# 2. Begin workflow (no setup required!)
-/plan-and-analyze
+# 2. Check system health
+/loa doctor
+
+# 3. Begin (no setup required!)
+/plan
 ```
 
-See [README.md](README.md) for the complete workflow.
+Type `/loa` at any time to see where you are and what to do next. See [README.md](README.md) for the complete workflow.

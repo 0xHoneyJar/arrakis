@@ -12,6 +12,8 @@ Autonomous execution of sprint implementation with cycle loop until review and a
 /run sprint-1 --max-cycles 10 --timeout 4
 /run sprint-1 --branch feature/my-branch
 /run sprint-1 --dry-run
+/run sprint-1 --local
+/run sprint-1 --confirm-push
 ```
 
 ## Arguments
@@ -29,6 +31,8 @@ Autonomous execution of sprint implementation with cycle loop until review and a
 | `--branch NAME` | Feature branch name | `feature/<target>` |
 | `--dry-run` | Validate but don't execute | false |
 | `--reset-ice` | Reset circuit breaker before starting | false |
+| `--local` | Keep all changes local (no push, no PR) | false |
+| `--confirm-push` | Prompt before pushing to remote | false |
 
 ## Pre-flight Checks (Jack-In)
 
@@ -43,19 +47,50 @@ Before execution begins, validate:
    fi
    ```
 
-2. **Branch Safety Check**
+2. **Beads-First Check (v1.29.0)**
+   ```bash
+   # Autonomous mode REQUIRES beads by default
+   health=$(.claude/scripts/beads/beads-health.sh --quick --json)
+   status=$(echo "$health" | jq -r '.status')
+
+   if [[ "$status" != "HEALTHY" && "$status" != "DEGRADED" ]]; then
+     # Check for override
+     beads_required=$(yq '.beads.autonomous.requires_beads // true' .loa.config.yaml)
+     if [[ "$beads_required" == "true" ]]; then
+       echo "HALT: Autonomous mode requires beads (status: $status)"
+       echo ""
+       echo "Beads provides:"
+       echo "  - Task state persistence across context windows"
+       echo "  - Progress tracking for overnight/unattended execution"
+       echo "  - Recovery from interruptions"
+       echo ""
+       echo "To fix:"
+       echo "  cargo install beads_rust && br init"
+       echo ""
+       echo "To override (not recommended):"
+       echo "  Set beads.autonomous.requires_beads: false in .loa.config.yaml"
+       echo "  Or: export LOA_BEADS_AUTONOMOUS_OVERRIDE=true"
+       exit 1
+     fi
+   fi
+
+   # Update health state
+   .claude/scripts/beads/update-beads-state.sh --health "$status"
+   ```
+
+3. **Branch Safety Check**
    ```bash
    # Verify not on protected branch using ICE
    .claude/scripts/run-mode-ice.sh validate
    ```
 
-3. **Permission Check**
+4. **Permission Check**
    ```bash
    # Verify all required permissions configured
    .claude/scripts/check-permissions.sh --quiet
    ```
 
-4. **State Check**
+5. **State Check**
    ```bash
    # Check for conflicting .run/ state
    if [[ -f .run/state.json ]]; then
@@ -140,10 +175,31 @@ File: `.run/state.json`
   "options": {
     "max_cycles": 20,
     "timeout_hours": 8,
-    "dry_run": false
+    "dry_run": false,
+    "local_mode": false,
+    "confirm_push": false,
+    "push_mode": "AUTO"
+  },
+  "completion": {
+    "pushed": false,
+    "pr_created": false,
+    "pr_url": null,
+    "skipped_reason": null
   }
 }
 ```
+
+### Push Mode Options (v1.30.0)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `options.local_mode` | boolean | True if `--local` flag was used |
+| `options.confirm_push` | boolean | True if `--confirm-push` flag was used |
+| `options.push_mode` | string | Resolved mode: `LOCAL`, `PROMPT`, or `AUTO` |
+| `completion.pushed` | boolean | Whether commits were pushed to remote |
+| `completion.pr_created` | boolean | Whether PR was created |
+| `completion.pr_url` | string\|null | PR URL if created, null otherwise |
+| `completion.skipped_reason` | string\|null | Why push was skipped (e.g., `local_mode`, `user_declined`) |
 
 ### Atomic State Updates
 
@@ -351,16 +407,154 @@ generate_deleted_tree() {
 }
 ```
 
-## PR Creation
+## Completion and PR Creation (v1.30.0)
 
-### Draft PR Only
+### Push Mode Resolution
+
+The completion flow respects user preferences for push behavior:
 
 ```bash
-create_draft_pr() {
+# Resolve push mode from flags and config
+# Priority: --local > --confirm-push > config > default (AUTO)
+# Delegates entirely to ICE as single source of truth for push decisions
+resolve_push_mode() {
+  if [[ "${LOCAL_FLAG:-false}" == "true" ]]; then
+    .claude/scripts/run-mode-ice.sh should-push local
+  elif [[ "${CONFIRM_PUSH_FLAG:-false}" == "true" ]]; then
+    .claude/scripts/run-mode-ice.sh should-push prompt
+  else
+    .claude/scripts/run-mode-ice.sh should-push
+  fi
+}
+```
+
+### Completion Flow
+
+```bash
+complete_run() {
+  local target="$1"
+  local push_mode
+
+  # Determine push mode
+  push_mode=$(resolve_push_mode)
+
+  # Update state with resolved mode
+  jq --arg mode "$push_mode" '.options.push_mode = $mode' .run/state.json > .run/state.json.tmp
+  mv .run/state.json.tmp .run/state.json
+
+  case "$push_mode" in
+    LOCAL)
+      complete_local "$target"
+      ;;
+    PROMPT)
+      confirm_and_complete "$target"
+      ;;
+    AUTO)
+      push_and_create_pr "$target"
+      ;;
+  esac
+}
+```
+
+### Local Mode Completion
+
+```bash
+complete_local() {
+  local target="$1"
+  local branch=$(jq -r '.branch' .run/state.json)
+  local commits=$(jq '.metrics.commits' .run/state.json)
+  local files=$(jq '.metrics.files_changed' .run/state.json)
+
+  # Update completion + run state atomically
+  jq '.completion = {
+    "pushed": false,
+    "pr_created": false,
+    "pr_url": null,
+    "skipped_reason": "local_mode"
+  } | .state = "JACKED_OUT"' .run/state.json > .run/state.json.tmp
+  mv .run/state.json.tmp .run/state.json
+
+  cat << EOF
+[COMPLETE] Sprint implementation finished (LOCAL MODE)
+
+Changes committed to local branch: $branch
+Total commits: $commits
+Files changed: $files
+
+⚠️  LOCAL MODE: No push or PR created.
+
+To push manually when ready:
+  git push -u origin $branch
+
+To create PR:
+  gh pr create --draft
+EOF
+}
+```
+
+### Confirmation Prompt (PROMPT Mode)
+
+When push mode is PROMPT, use AskUserQuestion before pushing:
+
+```bash
+confirm_and_complete() {
+  local target="$1"
+  local branch=$(jq -r '.branch' .run/state.json)
+  local commits=$(jq '.metrics.commits' .run/state.json)
+  local files=$(jq '.metrics.files_changed' .run/state.json)
+
+  # Display summary and use AskUserQuestion tool
+  # Options:
+  #   1. "Push and create PR" - proceeds with push_and_create_pr()
+  #   2. "Keep local only" - calls complete_declined()
+  #
+  # The AskUserQuestion tool is invoked by Claude, not bash
+}
+
+complete_declined() {
+  local target="$1"
+  local branch=$(jq -r '.branch' .run/state.json)
+  local commits=$(jq '.metrics.commits' .run/state.json)
+  local files=$(jq '.metrics.files_changed' .run/state.json)
+
+  # Update completion + run state atomically
+  jq '.completion = {
+    "pushed": false,
+    "pr_created": false,
+    "pr_url": null,
+    "skipped_reason": "user_declined"
+  } | .state = "JACKED_OUT"' .run/state.json > .run/state.json.tmp
+  mv .run/state.json.tmp .run/state.json
+
+  cat << EOF
+[COMPLETE] Sprint implementation finished
+
+Changes committed to local branch: $branch
+Total commits: $commits
+Files changed: $files
+
+ℹ️  Push skipped at your request.
+
+To push when ready:
+  git push -u origin $branch
+
+To create PR:
+  gh pr create --draft
+EOF
+}
+```
+
+### Push and Create PR (AUTO Mode)
+
+```bash
+push_and_create_pr() {
   local target="$1"
   local branch=$(jq -r '.branch' .run/state.json)
   local metrics=$(jq '.metrics' .run/state.json)
   local cycles=$(jq '.cycles.current' .run/state.json)
+
+  # Push using ICE wrapper
+  .claude/scripts/run-mode-ice.sh push origin "$branch"
 
   # Generate PR body
   local body="## Run Mode Autonomous Implementation
@@ -382,9 +576,24 @@ All tests passing (verified by /audit-sprint).
 "
 
   # Create draft PR using ICE wrapper
-  .claude/scripts/run-mode-ice.sh pr-create \
+  local pr_url
+  pr_url=$(.claude/scripts/run-mode-ice.sh pr-create \
     "Run Mode: $target implementation" \
-    "$body"
+    "$body")
+
+  # Update completion + run state atomically
+  jq --arg url "$pr_url" '.completion = {
+    "pushed": true,
+    "pr_created": true,
+    "pr_url": $url,
+    "skipped_reason": null
+  } | .state = "JACKED_OUT"' .run/state.json > .run/state.json.tmp
+  mv .run/state.json.tmp .run/state.json
+
+  echo "[COMPLETE] All checks passed!"
+  echo "✓ PR created: $pr_url"
+  echo ""
+  echo "[JACKED_OUT] Run complete."
 }
 ```
 
@@ -398,6 +607,8 @@ initialize_run() {
   local branch="${2:-feature/$target}"
   local max_cycles="${3:-20}"
   local timeout_hours="${4:-8}"
+  local local_mode="${5:-false}"
+  local confirm_push="${6:-false}"
 
   # Create .run directory
   mkdir -p .run
@@ -405,6 +616,16 @@ initialize_run() {
   # Generate run ID
   local run_id="run-$(date +%Y%m%d)-$(openssl rand -hex 4)"
   local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  # Resolve initial push mode via ICE (single source of truth)
+  local push_mode
+  if [[ "$local_mode" == "true" ]]; then
+    push_mode=$(.claude/scripts/run-mode-ice.sh should-push local)
+  elif [[ "$confirm_push" == "true" ]]; then
+    push_mode=$(.claude/scripts/run-mode-ice.sh should-push prompt)
+  else
+    push_mode=$(.claude/scripts/run-mode-ice.sh should-push)
+  fi
 
   # Initialize state.json
   cat > .run/state.json << EOF
@@ -432,7 +653,16 @@ initialize_run() {
   "options": {
     "max_cycles": $max_cycles,
     "timeout_hours": $timeout_hours,
-    "dry_run": false
+    "dry_run": false,
+    "local_mode": $local_mode,
+    "confirm_push": $confirm_push,
+    "push_mode": "$push_mode"
+  },
+  "completion": {
+    "pushed": false,
+    "pr_created": false,
+    "pr_url": null,
+    "skipped_reason": null
   }
 }
 EOF

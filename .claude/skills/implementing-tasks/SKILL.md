@@ -301,16 +301,19 @@ Implement sprint tasks from `grimoires/loa/sprint.md` with production-grade code
 - **Desired state**: Working, tested implementation + comprehensive report
 
 ## Constraints (E - Explicit)
-- DO NOT start new work without checking for audit feedback FIRST (highest priority)
-- DO NOT start new work without checking for engineer feedback SECOND
-- DO NOT assume feedback meaning—ask clarifying questions if unclear
-- DO NOT skip tests—comprehensive test coverage is non-negotiable
-- DO NOT ignore existing codebase patterns—follow established conventions
-- DO NOT skip reading context files—always review PRD, SDD, sprint.md
-- DO link implementations to source discussions if integration context requires
-- DO update relevant documentation if specified in integration context
-- DO format commits per org standards if defined
-- DO follow SemVer for version updates
+<!-- @constraint-generated: start implementing_tasks_constraints | hash:14f0ec969f05599d -->
+<!-- DO NOT EDIT — generated from .claude/data/constraints.json -->
+1. DO NOT start new work without checking for audit feedback FIRST (highest priority)
+2. DO NOT start new work without checking for engineer feedback SECOND
+3. DO NOT assume feedback meaning—ask clarifying questions if unclear
+4. DO NOT skip tests—comprehensive test coverage is non-negotiable
+5. DO NOT ignore existing codebase patterns—follow established conventions
+6. DO NOT skip reading context files—always review PRD, SDD, sprint.md
+7. DO link implementations to source discussions if integration context requires
+8. DO update relevant documentation if specified in integration context
+9. DO format commits per org standards if defined
+10. DO follow SemVer for version updates
+<!-- @constraint-generated: end implementing_tasks_constraints -->
 
 ## Verification (E - Easy to Verify)
 **Success** = All acceptance criteria met + comprehensive tests pass + detailed report at expected path
@@ -399,31 +402,85 @@ Before implementing:
 </citation_requirements>
 
 <workflow>
-## Phase -2: Beads Integration Check
+## Phase -2: Beads-First Integration (v1.29.0)
 
-Check if beads_rust is available for task lifecycle management:
+Beads task tracking is the EXPECTED DEFAULT. Check health and sync before implementation.
+
+### Task Tracking: Beads vs TaskCreate
+
+**For sprint task lifecycle**: Use beads (`br`) commands exclusively.
+- `br update <task-id> --status in-progress` when starting a task
+- `br close <task-id>` when completing a task
+- `br list` to see all tasks and their status
+
+**Claude's `TaskCreate`/`TaskUpdate`**: Use ONLY for session-level progress display to the user (e.g., showing a progress checklist). These are NOT a substitute for beads task tracking. Sprint tasks tracked only via TaskCreate are invisible to cross-session recovery, `/run-resume`, and beads health checks.
+
+**If beads is not available**: Fall back to markdown tracking in NOTES.md (existing behavior).
+
+### Run Beads Health Check
 
 ```bash
-.claude/scripts/beads/check-beads.sh --quiet
+health=$(.claude/scripts/beads/beads-health.sh --quick --json)
+status=$(echo "$health" | jq -r '.status')
 ```
 
-**If INSTALLED**:
-1. Import latest state: `br sync --import-only`
-2. Use beads_rust for task lifecycle:
+### Status Handling
+
+| Status | Action |
+|--------|--------|
+| `HEALTHY` | Import state and proceed |
+| `DEGRADED` | Warn, import state, proceed |
+| `NOT_INSTALLED`/`NOT_INITIALIZED` | Check opt-out, fallback to markdown |
+| `MIGRATION_NEEDED`/`UNHEALTHY` | Warn, fallback to markdown |
+
+### If HEALTHY or DEGRADED
+
+1. **Import latest state**:
+   ```bash
+   br sync --import-only
+   .claude/scripts/beads/update-beads-state.sh --sync-import
+   ```
+
+2. **Use beads_rust for task lifecycle**:
    - `br ready` - Get next actionable task (JIT retrieval)
    - `br update <task-id> --status in_progress` - Mark task started
    - `br close <task-id>` - Mark task completed
    - Task state persists across context windows
 
-**If NOT_INSTALLED**, use markdown-based tracking from sprint.md.
+### If NOT_INSTALLED or NOT_INITIALIZED
+
+1. **Check for valid opt-out**:
+   ```bash
+   opt_out=$(.claude/scripts/beads/update-beads-state.sh --opt-out-check 2>/dev/null || echo "NO_OPT_OUT")
+   ```
+
+2. **If no valid opt-out**, log warning:
+   ```
+   Beads not available. Task tracking via markdown only.
+   Consider installing: cargo install beads_rust && br init
+   ```
+
+3. **Fallback**: Use markdown-based tracking from sprint.md.
+
+### Update State After Check
+
+```bash
+.claude/scripts/beads/update-beads-state.sh --health "$status"
+```
+
+### Beads Task Lifecycle
 
 **IMPORTANT**: Users should NOT run br commands manually. This agent handles the entire beads_rust lifecycle internally:
 
-1. On start: Run `br sync --import-only` then `br ready` to find first unblocked task
+1. On start: Run health check, then `br sync --import-only`, then `br ready` to find first unblocked task
 2. Before implementing: Auto-run `br update <task-id> --status in_progress`
 3. After completing: Auto-run `br close <task-id>`
-4. At session end: Run `br sync --flush-only` to persist state
+4. At session end: Run `br sync --flush-only` then record: `.claude/scripts/beads/update-beads-state.sh --sync-flush`
 5. Repeat until sprint complete
+
+### Protocol Reference
+
+See `.claude/protocols/beads-preflight.md` for full specification.
 
 ## Phase -1: Context Assessment & Parallel Task Splitting (CRITICAL—DO THIS FIRST)
 
@@ -593,6 +650,63 @@ Key sections:
 3. Address feedback systematically
 4. Generate updated report
 </workflow>
+
+<file_creation_safety>
+## File Creation Safety (CRITICAL)
+
+When creating source files, Bash heredocs can **silently corrupt** content containing template literal syntax.
+
+### The Problem
+
+JSX/TypeScript template literals (`${variable}`) use identical syntax to shell variables:
+
+```bash
+# DANGEROUS: Unquoted heredoc - ${active} becomes empty string
+cat > Button.tsx << EOF
+<button className={`btn ${active ? 'active' : ''}`}>
+EOF
+# Result: <button className={`btn  ? 'active' : ''`}>  ← CORRUPTED
+```
+
+This corruption is **silent** - no error is raised, the file is created, and the bug may not be caught until runtime.
+
+### Rules
+
+1. **Use Write tool** for ALL source files (PREFERRED)
+   - `.tsx`, `.jsx`, `.ts`, `.js`, `.vue`, `.svelte`, etc.
+   - Content is passed exactly as-is
+   - No shell interpretation occurs
+
+2. **If heredoc required**, use **quoted delimiter**:
+   ```bash
+   cat > file.tsx <<'EOF'  # Note: 'EOF' is QUOTED
+   const x = `Value: ${variable}`;  # Preserved literally
+   EOF
+   ```
+
+3. **NEVER use unquoted heredoc** for source files:
+   ```bash
+   cat > file.tsx << EOF   # DANGEROUS - will corrupt ${...}
+   ```
+
+### High-Risk Extensions
+
+Always use Write tool or quoted heredoc for:
+- `.tsx`, `.jsx` - React/JSX
+- `.ts`, `.js`, `.mjs`, `.cjs` - JavaScript/TypeScript
+- `.vue`, `.svelte`, `.astro` - Component frameworks
+- `.graphql`, `.gql` - GraphQL
+- `.md` - Markdown with code blocks
+
+### Pre-Write Checklist Addition
+
+- [ ] File extension checked (source file → Write tool)
+- [ ] Content contains `${...}` → verified method is safe
+
+### Protocol Reference
+
+See `.claude/protocols/safe-file-creation.md` for complete decision tree and examples.
+</file_creation_safety>
 
 <parallel_execution>
 ## When to Split

@@ -1,0 +1,871 @@
+# Golden Test Corpus for DCG
+# Comprehensive test cases for pattern validation
+#
+# Usage:
+#   .claude/scripts/tests/dcg-golden-test-runner.sh dcg-golden-tests.yaml
+
+version: 1.0.0
+
+# ==============================================================================
+# Filesystem - BLOCK cases
+# ==============================================================================
+
+tests:
+  # Root deletion
+  - id: fs_001
+    input: "rm -rf /"
+    expected: BLOCK
+    pattern: fs_rm_rf_root
+    description: "Delete root filesystem"
+
+  - id: fs_002
+    input: "rm -rf /*"
+    expected: BLOCK
+    pattern: fs_rm_rf_root
+    description: "Delete all files in root"
+
+  - id: fs_003
+    input: "rm -r -f /"
+    expected: BLOCK
+    pattern: fs_rm_rf_root
+    description: "Delete root with separated flags"
+
+  # Home deletion
+  - id: fs_004
+    input: "rm -rf ~"
+    expected: BLOCK
+    pattern: fs_rm_rf_home
+    description: "Delete home directory (tilde)"
+
+  - id: fs_005
+    input: "rm -rf $HOME"
+    expected: BLOCK
+    pattern: fs_rm_rf_home
+    description: "Delete home directory (variable)"
+
+  - id: fs_006
+    input: "rm -rf /home/user"
+    expected: BLOCK
+    pattern: fs_rm_rf_home
+    description: "Delete specific user home"
+
+  # System directories
+  - id: fs_007
+    input: "rm -rf /etc"
+    expected: BLOCK
+    pattern: fs_rm_rf_system
+    description: "Delete /etc"
+
+  - id: fs_008
+    input: "rm -rf /usr"
+    expected: BLOCK
+    pattern: fs_rm_rf_system
+    description: "Delete /usr"
+
+  - id: fs_009
+    input: "rm -rf /var"
+    expected: BLOCK
+    pattern: fs_rm_rf_system
+    description: "Delete /var"
+
+  - id: fs_010
+    input: "rm -rf /bin"
+    expected: BLOCK
+    pattern: fs_rm_rf_system
+    description: "Delete /bin"
+
+  - id: fs_011
+    input: "rm -rf /lib"
+    expected: BLOCK
+    pattern: fs_rm_rf_system
+    description: "Delete /lib"
+
+  - id: fs_012
+    input: "rm -rf /boot"
+    expected: BLOCK
+    pattern: fs_rm_rf_system
+    description: "Delete /boot"
+
+# ==============================================================================
+# Filesystem - ALLOW cases (safe paths)
+# ==============================================================================
+
+  - id: fs_safe_001
+    input: "rm -rf /tmp/test"
+    expected: ALLOW
+    description: "Delete in /tmp (safe path)"
+
+  - id: fs_safe_002
+    input: "rm -rf /var/tmp/cache"
+    expected: ALLOW
+    description: "Delete in /var/tmp (safe path)"
+
+  - id: fs_safe_003
+    input: "rm -rf node_modules"
+    expected: ALLOW
+    description: "Delete node_modules (relative, safe)"
+
+  - id: fs_safe_004
+    input: "rm -rf dist"
+    expected: ALLOW
+    description: "Delete dist directory"
+
+  - id: fs_safe_005
+    input: "rm -rf build"
+    expected: ALLOW
+    description: "Delete build directory"
+
+# ==============================================================================
+# Git - BLOCK cases
+# ==============================================================================
+
+  - id: git_001
+    input: "git push --force origin main"
+    expected: BLOCK
+    pattern: git_push_force
+    description: "Force push to main"
+
+  - id: git_002
+    input: "git push -f origin main"
+    expected: BLOCK
+    pattern: git_push_force_short
+    description: "Force push short flag"
+
+  - id: git_003
+    input: "git push --force-with-lease origin main"
+    expected: ALLOW
+    description: "Force with lease is safer"
+
+# ==============================================================================
+# Git - WARN cases
+# ==============================================================================
+
+  - id: git_warn_001
+    input: "git reset --hard"
+    expected: WARN
+    pattern: git_reset_hard
+    description: "Reset hard"
+
+  - id: git_warn_002
+    input: "git reset --hard HEAD~1"
+    expected: WARN
+    pattern: git_reset_hard
+    description: "Reset hard to previous commit"
+
+  - id: git_warn_003
+    input: "git clean -fd"
+    expected: WARN
+    pattern: git_clean_force
+    description: "Clean force directories"
+
+  - id: git_warn_004
+    input: "git clean -fdx"
+    expected: WARN
+    pattern: git_clean_force
+    description: "Clean force with ignored files"
+
+  - id: git_warn_005
+    input: "git checkout ."
+    expected: WARN
+    pattern: git_checkout_dot
+    description: "Checkout discard all changes"
+
+# ==============================================================================
+# Safe Context - grep/echo/cat
+# ==============================================================================
+
+  - id: safe_ctx_001
+    input: "grep 'rm -rf' logs.txt"
+    expected: ALLOW
+    description: "Grep for dangerous pattern"
+
+  - id: safe_ctx_002
+    input: "echo 'DROP TABLE users'"
+    expected: ALLOW
+    description: "Echo SQL statement"
+
+  - id: safe_ctx_003
+    input: "cat /etc/passwd"
+    expected: ALLOW
+    description: "Cat system file (read-only)"
+
+  - id: safe_ctx_004
+    input: "printf 'rm -rf /\\n'"
+    expected: ALLOW
+    description: "Printf dangerous string"
+
+  - id: safe_ctx_005
+    input: "egrep 'git push --force' history.log"
+    expected: ALLOW
+    description: "Egrep for dangerous pattern"
+
+# ==============================================================================
+# Safe Flags
+# ==============================================================================
+
+  - id: safe_flag_001
+    input: "rm --help"
+    expected: ALLOW
+    description: "Help flag"
+
+  - id: safe_flag_002
+    input: "terraform destroy --dry-run"
+    expected: ALLOW
+    description: "Dry run flag"
+
+  - id: safe_flag_003
+    input: "git --version"
+    expected: ALLOW
+    description: "Version flag"
+
+# ==============================================================================
+# Command Chaining
+# ==============================================================================
+
+  - id: chain_001
+    input: "npm test && rm -rf /"
+    expected: BLOCK
+    description: "Safe command chained with dangerous"
+
+  - id: chain_002
+    input: "rm -rf / && npm test"
+    expected: BLOCK
+    description: "Dangerous first in chain"
+
+  - id: chain_003
+    input: "npm test && npm build"
+    expected: ALLOW
+    description: "All safe commands"
+
+  - id: chain_004
+    input: "npm test || exit 1"
+    expected: ALLOW
+    description: "Or chain with exit"
+
+  - id: chain_005
+    input: "npm test; git reset --hard"
+    expected: WARN
+    description: "Semicolon chain with warn"
+
+  - id: chain_006
+    input: "npm test | grep pass"
+    expected: ALLOW
+    description: "Pipe to grep"
+
+# ==============================================================================
+# Shell Patterns
+# ==============================================================================
+
+  - id: shell_001
+    input: 'eval "$cmd"'
+    expected: WARN
+    pattern: shell_eval
+    description: "Eval with variable"
+
+  - id: shell_002
+    input: "eval \"$(cat script.sh)\""
+    expected: WARN
+    pattern: shell_eval
+    description: "Eval with command substitution"
+
+# ==============================================================================
+# Common Safe Commands
+# ==============================================================================
+
+  - id: allow_001
+    input: "npm test"
+    expected: ALLOW
+    description: "NPM test"
+
+  - id: allow_002
+    input: "npm install"
+    expected: ALLOW
+    description: "NPM install"
+
+  - id: allow_003
+    input: "npm run build"
+    expected: ALLOW
+    description: "NPM build"
+
+  - id: allow_004
+    input: "ls -la"
+    expected: ALLOW
+    description: "List files"
+
+  - id: allow_005
+    input: "pwd"
+    expected: ALLOW
+    description: "Print working directory"
+
+  - id: allow_006
+    input: "git status"
+    expected: ALLOW
+    description: "Git status"
+
+  - id: allow_007
+    input: "git add ."
+    expected: ALLOW
+    description: "Git add"
+
+  - id: allow_008
+    input: "git commit -m 'message'"
+    expected: ALLOW
+    description: "Git commit"
+
+  - id: allow_009
+    input: "git push origin feature"
+    expected: ALLOW
+    description: "Normal git push"
+
+  - id: allow_010
+    input: "make test"
+    expected: ALLOW
+    description: "Make test"
+
+# ==============================================================================
+# Database - BLOCK cases (requires database pack)
+# ==============================================================================
+
+  - id: db_001
+    input: "DROP TABLE users"
+    expected: BLOCK
+    pattern: sql_drop_table
+    description: "Drop table SQL"
+
+  - id: db_002
+    input: "DROP DATABASE production"
+    expected: BLOCK
+    pattern: sql_drop_database
+    description: "Drop database SQL"
+
+  - id: db_003
+    input: "DELETE FROM users ;"
+    expected: BLOCK
+    pattern: sql_delete_all
+    description: "Delete without WHERE"
+
+  - id: db_004
+    input: "db.dropDatabase()"
+    expected: BLOCK
+    pattern: mongo_drop_database
+    description: "MongoDB drop database"
+
+  - id: db_005
+    input: "FLUSHALL"
+    expected: BLOCK
+    pattern: redis_flushall
+    description: "Redis flush all"
+
+  - id: db_006
+    input: "FLUSHDB"
+    expected: BLOCK
+    pattern: redis_flushdb
+    description: "Redis flush db"
+
+  - id: db_007
+    input: "mysql -e 'DROP TABLE users'"
+    expected: BLOCK
+    pattern: mysql_drop
+    description: "MySQL CLI drop"
+
+  - id: db_008
+    input: "psql -c 'DROP TABLE users'"
+    expected: BLOCK
+    pattern: psql_drop
+    description: "PostgreSQL CLI drop"
+
+  - id: db_009
+    input: "db.users.deleteMany({})"
+    expected: BLOCK
+    pattern: mongo_remove_all
+    description: "MongoDB delete all"
+
+# ==============================================================================
+# Database - WARN cases
+# ==============================================================================
+
+  - id: db_warn_001
+    input: "TRUNCATE TABLE logs"
+    expected: WARN
+    pattern: sql_truncate
+    description: "Truncate table"
+
+  - id: db_warn_002
+    input: "db.users.drop()"
+    expected: WARN
+    pattern: mongo_drop_collection
+    description: "MongoDB drop collection"
+
+# ==============================================================================
+# Database - ALLOW cases
+# ==============================================================================
+
+  - id: db_allow_001
+    input: "SELECT * FROM users"
+    expected: ALLOW
+    description: "Safe SQL query"
+
+  - id: db_allow_002
+    input: "DELETE FROM users WHERE id = 1"
+    expected: ALLOW
+    description: "Delete with WHERE"
+
+  - id: db_allow_003
+    input: "db.users.find({})"
+    expected: ALLOW
+    description: "MongoDB find"
+
+# ==============================================================================
+# Docker - BLOCK cases (requires docker pack)
+# ==============================================================================
+
+  - id: docker_001
+    input: "docker rm -f $(docker ps -aq)"
+    expected: BLOCK
+    pattern: docker_rm_all
+    description: "Remove all containers"
+
+  - id: docker_002
+    input: "docker rmi $(docker images -q)"
+    expected: BLOCK
+    pattern: docker_rmi_all
+    description: "Remove all images"
+
+  - id: docker_003
+    input: "docker system prune -a -f"
+    expected: BLOCK
+    pattern: docker_system_prune_all
+    description: "Prune all Docker data"
+
+  - id: docker_004
+    input: "docker volume rm $(docker volume ls -q)"
+    expected: BLOCK
+    pattern: docker_volume_rm_all
+    description: "Remove all volumes"
+
+  - id: docker_005
+    input: "docker kill $(docker ps -q)"
+    expected: BLOCK
+    pattern: docker_kill_all
+    description: "Kill all containers"
+
+# ==============================================================================
+# Docker - WARN cases
+# ==============================================================================
+
+  - id: docker_warn_001
+    input: "docker system prune -f"
+    expected: WARN
+    pattern: docker_system_prune_force
+    description: "Force prune unused"
+
+  - id: docker_warn_002
+    input: "docker volume prune -f"
+    expected: WARN
+    pattern: docker_volume_prune
+    description: "Prune unused volumes"
+
+  - id: docker_warn_003
+    input: "docker-compose down -v"
+    expected: WARN
+    pattern: compose_down_volumes
+    description: "Compose down with volumes"
+
+# ==============================================================================
+# Docker - ALLOW cases
+# ==============================================================================
+
+  - id: docker_allow_001
+    input: "docker ps"
+    expected: ALLOW
+    description: "List containers"
+
+  - id: docker_allow_002
+    input: "docker images"
+    expected: ALLOW
+    description: "List images"
+
+  - id: docker_allow_003
+    input: "docker build -t myapp ."
+    expected: ALLOW
+    description: "Build image"
+
+  - id: docker_allow_004
+    input: "docker run hello-world"
+    expected: ALLOW
+    description: "Run container"
+
+# ==============================================================================
+# Kubernetes - BLOCK cases (requires kubernetes pack)
+# ==============================================================================
+
+  - id: k8s_001
+    input: "kubectl delete namespace production"
+    expected: BLOCK
+    pattern: k8s_delete_namespace
+    description: "Delete namespace"
+
+  - id: k8s_002
+    input: "kubectl delete ns default"
+    expected: BLOCK
+    pattern: k8s_delete_namespace
+    description: "Delete namespace (short)"
+
+  - id: k8s_003
+    input: "kubectl delete pods --all"
+    expected: BLOCK
+    pattern: k8s_delete_all_type
+    description: "Delete all pods"
+
+  - id: k8s_004
+    input: "kubectl delete deployments --all"
+    expected: BLOCK
+    pattern: k8s_delete_all_type
+    description: "Delete all deployments"
+
+  - id: k8s_005
+    input: "helm delete myrelease --purge"
+    expected: BLOCK
+    pattern: helm_delete_purge
+    description: "Helm delete with purge"
+
+# ==============================================================================
+# Kubernetes - WARN cases
+# ==============================================================================
+
+  - id: k8s_warn_001
+    input: "kubectl drain node1 --force"
+    expected: WARN
+    pattern: k8s_drain_force
+    description: "Force drain node"
+
+  - id: k8s_warn_002
+    input: "kubectl scale deployment myapp --replicas=0"
+    expected: WARN
+    pattern: k8s_scale_zero
+    description: "Scale to zero"
+
+  - id: k8s_warn_003
+    input: "kubectl config use-context production"
+    expected: WARN
+    pattern: k8s_context_production
+    description: "Switch to production context"
+
+  - id: k8s_warn_004
+    input: "helm uninstall myrelease"
+    expected: WARN
+    pattern: helm_uninstall
+    description: "Helm uninstall"
+
+# ==============================================================================
+# Kubernetes - ALLOW cases
+# ==============================================================================
+
+  - id: k8s_allow_001
+    input: "kubectl get pods"
+    expected: ALLOW
+    description: "Get pods"
+
+  - id: k8s_allow_002
+    input: "kubectl apply -f deployment.yaml"
+    expected: ALLOW
+    description: "Apply deployment"
+
+  - id: k8s_allow_003
+    input: "kubectl describe pod myapp"
+    expected: ALLOW
+    description: "Describe pod"
+
+  - id: k8s_allow_004
+    input: "kubectl delete pod myapp-abc123 --dry-run"
+    expected: ALLOW
+    description: "Delete pod dry-run"
+
+# ==============================================================================
+# AWS - BLOCK cases (requires cloud-aws pack)
+# ==============================================================================
+
+  - id: aws_001
+    input: "aws ec2 terminate-instances --instance-ids i-1234"
+    expected: BLOCK
+    pattern: aws_ec2_terminate
+    description: "Terminate EC2 instance"
+
+  - id: aws_002
+    input: "aws rds delete-db-instance --db-instance-identifier mydb"
+    expected: BLOCK
+    pattern: aws_rds_delete
+    description: "Delete RDS instance"
+
+  - id: aws_003
+    input: "aws s3 rb s3://mybucket --force"
+    expected: BLOCK
+    pattern: aws_s3_rb_force
+    description: "Force remove S3 bucket"
+
+  - id: aws_004
+    input: "aws cloudformation delete-stack --stack-name mystack"
+    expected: BLOCK
+    pattern: aws_cfn_delete_stack
+    description: "Delete CloudFormation stack"
+
+  - id: aws_005
+    input: "aws dynamodb delete-table --table-name mytable"
+    expected: BLOCK
+    pattern: aws_dynamodb_delete
+    description: "Delete DynamoDB table"
+
+  - id: aws_006
+    input: "aws eks delete-cluster --name mycluster"
+    expected: BLOCK
+    pattern: aws_eks_delete
+    description: "Delete EKS cluster"
+
+# ==============================================================================
+# AWS - WARN cases
+# ==============================================================================
+
+  - id: aws_warn_001
+    input: "aws s3 rm s3://mybucket/folder --recursive"
+    expected: WARN
+    pattern: aws_s3_rm_recursive
+    description: "Recursive S3 delete"
+
+  - id: aws_warn_002
+    input: "aws iam delete-user --user-name myuser"
+    expected: WARN
+    pattern: aws_iam_delete_user
+    description: "Delete IAM user"
+
+  - id: aws_warn_003
+    input: "aws lambda delete-function --function-name myfunc"
+    expected: WARN
+    pattern: aws_lambda_delete
+    description: "Delete Lambda function"
+
+# ==============================================================================
+# AWS - ALLOW cases
+# ==============================================================================
+
+  - id: aws_allow_001
+    input: "aws s3 ls"
+    expected: ALLOW
+    description: "List S3 buckets"
+
+  - id: aws_allow_002
+    input: "aws ec2 describe-instances"
+    expected: ALLOW
+    description: "Describe EC2 instances"
+
+  - id: aws_allow_003
+    input: "aws ec2 terminate-instances --dry-run --instance-ids i-1234"
+    expected: ALLOW
+    description: "Terminate with dry-run"
+
+# ==============================================================================
+# GCP - BLOCK cases (requires cloud-gcp pack)
+# ==============================================================================
+
+  - id: gcp_001
+    input: "gcloud compute instances delete myvm"
+    expected: BLOCK
+    pattern: gcp_compute_delete
+    description: "Delete compute instance"
+
+  - id: gcp_002
+    input: "gcloud sql instances delete mydb"
+    expected: BLOCK
+    pattern: gcp_sql_delete
+    description: "Delete Cloud SQL instance"
+
+  - id: gcp_003
+    input: "gcloud container clusters delete mycluster"
+    expected: BLOCK
+    pattern: gcp_gke_delete
+    description: "Delete GKE cluster"
+
+  - id: gcp_004
+    input: "gsutil rm -r gs://mybucket"
+    expected: BLOCK
+    pattern: gcp_storage_rm_r
+    description: "Recursive storage delete"
+
+  - id: gcp_005
+    input: "gcloud projects delete myproject"
+    expected: BLOCK
+    pattern: gcp_project_delete
+    description: "Delete entire project"
+
+# ==============================================================================
+# GCP - WARN cases
+# ==============================================================================
+
+  - id: gcp_warn_001
+    input: "gcloud functions delete myfunction"
+    expected: WARN
+    pattern: gcp_functions_delete
+    description: "Delete Cloud Function"
+
+  - id: gcp_warn_002
+    input: "bq rm -t mydataset.mytable"
+    expected: WARN
+    pattern: gcp_bq_rm_table
+    description: "Remove BigQuery table"
+
+# ==============================================================================
+# GCP - ALLOW cases
+# ==============================================================================
+
+  - id: gcp_allow_001
+    input: "gcloud compute instances list"
+    expected: ALLOW
+    description: "List compute instances"
+
+  - id: gcp_allow_002
+    input: "gsutil ls gs://mybucket"
+    expected: ALLOW
+    description: "List storage bucket"
+
+# ==============================================================================
+# Azure - BLOCK cases (requires cloud-azure pack)
+# ==============================================================================
+
+  - id: azure_001
+    input: "az vm delete --name myvm --resource-group mygroup"
+    expected: BLOCK
+    pattern: azure_vm_delete
+    description: "Delete Azure VM"
+
+  - id: azure_002
+    input: "az group delete --name mygroup"
+    expected: BLOCK
+    pattern: azure_group_delete
+    description: "Delete resource group"
+
+  - id: azure_003
+    input: "az sql server delete --name myserver --resource-group mygroup"
+    expected: BLOCK
+    pattern: azure_sql_server_delete
+    description: "Delete SQL server"
+
+  - id: azure_004
+    input: "az aks delete --name mycluster --resource-group mygroup"
+    expected: BLOCK
+    pattern: azure_aks_delete
+    description: "Delete AKS cluster"
+
+  - id: azure_005
+    input: "az keyvault delete --name myvault"
+    expected: BLOCK
+    pattern: azure_keyvault_delete
+    description: "Delete Key Vault"
+
+# ==============================================================================
+# Azure - WARN cases
+# ==============================================================================
+
+  - id: azure_warn_001
+    input: "az webapp delete --name myapp --resource-group mygroup"
+    expected: WARN
+    pattern: azure_webapp_delete
+    description: "Delete web app"
+
+  - id: azure_warn_002
+    input: "az acr delete --name myregistry"
+    expected: WARN
+    pattern: azure_acr_delete
+    description: "Delete container registry"
+
+# ==============================================================================
+# Azure - ALLOW cases
+# ==============================================================================
+
+  - id: azure_allow_001
+    input: "az vm list"
+    expected: ALLOW
+    description: "List Azure VMs"
+
+  - id: azure_allow_002
+    input: "az group list"
+    expected: ALLOW
+    description: "List resource groups"
+
+# ==============================================================================
+# Terraform - BLOCK cases (requires terraform pack)
+# ==============================================================================
+
+  - id: tf_001
+    input: "terraform destroy -auto-approve"
+    expected: BLOCK
+    pattern: tf_destroy_auto_approve
+    description: "Terraform destroy auto-approve"
+
+  - id: tf_002
+    input: "terragrunt run-all destroy"
+    expected: BLOCK
+    pattern: tg_destroy_all
+    description: "Terragrunt destroy all"
+
+  - id: tf_003
+    input: "tofu destroy -auto-approve"
+    expected: BLOCK
+    pattern: tf_destroy_auto_approve
+    description: "OpenTofu destroy auto-approve"
+
+# ==============================================================================
+# Terraform - WARN cases
+# ==============================================================================
+
+  - id: tf_warn_001
+    input: "terraform destroy"
+    expected: WARN
+    pattern: tf_destroy
+    description: "Terraform destroy (requires confirmation)"
+
+  - id: tf_warn_002
+    input: "terraform state rm module.vpc"
+    expected: WARN
+    pattern: tf_state_rm
+    description: "Remove from state"
+
+  - id: tf_warn_003
+    input: "terraform apply -auto-approve"
+    expected: WARN
+    pattern: tf_apply_auto_approve
+    description: "Apply auto-approve"
+
+  - id: tf_warn_004
+    input: "terraform taint aws_instance.example"
+    expected: WARN
+    pattern: tf_taint
+    description: "Taint resource"
+
+  - id: tf_warn_005
+    input: "terraform force-unlock abc123"
+    expected: WARN
+    pattern: tf_force_unlock
+    description: "Force unlock state"
+
+# ==============================================================================
+# Terraform - ALLOW cases
+# ==============================================================================
+
+  - id: tf_allow_001
+    input: "terraform plan"
+    expected: ALLOW
+    description: "Terraform plan"
+
+  - id: tf_allow_002
+    input: "terraform init"
+    expected: ALLOW
+    description: "Terraform init"
+
+  - id: tf_allow_003
+    input: "terraform validate"
+    expected: ALLOW
+    description: "Terraform validate"
+
+  - id: tf_allow_004
+    input: "terraform fmt"
+    expected: ALLOW
+    description: "Terraform format"

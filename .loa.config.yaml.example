@@ -10,6 +10,45 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# Configurable Paths (v1.27.0)
+# -----------------------------------------------------------------------------
+# Customize grimoire and state file locations. All paths are relative to
+# PROJECT_ROOT. Useful for OpenClaw integration or custom project structures.
+#
+# Requirements:
+# - yq v4+ (mikefarah/yq) for YAML parsing
+# - Paths must be relative (no leading /)
+# - Soul source and output must be different files
+paths:
+  # Grimoire directory (default: grimoires/loa)
+  # All derived paths (ledger, notes, trajectory, etc.) are relative to this
+  grimoire: grimoires/loa
+
+  # Beads directory (default: .beads)
+  beads: .beads
+
+  # Soul file paths (BEAUVOIR.md -> SOUL.md transformation)
+  soul:
+    source: grimoires/loa/BEAUVOIR.md   # Input template
+    output: grimoires/loa/SOUL.md       # Generated output
+
+# OpenClaw Integration Example:
+# Place SOUL.md at workspace root for OpenClaw bootstrap
+# paths:
+#   grimoire: .loa/grimoire
+#   soul:
+#     source: .loa/grimoire/BEAUVOIR.md
+#     output: SOUL.md    # At workspace root
+
+# Environment Variable Overrides:
+# - LOA_GRIMOIRE_DIR: Override grimoire path
+# - LOA_BEADS_DIR: Override beads path
+# - LOA_SOUL_SOURCE: Override soul source path
+# - LOA_SOUL_OUTPUT: Override soul output path
+# - LOA_USE_LEGACY_PATHS=1: Bypass config, use hardcoded defaults
+# - LOA_STRICT_CONFIG=1: Fail on missing yq (default: warn and use defaults)
+
+# -----------------------------------------------------------------------------
 # Plan and Analyze (v1.6.0)
 # -----------------------------------------------------------------------------
 plan_and_analyze:
@@ -349,6 +388,165 @@ run_mode:
     consolidate_pr: true
     commit_prefix: "feat"
     include_commits_by_sprint: true
+  # Git operations control (v1.30.0)
+  # Controls automatic push and PR creation at end of /run execution
+  git:
+    # auto_push: Controls whether to push commits to remote
+    #   - true: Push and create PR automatically (default, current behavior)
+    #   - false: Never auto-push, keep all changes local
+    #   - prompt: Ask before pushing (HITL confirmation)
+    # Can be overridden with --local (forces false) or --confirm-push (forces prompt)
+    auto_push: true
+    # Always create PRs as drafts - this is hardcoded and cannot be changed
+    create_draft_pr: true
+
+# -----------------------------------------------------------------------------
+# Beads-First Infrastructure (v1.29.0)
+# -----------------------------------------------------------------------------
+# Task tracking via beads_rust (br) is the EXPECTED DEFAULT.
+# Working without beads is treated as an abnormal state requiring explicit
+# acknowledgment. "We're building spaceships. Safety is paramount."
+beads:
+  # Mode: required | recommended | disabled
+  # - required: Block workflow if beads unavailable
+  # - recommended: Prompt for opt-out if unavailable (default)
+  # - disabled: No beads checks
+  mode: recommended
+
+  # Health check frequency
+  # - session: Once per session start
+  # - sprint: At sprint boundaries (default)
+  # - phase: At every workflow phase
+  health_check_frequency: sprint
+
+  # Opt-out configuration (for users without beads installed)
+  opt_out:
+    # Hours until opt-out expires and user must re-acknowledge
+    confirmation_interval_hours: 24
+    # Require reason when opting out
+    require_reason: true
+    # Maximum consecutive opt-outs before warning
+    max_consecutive: 3
+
+  # Autonomous mode configuration
+  autonomous:
+    # Require beads for /run and /autonomous workflows
+    requires_beads: true
+    # Allow DEGRADED status to proceed (warn only)
+    allow_degraded: true
+    # Maximum recovery attempts before halting
+    max_recovery_attempts: 3
+
+  # Size and staleness thresholds
+  thresholds:
+    # Warn when issues.jsonl exceeds this size
+    jsonl_warn_size_mb: 50
+    # Warn when beads.db exceeds this size
+    db_warn_size_mb: 100
+    # Warn when JSONL hasn't been synced in this many hours
+    sync_stale_hours: 24
+
+# -----------------------------------------------------------------------------
+# Persistent Memory (v1.28.0)
+# -----------------------------------------------------------------------------
+# Session-spanning observation storage with progressive disclosure.
+# Captures learnings, discoveries, and decisions for cross-session recall.
+# See: grimoires/loa/memory/README.md
+memory:
+  # Master toggle
+  enabled: true
+
+  # Capture settings
+  capture:
+    discoveries: true       # Capture code discoveries
+    errors: true           # Capture error-solution pairs
+    decisions: true        # Capture architecture decisions
+    patterns: true         # Capture recurring patterns
+
+  # Storage limits
+  max_observations: 10000  # Maximum observations before archiving oldest
+  retention_days: 90       # Archive observations older than this
+
+  # Progressive disclosure levels
+  disclosure:
+    index_tokens: 50       # Tokens per entry in index mode
+    summary_tokens: 200    # Tokens per entry in summary mode
+    full_tokens: 500       # Tokens for full observation
+
+  # Hook configuration
+  hooks:
+    post_tool: true        # Capture from PostToolUse hook
+    learning_signals:      # Patterns that trigger capture
+      - "discovered"
+      - "learned"
+      - "fixed"
+      - "resolved"
+      - "pattern"
+      - "insight"
+
+  # Privacy
+  privacy:
+    redact_sensitive: true # Redact content with <private> tags
+    exclude_tools:         # Tools to never capture from
+      - Read
+      - Glob
+      - Grep
+
+# -----------------------------------------------------------------------------
+# Destructive Command Guard (v1.28.0)
+# -----------------------------------------------------------------------------
+# Runtime safety layer that validates shell commands before execution.
+# Intercepts potentially dangerous operations and applies configurable policies.
+# See: .claude/protocols/destructive-command-guard.md
+destructive_command_guard:
+  # Master toggle - set to true to enable DCG
+  enabled: true
+
+  # Timeout for pattern matching (milliseconds)
+  timeout_ms: 100
+
+  # Security packs to load (core is always loaded)
+  # Each pack adds domain-specific patterns
+  packs:
+    # Database operations (SQL, MongoDB, Redis)
+    database: true
+    # Docker/container operations
+    docker: true
+    # Kubernetes operations (kubectl, helm)
+    kubernetes: false
+    # AWS CLI operations
+    cloud-aws: false
+    # Google Cloud operations
+    cloud-gcp: false
+    # Azure CLI operations
+    cloud-azure: false
+    # Terraform/OpenTofu operations
+    terraform: false
+
+  # Additional safe paths beyond defaults
+  # Paths must be absolute or use environment variables
+  safe_paths:
+    - "${PROJECT_ROOT}/tmp"
+    - "${PROJECT_ROOT}/cache"
+    # Add project-specific paths here
+    # - /app/cache
+
+  # Override default actions for specific patterns
+  # Useful for relaxing rules in specific contexts
+  overrides:
+    # Example: Allow git push --force with warning instead of block
+    # git_push_force:
+    #   action: WARN
+    #   reason: "Team workflow allows force push to feature branches"
+
+  # Run Mode integration
+  run_mode:
+    # Enable DCG during autonomous execution
+    enabled: true
+    # Log blocked commands to trajectory
+    audit_log: true
+    # Halt workflow after N blocked commands
+    halt_on_block_count: 3
 
 # -----------------------------------------------------------------------------
 # Simstim - HITL Accelerated Development (v1.24.0)
@@ -526,7 +724,7 @@ invisible_retrospective:
 # -----------------------------------------------------------------------------
 # Flatline Protocol (v1.17.0)
 # -----------------------------------------------------------------------------
-# Multi-model adversarial review using Claude Opus 4.5 + GPT-5.2 for planning
+# Multi-model adversarial review using Claude Opus 4.6 + GPT-5.2 for planning
 # document quality assurance. Phase 1: parallel reviews, Phase 2: cross-scoring,
 # Phase 3: consensus extraction with HIGH/DISPUTED/LOW/BLOCKER classification.
 flatline_protocol:
@@ -544,7 +742,7 @@ flatline_protocol:
 
   # Model configuration
   models:
-    primary: opus        # Claude Opus 4.5 (via claude.ai or API)
+    primary: opus        # Claude Opus 4.6 (via claude.ai or API)
     secondary: gpt-5.2   # OpenAI GPT-5.2 (via API)
 
   # Consensus thresholds (0-1000 scale)
@@ -568,6 +766,38 @@ flatline_protocol:
       enabled: false           # Opt-in (requires auth setup)
       notebook_id: ""          # Your NotebookLM notebook ID
       timeout_ms: 30000        # Query timeout
+
+  # Adversarial cross-model dissent for quality gates (#224)
+  # A second model reviews code that Claude already reviewed
+  code_review:
+    enabled: false               # Opt-in: enable for /review-sprint
+    model: "gpt-5.2-codex"      # Dissenter model
+    timeout_seconds: 60          # Per-call timeout
+    budget_cents: 150            # Max cost per dissent call
+  security_audit:
+    enabled: false               # Opt-in: enable for /audit-sprint
+    model: "gpt-5.2-codex"      # Dissenter model
+    timeout_seconds: 60
+    budget_cents: 150
+  stable_anchors:
+    required: true               # Demote anchorless high-severity findings
+    preferred_format: "symbol"   # symbol | hunk_header | line_number
+    enforce_for: ["BLOCKING", "CRITICAL", "HIGH"]
+  context_escalation:
+    enabled: true                # Full-file context for P0 files
+    secondary_token_budget: 15000
+    max_file_lines: 500
+    max_file_bytes: 51200        # 50KB
+    denylist: ["*.pem", "*.key", "*.p12", "*.pfx", "id_rsa*", ".env*", "credentials.*", "secrets.*", "*.secret"]
+  secret_scanning:
+    enabled: true                # Pre-send redaction (recommended)
+    patterns:                    # Format-specific regex patterns
+      - "AKIA[0-9A-Z]{16}"
+      - "-----BEGIN[A-Z ]*PRIVATE KEY-----"
+      - "ghp_[A-Za-z0-9]{36}"
+    allowlist:                   # False-positive exclusions
+      - "sha256:[a-f0-9]{64}"
+      - "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 # -----------------------------------------------------------------------------
 # Autonomous Flatline Mode (v1.22.0)
@@ -771,3 +1001,49 @@ post_pr_validation:
     enabled: true
     # Mode for auto-invoked validation
     mode: "autonomous"
+
+# =============================================================================
+# Bridgebuilder — Autonomous PR Review
+# =============================================================================
+# Configuration for the /bridgebuilder skill. All fields have sensible defaults.
+# Precedence: CLI flags > env vars > this config > auto-detect > built-in defaults.
+bridgebuilder:
+  # Master toggle — set to false to disable the skill entirely
+  enabled: true
+
+  # Additional repositories to review (owner/repo format).
+  # Auto-detected repo from git remote is always included unless --no-auto-detect.
+  # Env: BRIDGEBUILDER_REPOS (comma-separated)
+  repos: []
+
+  # LLM model for generating reviews.
+  # Env: BRIDGEBUILDER_MODEL
+  model: "claude-sonnet-4-5-20250929"
+
+  # Maximum open PRs to process per run
+  max_prs: 10
+
+  # Maximum files per PR (excess truncated, risk-prioritized: security files first)
+  max_files_per_pr: 50
+
+  # Maximum diff size in bytes (100KB default)
+  max_diff_bytes: 100000
+
+  # Token budget for LLM input (persona + diff + metadata)
+  max_input_tokens: 8000
+
+  # Maximum response tokens for generated review
+  max_output_tokens: 4000
+
+  # Review dimensions (subset of: security, quality, test-coverage, operational-readiness)
+  dimensions:
+    - security
+    - quality
+    - test-coverage
+
+  # HTML comment marker for idempotency detection
+  review_marker: "bridgebuilder-review"
+
+  # Path to persona override (project-specific reviewer personality).
+  # Falls back to built-in resources/BEAUVOIR.md if file not found.
+  persona_path: "grimoires/bridgebuilder/BEAUVOIR.md"

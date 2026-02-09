@@ -10,9 +10,8 @@ The Registry Integration enables commercial skill distribution through the Loa C
 
 | Service | URL | Status |
 |---------|-----|--------|
-| API | `https://loa-constructs-api.fly.dev/v1` | Live |
-| Health | `https://loa-constructs-api.fly.dev/v1/health` | Live |
-| Legacy | `https://api.loaskills.dev/v1` | Deprecated |
+| API | `https://api.constructs.network/v1` | Live |
+| Health | `https://api.constructs.network/v1/health` | Live |
 
 **Key Principles:**
 - Local skills always take precedence over registry skills
@@ -117,7 +116,7 @@ Skills are discovered and loaded in priority order:
     "kid": "key-id-from-registry"
   },
   "payload": {
-    "iss": "loaskills.dev",
+    "iss": "constructs.network",
     "sub": "vendor/skill-slug",
     "aud": "loa-framework",
     "iat": 1704067200,
@@ -209,7 +208,7 @@ license-validator.sh refresh-key <key-id>
 |----------|---------|-------------|
 | `LOA_CONSTRUCTS_DIR` | `.claude/constructs` | Registry content directory |
 | `LOA_CACHE_DIR` | `~/.loa/cache` | Cache directory for keys |
-| `LOA_REGISTRY_URL` | `https://loa-constructs-api.fly.dev/v1` | Registry API endpoint |
+| `LOA_REGISTRY_URL` | `https://api.constructs.network/v1` | Registry API endpoint |
 | `LOA_OFFLINE` | `0` | Set to `1` for offline-only mode |
 | `LOA_OFFLINE_GRACE_HOURS` | `24` | Override default grace period |
 | `LOA_REGISTRY_ENABLED` | `true` | Master toggle for registry |
@@ -221,7 +220,7 @@ license-validator.sh refresh-key <key-id>
 ```yaml
 registry:
   enabled: true                        # Master toggle
-  default_url: "https://loa-constructs-api.fly.dev/v1"
+  default_url: "https://api.constructs.network/v1"
   public_key_cache_hours: 24           # Key cache duration
   load_on_startup: true                # Load skills during /setup
   validate_licenses: true              # Enable signature validation
@@ -253,7 +252,7 @@ registry:
    Expired: 3 days ago
    Grace period: 24 hours (exceeded)
 
-   To renew: Visit https://loaskills.dev/renew/vendor/skill-name
+   To renew: Visit https://www.constructs.network/
 ```
 
 ### Invalid Signature
@@ -262,7 +261,7 @@ registry:
 ✗ Invalid license signature for 'vendor/skill-name'
    The license file may be corrupted or tampered with.
 
-   To fix: Re-download from https://loaskills.dev/skills/vendor/skill-name
+   To fix: Re-download from https://www.constructs.network/
 ```
 
 ### Missing License
@@ -290,7 +289,7 @@ registry:
    Expires: in 12 hours
 
    Skill will continue to work for 24 more hours after expiry.
-   To renew: Visit https://loaskills.dev/renew/vendor/skill-name
+   To renew: Visit https://www.constructs.network/
 ```
 
 ## Integration with /setup
@@ -389,7 +388,7 @@ git commit -m "fix: remove licensed constructs from tracking"
 1. Re-download license from registry portal
 2. Check system time is accurate (JWT uses timestamps)
 3. Clear key cache: `rm -rf ~/.loa/cache/public-keys/*`
-4. Verify network connectivity to `loa-constructs-api.fly.dev`
+4. Verify network connectivity to `api.constructs.network`
 
 ### Pack Skills Not Found
 

@@ -11,14 +11,16 @@
 # Models:
 #   gpt-5.2              OpenAI GPT-5.2
 #   gpt-5.2-codex        OpenAI GPT-5.2 Codex
-#   opus                 Claude Opus 4.5 (alias for claude-opus-4.5)
-#   claude-opus-4.5      Claude Opus 4.5
+#   gpt-5.3-codex        OpenAI GPT-5.3 Codex
+#   opus                 Claude Opus 4.6 (alias for claude-opus-4.6)
+#   claude-opus-4.6      Claude Opus 4.6
 #   gemini-2.0           Google Gemini 2.0 (future)
 #
 # Modes:
 #   review               Generate improvements (10 items)
 #   skeptic              Generate concerns (devil's advocate)
 #   score                Score items (0-1000)
+#   dissent              Adversarial cross-model code/security review
 #
 # Options:
 #   --input <file>       Input document/items to process
@@ -50,6 +52,14 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CONFIG_FILE="$PROJECT_ROOT/.loa.config.yaml"
 TEMPLATES_DIR="$SCRIPT_DIR/../templates"
 
+# Require bash 4.0+ (associative arrays)
+# shellcheck source=bash-version-guard.sh
+source "$SCRIPT_DIR/bash-version-guard.sh"
+
+# Source cross-platform time utilities
+# shellcheck source=time-lib.sh
+source "$SCRIPT_DIR/time-lib.sh"
+
 # Default configuration
 DEFAULT_TIMEOUT=60
 MAX_RETRIES=3
@@ -59,35 +69,75 @@ RETRY_BASE_DELAY=5
 declare -A MODEL_PROVIDERS=(
     ["gpt-5.2"]="openai"
     ["gpt-5.2-codex"]="openai"
+    ["gpt-5.3-codex"]="openai"
     ["opus"]="anthropic"
-    ["claude-opus-4.5"]="anthropic"
+    ["claude-opus-4.6"]="anthropic"
+    ["claude-opus-4.5"]="anthropic"    # Backward compat alias → 4.6
     ["gemini-2.0"]="google"
 )
 
 declare -A MODEL_IDS=(
     ["gpt-5.2"]="gpt-5.2"
     ["gpt-5.2-codex"]="gpt-5.2-codex"
-    ["opus"]="claude-opus-4-5-20251101"
-    ["claude-opus-4.5"]="claude-opus-4-5-20251101"
+    ["gpt-5.3-codex"]="gpt-5.3-codex"
+    ["opus"]="claude-opus-4-6"
+    ["claude-opus-4.6"]="claude-opus-4-6"
+    ["claude-opus-4.5"]="claude-opus-4-6"              # Alias → current
     ["gemini-2.0"]="gemini-2.0-flash"
 )
 
 # Cost per 1K tokens (approximate, 2026-02 pricing)
+# Opus 4.6: $5/$25 per MTok → $0.005/$0.025 per 1K tokens
 declare -A COST_INPUT=(
     ["gpt-5.2"]="0.01"
     ["gpt-5.2-codex"]="0.015"
-    ["opus"]="0.015"
-    ["claude-opus-4.5"]="0.015"
+    ["gpt-5.3-codex"]="0.015"
+    ["opus"]="0.005"
+    ["claude-opus-4.6"]="0.005"
+    ["claude-opus-4.5"]="0.005"        # Alias → 4.6 pricing
     ["gemini-2.0"]="0.005"
 )
 
 declare -A COST_OUTPUT=(
     ["gpt-5.2"]="0.03"
     ["gpt-5.2-codex"]="0.06"
-    ["opus"]="0.075"
-    ["claude-opus-4.5"]="0.075"
+    ["gpt-5.3-codex"]="0.06"
+    ["opus"]="0.025"
+    ["claude-opus-4.6"]="0.025"
+    ["claude-opus-4.5"]="0.025"        # Alias → 4.6 pricing
     ["gemini-2.0"]="0.015"
 )
+
+# =============================================================================
+# Registry Validation
+# =============================================================================
+
+# Ensures all model keys are consistent across all four maps.
+# Catches cross-PR inconsistencies at startup rather than at call time.
+validate_model_registry() {
+    local errors=0
+    for key in "${!MODEL_IDS[@]}"; do
+        if [[ -z "${MODEL_PROVIDERS[$key]+x}" ]]; then
+            echo "ERROR: MODEL_PROVIDERS missing key: $key" >&2
+            ((errors+=1))
+        fi
+        if [[ -z "${COST_INPUT[$key]+x}" ]]; then
+            echo "ERROR: COST_INPUT missing key: $key" >&2
+            ((errors+=1))
+        fi
+        if [[ -z "${COST_OUTPUT[$key]+x}" ]]; then
+            echo "ERROR: COST_OUTPUT missing key: $key" >&2
+            ((errors+=1))
+        fi
+    done
+    if [[ $errors -gt 0 ]]; then
+        echo "ERROR: Model registry has $errors inconsistencies. Fix MODEL_* arrays in model-adapter.sh" >&2
+        return 1
+    fi
+    return 0
+}
+
+validate_model_registry || exit 2
 
 # =============================================================================
 # Logging
@@ -146,16 +196,19 @@ load_api_key() {
         return 0
     fi
 
-    # Try .env.local then .env
-    for env_file in ".env.local" ".env"; do
-        if [[ -f "$env_file" ]]; then
-            local key
-            key=$(grep -E "^${key_var}=" "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
-            if [[ -n "$key" ]]; then
-                echo "$key"
-                return 0
+    # Try .env.local then .env (both in current dir and project root)
+    for base_dir in "." "$PROJECT_ROOT"; do
+        for env_file in ".env.local" ".env"; do
+            local full_path="$base_dir/$env_file"
+            if [[ -f "$full_path" ]]; then
+                local key
+                key=$(grep -E "^${key_var}=" "$full_path" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+                if [[ -n "$key" ]]; then
+                    echo "$key"
+                    return 0
+                fi
             fi
-        fi
+        done
     done
 
     return 1
@@ -210,10 +263,10 @@ EOF
     curl_config=$(mktemp)
     trap "rm -f '$curl_config'" RETURN
     chmod 600 "$curl_config"
-    cat > "$curl_config" <<CURLCFG
+    cat > "$curl_config" <<'CURLCFG'
 header = "Content-Type: application/json"
-header = "Authorization: Bearer ${api_key}"
 CURLCFG
+    echo "header = \"Authorization: Bearer ${api_key}\"" >> "$curl_config"
 
     response=$(curl -s --max-time "$timeout" \
         --config "$curl_config" \
@@ -259,11 +312,11 @@ EOF
     curl_config=$(mktemp)
     trap "rm -f '$curl_config'" RETURN
     chmod 600 "$curl_config"
-    cat > "$curl_config" <<CURLCFG
-header = "x-api-key: ${api_key}"
+    cat > "$curl_config" <<'CURLCFG'
 header = "anthropic-version: 2023-06-01"
 header = "content-type: application/json"
 CURLCFG
+    echo "header = \"x-api-key: ${api_key}\"" >> "$curl_config"
 
     response=$(curl -s --max-time "$timeout" \
         --config "$curl_config" \
@@ -293,7 +346,7 @@ call_api_with_retry() {
     while [[ $attempt -le $max_retries ]]; do
         log "API call attempt $attempt/$max_retries (model: $model_id)"
 
-        start_time=$(date +%s%3N 2>/dev/null || date +%s)000
+        start_time=$(get_timestamp_ms)
 
         case "$provider" in
             openai)
@@ -338,7 +391,7 @@ call_api_with_retry() {
                 ;;
         esac
 
-        end_time=$(date +%s%3N 2>/dev/null || date +%s)000
+        end_time=$(get_timestamp_ms)
         latency_ms=$((end_time - start_time))
 
         # Check for error responses
@@ -459,6 +512,16 @@ EOF
 }
 EOF
                 ;;
+            dissent)
+                cat <<'EOF'
+{
+    "findings": [
+        {"id": "DISS-001", "severity": "BLOCKING", "category": "null-safety", "anchor": "src/example.ts:processInput", "anchor_type": "function", "scope": "diff", "description": "Mock: unchecked null dereference on user input", "failure_mode": "Runtime TypeError when input is undefined", "suggested_fix": "Add null check before processing"},
+        {"id": "DISS-002", "severity": "ADVISORY", "category": "error-handling", "anchor": "src/example.ts:handleError", "anchor_type": "function", "scope": "diff", "description": "Mock: error handler swallows original stack trace", "failure_mode": "Debugging difficulty in production", "suggested_fix": "Preserve cause chain with Error.cause"}
+    ]
+}
+EOF
+                ;;
         esac
     fi
 }
@@ -535,13 +598,15 @@ Usage: model-adapter.sh --model <model> --mode <mode> [options]
 
 Models:
   gpt-5.2, gpt-5.2-codex    OpenAI GPT-5.2 variants
-  opus, claude-opus-4.5     Claude Opus 4.5
+  gpt-5.3-codex             OpenAI GPT-5.3 Codex
+  opus, claude-opus-4.6     Claude Opus 4.6 (claude-opus-4.5 also accepted)
   gemini-2.0                Google Gemini 2.0 (future)
 
 Modes:
   review                    Generate improvements (10 items)
   skeptic                   Generate concerns (devil's advocate)
   score                     Score items (0-1000)
+  dissent                   Adversarial cross-model code/security review
 
 Options:
   --input <file>            Input document/items to process (required)
@@ -656,9 +721,9 @@ main() {
     fi
 
     # Validate mode
-    if [[ "$mode" != "review" && "$mode" != "skeptic" && "$mode" != "score" ]]; then
+    if [[ "$mode" != "review" && "$mode" != "skeptic" && "$mode" != "score" && "$mode" != "dissent" ]]; then
         error "Invalid mode: $mode"
-        echo "Valid modes: review, skeptic, score" >&2
+        echo "Valid modes: review, skeptic, score, dissent" >&2
         exit 2
     fi
 

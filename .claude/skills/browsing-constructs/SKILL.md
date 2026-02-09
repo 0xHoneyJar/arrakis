@@ -6,10 +6,11 @@ Provide a multi-select UI for browsing and installing packs from the Loa Constru
 
 ## Invocation
 
-- `/constructs` - Browse and install packs (default)
+- `/constructs` - Smart default: manage installed packs OR browse to install
 - `/constructs browse` - Browse available packs with selection UI
 - `/constructs install <pack>` - Install specific pack directly
 - `/constructs list` - List installed packs
+- `/constructs search <query>` - Search packs by name/description
 - `/constructs update` - Check for updates
 - `/constructs uninstall <pack>` - Remove a pack
 - `/constructs auth` - Check authentication status
@@ -39,7 +40,7 @@ Guide user through API key setup using AskUserQuestion:
 ```json
 {
   "questions": [{
-    "question": "Enter your Constructs API key (get from loa-constructs.dev/account):",
+    "question": "Enter your Constructs API key (get from www.constructs.network/account):",
     "header": "API Key",
     "multiSelect": false,
     "options": [
@@ -49,7 +50,7 @@ Guide user through API key setup using AskUserQuestion:
       },
       {
         "label": "I need to get a key first",
-        "description": "Opens browser to loa-constructs.dev/account"
+        "description": "Opens browser to www.constructs.network/account"
       },
       {
         "label": "Skip for now",
@@ -65,11 +66,35 @@ If user has key, prompt for it and run:
 .claude/scripts/constructs-auth.sh setup <api_key>
 ```
 
-### Action: browse (default)
+### Action: default (no args)
 
-#### Phase 0: Check Authentication
+**Smart routing based on installed state.**
 
-First, check auth status to determine which packs to show:
+#### Phase 0: Check Installed Packs FIRST
+
+```bash
+installed=$(.claude/scripts/constructs-loader.sh list 2>/dev/null)
+```
+
+**If packs ARE installed (output is non-empty):**
+- Show installed packs summary
+- Use AskUserQuestion with options:
+  - "Use installed packs" → List skills/commands available
+  - "Browse & install more" → Continue to browse flow
+  - "Manage installed" → Show update/uninstall options
+
+**If NO packs installed:**
+- Continue to browse flow (Phase 1+)
+
+---
+
+### Action: browse
+
+Browse and install packs from registry.
+
+#### Phase 1: Check Authentication
+
+Check auth status to determine which packs to show:
 
 ```bash
 auth_status=$(.claude/scripts/constructs-auth.sh status --json)
@@ -78,7 +103,7 @@ is_authenticated=$(echo "$auth_status" | jq -r '.authenticated')
 
 If not authenticated, show a note about premium packs requiring auth.
 
-#### Phase 1: Fetch Available Packs
+#### Phase 2: Fetch Available Packs
 
 Run the browse script to get available packs:
 
@@ -94,50 +119,118 @@ This returns a JSON array of packs with:
 - `tier` - "free" or "pro"
 - `icon` - Emoji icon
 
-#### Phase 2: Check Installed Packs
+#### Phase 3: Check Already Installed
 
 Check which packs are already installed:
 
 ```bash
-installed=$(.claude/scripts/constructs-loader.sh list --json 2>/dev/null || echo "[]")
+installed=$(.claude/scripts/constructs-loader.sh list 2>/dev/null)
 ```
 
-#### Phase 3: Present Multi-Select UI
+#### Phase 4: Present Pack Selection Table
 
-Use **AskUserQuestion** with `multiSelect: true` to present pack selection.
+Display ALL available packs in a numbered markdown table, then use AskUserQuestion for selection.
 
-Build options array from packs JSON. For each pack:
-- **label**: `"{icon} {name} ({skills_count} skills)"`
-- **description**: Pack description + tier indicator
+**Step 3a: Render Pack Table**
 
-Example:
+Generate a markdown table from the packs JSON with full details:
+
+```markdown
+## Available Packs
+
+| # | Pack | Description | Skills | Version | Status |
+|---|------|-------------|--------|---------|--------|
+| 1 | 🎨 Artisan | Brand and UI craftsmanship skills for design systems and motion | 10 | 1.0.2 | Free |
+| 2 | 👁️ Observer | User truth capture skills for hypothesis-first research | 6 | 1.0.2 | Free |
+| 3 | 🔔 Sigil of the Beacon | Signal readiness to the agent network with AI-retrievable content | 6 | 1.0.2 | Free |
+| 4 | 🧪 Crucible | Validation and testing skills for journey verification | 5 | 1.0.2 | ✓ Installed |
+| 5 | 🚀 GTM Collective | Go-To-Market skills for product launches and developer relations | 8 | 1.0.0 | Free |
 ```
+
+**Table columns:**
+- `#` - Row number (1-indexed)
+- `Pack` - Icon + name
+- `Description` - One-line description of what the pack does
+- `Skills` - Number of skills in pack
+- `Version` - Current version from registry
+- `Status` - Show tier and install state:
+  - `Free` - Free pack, not installed
+  - `Pro 🔒` - Pro pack, requires subscription
+  - `✓ Installed` - Already installed
+
+**Step 3b: Selection Prompt**
+
+Use AskUserQuestion with 3 options (NOT multiSelect):
+
+```json
 {
   "questions": [{
-    "question": "Select packs to install:",
-    "header": "Packs",
-    "multiSelect": true,
+    "question": "How would you like to install packs?",
+    "header": "Install",
+    "multiSelect": false,
     "options": [
       {
-        "label": "🔮 Observer (6 skills)",
-        "description": "User truth capture - interviews, personas, journey mapping"
+        "label": "Enter pack numbers",
+        "description": "Type numbers like: 1,3,5"
       },
       {
-        "label": "⚗️ Crucible (5 skills)",
-        "description": "Validation & testing - test plans, quality gates"
+        "label": "Install all",
+        "description": "Install all available packs"
       },
       {
-        "label": "🎨 Artisan (10 skills)",
-        "description": "Brand/UI craftsmanship - design systems, components"
+        "label": "Cancel",
+        "description": "Exit without installing"
       }
     ]
   }]
 }
 ```
 
-**Important**: Mark already-installed packs in the description (e.g., "✓ Installed").
+**Step 3c: Collect User Input**
 
-#### Phase 4: Install Selected Packs
+If user selects "Enter pack numbers":
+1. **Output text directly** (do NOT use AskUserQuestion): `"Enter pack numbers (comma-separated, e.g., 1,3,5):"`
+2. Wait for user's text response
+3. Parse the input using this grammar:
+   ```
+   input     ::= "all" | selection | ""
+   selection ::= number ("," number)*
+   number    ::= [0-9]+
+   ```
+3. Trim whitespace from input and between commas
+4. Convert each token to integer
+5. Validate: `1 <= n <= pack_count`
+6. Filter: Skip already-installed packs
+
+**Step 3d: Confirmation (Required)**
+
+Before installing, echo back the resolved selection:
+
+```
+You selected:
+  - Observer (#1)
+  - Artisan (#3)
+
+Proceed with installation? [Y/n]
+```
+
+**Retry Limits:**
+- Max 3 invalid input attempts
+- After 3 failures, abort with message: "Too many invalid attempts. Run `/constructs browse` to try again."
+
+**Edge Cases:**
+
+| Input | Behavior |
+|-------|----------|
+| `"1,3,5"` | Install packs 1, 3, 5 |
+| `"all"` | Install all non-installed packs |
+| `"1, 3, 5"` | Same as "1,3,5" (whitespace tolerant) |
+| `"1,99,3"` | Warn about 99, install 1 and 3 |
+| `""` | Re-prompt (counts as invalid attempt) |
+| `"abc"` | Error, re-prompt (counts as invalid attempt) |
+| 3 failures | Abort with "Too many invalid attempts" |
+
+#### Phase 5: Install Selected Packs
 
 For each selected pack, run installation:
 
@@ -150,7 +243,7 @@ Capture output and track:
 - Skills installed
 - Commands available
 
-#### Phase 5: Report Results
+#### Phase 6: Report Results
 
 Present installation summary:
 
@@ -183,6 +276,27 @@ Show installed packs:
 ```bash
 .claude/scripts/constructs-loader.sh list
 ```
+
+### Action: search <query>
+
+Search packs by name, description, or slug.
+
+```bash
+.claude/scripts/constructs-browse.sh search "<query>"
+```
+
+**Display results** as a table:
+```markdown
+## Search Results for "validation"
+
+| # | Pack | Description | Skills | Version | Status |
+|---|------|-------------|--------|---------|--------|
+| 1 | 🧪 Crucible | Validation and testing skills for journey verification | 5 | 1.0.2 | Free |
+```
+
+**If no results:** Suggest broadening the search or browsing all packs with `/constructs browse`.
+
+> **Note:** Currently searches at pack level. Skill-level search is tracked in [loa-constructs#93](https://github.com/0xHoneyJar/loa-constructs/issues/93).
 
 ### Action: update
 
@@ -235,12 +349,13 @@ When building AskUserQuestion options:
 4. **Description**: What it does
 5. **Status**: Installed marker if applicable
 
-### Maximum Options
+### Scalable Pack Display
 
-AskUserQuestion supports 2-4 options per question. If more than 4 packs available:
-- Show top 4 most relevant/popular
-- Add "Show more packs..." option
-- Chain multiple questions if needed
+The table-based approach handles unlimited packs:
+- ALL packs displayed in numbered table (no 4-option limit)
+- User selects by entering numbers (comma-separated)
+- Supports "all" keyword for bulk installation
+- Confirmation step before installation
 
 ### Tier Indicators
 
@@ -293,7 +408,7 @@ API keys can be configured in three ways (checked in order):
 
 ### Getting an API Key
 
-1. Visit https://loa-constructs.dev/account
+1. Visit https://www.constructs.network/account
 2. Sign in or create an account
 3. Generate an API key
 4. Run `/constructs auth setup` and paste the key

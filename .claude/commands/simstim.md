@@ -15,6 +15,33 @@ Orchestrate the complete Loa development cycle with integrated Flatline Protocol
 | Flatline results | BLOCKER halts workflow | BLOCKER shown to you, you decide |
 | Implementation | Integrated into workflow | Hands off to /run sprint-plan |
 
+## Getting Started
+
+You can provide as much context as you want when invoking simstim:
+
+```bash
+# Simple invocation
+/simstim
+
+# With context — works great!
+/simstim I want to build a user authentication system with OAuth2,
+         JWT tokens, and role-based access control
+
+# For large context, use the context directory
+# Put files in grimoires/loa/context/ first, then:
+/simstim
+```
+
+### How It Works
+
+Simstim guides you through 8 phases:
+
+1. **Phases 1-6** are interactive — you answer questions and make decisions
+2. **Phase 7** runs autonomously via `/run sprint-plan`
+3. Each phase completes fully before the next begins
+
+**Note**: Simstim has its own workflow structure and does NOT use Claude Code's Plan Mode.
+
 ## Usage
 
 ```bash
@@ -57,19 +84,74 @@ Orchestrate the complete Loa development cycle with integrated Flatline Protocol
 
 | Phase | Name | Description |
 |-------|------|-------------|
-| 0 | PREFLIGHT | Validate configuration, check state |
+| 0 | PREFLIGHT | Validate config, check state, **beads health** |
 | 1 | DISCOVERY | Create PRD interactively |
 | 2 | FLATLINE PRD | Multi-model review of PRD |
 | 3 | ARCHITECTURE | Create SDD interactively |
 | 4 | FLATLINE SDD | Multi-model review of SDD |
 | 5 | PLANNING | Create sprint plan interactively |
 | 6 | FLATLINE SPRINT | Multi-model review of sprint plan |
+| 6.5 | FLATLINE BEADS | Iterative task graph refinement (v1.28.0) |
 | 7 | IMPLEMENTATION | Autonomous execution via /run sprint-plan |
 | 8 | COMPLETE | Summary and cleanup |
 
+## Flatline Beads Loop (v1.28.0)
+
+Phase 6.5 runs the "Check your beads N times, implement once" pattern when beads_rust is installed:
+
+```bash
+# Automatically triggered after FLATLINE SPRINT if:
+# 1. beads_rust (br) is installed
+# 2. Beads have been created from sprint tasks
+# 3. flatline.beads_loop is enabled in config (default: true)
+```
+
+### What Happens
+
+1. **Export**: Current beads are exported to JSON
+2. **Review**: Flatline Protocol reviews task graph for:
+   - Granularity problems (tasks too large/vague)
+   - Dependency issues (missing, cycles, ordering)
+   - Completeness gaps (missing tasks)
+   - Clarity problems (ambiguous acceptance criteria)
+3. **Apply**: HIGH_CONSENSUS suggestions auto-integrate
+4. **Iterate**: Repeat until changes < 5% for 2 consecutive iterations
+5. **Sync**: Final state synced to git
+
+### Progress Display
+
+```
+FLATLINE BEADS LOOP
+════════════════════════════════════════════════════════════
+
+Iteration 1/6...
+  HIGH_CONSENSUS: 3, DISPUTED: 1, BLOCKERS: 0
+  Change: 15%
+
+Iteration 2/6...
+  HIGH_CONSENSUS: 1, DISPUTED: 0, BLOCKERS: 0
+  Change: 8%
+
+Iteration 3/6...
+  HIGH_CONSENSUS: 0, DISPUTED: 0, BLOCKERS: 0
+  Change: 2%
+
+FLATLINE DETECTED
+════════════════════════════════════════════════════════════
+Task graph stabilized after 3 iterations.
+```
+
+### Skip Conditions
+
+The phase is skipped when:
+- beads_rust not installed (silent skip)
+- No beads created from sprint tasks
+- `simstim.flatline.beads_loop: false` in config
+- User chooses to skip when prompted
+
 ## Flatline Integration (HITL Mode)
 
-During Flatline review phases (2, 4, 6), findings are categorized:
+During Flatline review phases (2, 4, 6, 6.5), findings are categorized:
 
 | Category | Criteria | Action |
 |----------|----------|--------|
@@ -233,6 +315,44 @@ If Flatline API times out:
 - Workflow continues to next planning phase
 - Warning logged to trajectory
 
+## Beads-First Preflight (v1.29.0)
+
+Phase 0 includes comprehensive beads health checking. Beads task tracking is the EXPECTED DEFAULT.
+
+### Preflight Check
+
+```bash
+health=$(.claude/scripts/beads/beads-health.sh --quick --json)
+status=$(echo "$health" | jq -r '.status')
+```
+
+### Status Handling
+
+| Status | Action |
+|--------|--------|
+| `HEALTHY` | Proceed silently |
+| `DEGRADED` | Warn about Phase 6.5 impact, proceed |
+| `NOT_INSTALLED`/`NOT_INITIALIZED` | Warn that Phase 6.5 will be skipped |
+| `MIGRATION_NEEDED`/`UNHEALTHY` | Warn, recommend fix, proceed |
+
+### Phase 6.5 Impact
+
+If beads unavailable, Phase 6.5 (FLATLINE BEADS) will be skipped:
+
+```
+Beads Health: NOT_INSTALLED
+Phase 6.5 (Flatline Beads Loop) will be skipped.
+
+To enable full workflow:
+  cargo install beads_rust && br init
+
+Continuing without beads...
+```
+
+### Protocol Reference
+
+See `.claude/protocols/beads-preflight.md` for full specification.
+
 ## Configuration
 
 Enable in `.loa.config.yaml`:
@@ -246,10 +366,12 @@ simstim:
     auto_accept_high_consensus: true
     show_disputed: true
     show_blockers: true
+    beads_loop: true    # Enable Flatline Beads Loop (v1.28.0)
     phases:
       - prd
       - sdd
       - sprint
+      - beads
 
   # Default options
   defaults:

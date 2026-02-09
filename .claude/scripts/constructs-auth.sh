@@ -73,7 +73,7 @@ cmd_status() {
         echo "  Premium packs require an API key."
         echo ""
         echo "  To authenticate:"
-        echo "    1. Get your API key from https://loa-constructs.dev/account"
+        echo "    1. Get your API key from https://www.constructs.network/account"
         echo "    2. Run: /constructs auth setup"
         echo "    3. Or set: export LOA_CONSTRUCTS_API_KEY=sk_your_key"
         echo ""
@@ -93,7 +93,7 @@ cmd_setup() {
         echo "" >&2
         echo "Usage: constructs-auth.sh setup <api_key>" >&2
         echo "" >&2
-        echo "Get your API key from: https://loa-constructs.dev/account" >&2
+        echo "Get your API key from: https://www.constructs.network/account" >&2
         return 1
     fi
     
@@ -102,19 +102,16 @@ cmd_setup() {
         echo "WARNING: API key should start with 'sk_'" >&2
     fi
     
-    # Create credentials directory
+    # Create credentials directory with restrictive permissions
     mkdir -p "$(dirname "$CREDS_FILE")"
-    
-    # Write credentials file with secure permissions
-    cat > "$CREDS_FILE" << EOF
-{
-  "api_key": "$api_key",
-  "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-EOF
-    
-    # Set secure permissions
-    chmod 600 "$CREDS_FILE"
+
+    # Write credentials file with secure permissions (SHELL-004: umask before creation)
+    # SHELL-012: Use jq for safe JSON construction instead of heredoc interpolation
+    (
+        umask 077
+        jq -n --arg key "$api_key" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{api_key: $key, created_at: $date}' > "$CREDS_FILE"
+    )
     
     echo ""
     echo "✅ API key saved to $CREDS_FILE"
@@ -155,9 +152,16 @@ cmd_validate() {
     local response
     local http_code
     
+    # SHELL-002: Use curl config file to avoid exposing API key in process list
+    local curl_config
+    curl_config=$(mktemp)
+    chmod 600 "$curl_config"
+    echo "header = \"Authorization: Bearer ${api_key}\"" > "$curl_config"
+
     http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-        -H "Authorization: Bearer $api_key" \
+        --config "$curl_config" \
         "${registry_url}/auth/validate" 2>/dev/null || echo "000")
+    rm -f "$curl_config"
     
     case "$http_code" in
         200|204)
@@ -250,7 +254,7 @@ Usage:
   constructs-auth.sh status --json    Status as JSON (for UI)
 
 Get your API key:
-  https://loa-constructs.dev/account
+  https://www.constructs.network/account
 
 Examples:
   constructs-auth.sh status

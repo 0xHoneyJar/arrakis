@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GPT 5.2 API interaction for cross-model review
+# GPT 5.2/5.3 API interaction for cross-model review
 #
 # Usage: gpt-review-api.sh <review_type> <content_file> [options]
 #
@@ -37,6 +37,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROMPTS_DIR="${SCRIPT_DIR}/../prompts/gpt-review/base"
 CONFIG_FILE=".loa.config.yaml"
 
+# Require bash 4.0+ (associative arrays)
+# shellcheck source=bash-version-guard.sh
+source "$SCRIPT_DIR/bash-version-guard.sh"
+
 # Default models per review type
 declare -A DEFAULT_MODELS=(
   ["prd"]="gpt-5.2"
@@ -62,6 +66,13 @@ RETRY_DELAY=5
 
 # Default max iterations before auto-approve
 DEFAULT_MAX_ITERATIONS=3
+
+# Default token budget for content (rough estimate: bytes / 4)
+# 30k tokens ≈ 120k chars — leaves room for system prompt + context in 128k window
+DEFAULT_MAX_REVIEW_TOKENS=30000
+
+# System zone alert (default: true for code reviews)
+SYSTEM_ZONE_ALERT="${GPT_REVIEW_SYSTEM_ZONE_ALERT:-true}"
 
 log() {
   echo "[gpt-review-api] $*" >&2
@@ -159,8 +170,55 @@ load_config() {
     if [[ -n "$code_model" && "$code_model" != "null" ]]; then
       DEFAULT_MODELS["code"]="$code_model"
     fi
+
+    # Large diff handling config (#226)
+    local max_tokens_val sza_val
+    max_tokens_val=$(yq eval '.gpt_review.max_review_tokens // ""' "$CONFIG_FILE" 2>/dev/null || echo "")
+    if [[ -n "$max_tokens_val" && "$max_tokens_val" != "null" ]]; then
+      DEFAULT_MAX_REVIEW_TOKENS="$max_tokens_val"
+    fi
+    sza_val=$(yq eval '.gpt_review.system_zone_alert // ""' "$CONFIG_FILE" 2>/dev/null || echo "")
+    if [[ -n "$sza_val" && "$sza_val" != "null" ]]; then
+      SYSTEM_ZONE_ALERT="$sza_val"
+    fi
   fi
 }
+
+# =============================================================================
+# System Zone Detection (#226)
+# =============================================================================
+# Detects when review content contains changes to .claude/ (System Zone).
+# System zone files affect framework behavior for ALL future agent sessions
+# and require elevated security scrutiny.
+
+# Detect system zone changes in diff/content
+# Outputs system zone file paths to stdout (one per line)
+# Returns: 0 if system zone changes detected, 1 otherwise
+detect_system_zone_changes() {
+  local content="$1"
+
+  # Match diff headers referencing .claude/ paths
+  local system_files
+  system_files=$(printf '%s' "$content" | grep -oE '(\+\+\+ b/|diff --git a/)\.claude/[^ ]+' \
+    | sed 's|^+++ b/||;s|^diff --git a/||' | sort -u) || true
+
+  if [[ -n "$system_files" ]]; then
+    echo "$system_files"
+    return 0
+  fi
+
+  return 1
+}
+
+# =============================================================================
+# Shared Content Processing Functions
+# =============================================================================
+# file_priority(), estimate_tokens(), prepare_content() are defined in
+# lib-content.sh — a shared library also used by adversarial-review.sh.
+# Sourced here to maintain single source of truth.
+# See: Bridgebuilder Review Finding #1 (PR #235)
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-content.sh"
 
 # Build the system prompt for first review
 # Structure: [Domain Expertise] + [Review Instructions]
@@ -305,14 +363,29 @@ EOF
     log "API call attempt $attempt/$MAX_RETRIES (model: $model, timeout: ${timeout}s)"
 
     # Make API call with timeout
-    local curl_output
+    # Security: Use curl config file to avoid exposing API key in process list (SHELL-001)
+    local curl_config
+    curl_config=$(mktemp)
+    chmod 600 "$curl_config"
+    cat > "$curl_config" <<'CURLCFG'
+header = "Content-Type: application/json"
+CURLCFG
+    echo "header = \"Authorization: Bearer ${OPENAI_API_KEY}\"" >> "$curl_config"
+
+    # Write payload to temp file to avoid bash argument size limits (SHELL-002)
+    local payload_file
+    payload_file=$(mktemp)
+    chmod 600 "$payload_file"
+    printf '%s' "$payload" > "$payload_file"
+
+    local curl_output curl_exit
     curl_output=$(curl -s -w "\n%{http_code}" \
       --max-time "$timeout" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer ${OPENAI_API_KEY}" \
-      -d "$payload" \
+      --config "$curl_config" \
+      -d "@${payload_file}" \
       "$api_url" 2>&1) || {
-        local curl_exit=$?
+        curl_exit=$?
+        rm -f "$curl_config" "$payload_file"
         if [[ $curl_exit -eq 28 ]]; then
           error "API call timed out after ${timeout}s (attempt $attempt)"
           if [[ $attempt -lt $MAX_RETRIES ]]; then
@@ -326,6 +399,9 @@ EOF
         error "curl failed with exit code $curl_exit"
         exit 1
       }
+
+    # Clean up curl config and payload file
+    rm -f "$curl_config" "$payload_file"
 
     # Extract HTTP code from last line
     http_code=$(echo "$curl_output" | tail -1)
@@ -428,6 +504,7 @@ Options:
   --context <file>       Product/feature context file (USER prompt - WHAT we're reviewing)
   --iteration <N>        Review iteration (1 = first, 2+ = re-review)
   --previous <file>      Previous findings JSON (required for iteration > 1)
+  --output <file>        Write JSON response to file (in addition to stdout)
 
 Prompt Structure:
   SYSTEM: [Domain Expertise from --expertise] + [Review Instructions]
@@ -457,6 +534,7 @@ main() {
   local context_file=""
   local iteration=1
   local previous_file=""
+  local output_file=""
 
   # Parse arguments
   while [[ $# -gt 0 ]]; do
@@ -475,6 +553,10 @@ main() {
         ;;
       --previous)
         previous_file="$2"
+        shift 2
+        ;;
+      --output)
+        output_file="$2"
         shift 2
         ;;
       --help|-h)
@@ -646,7 +728,8 @@ EOF
   # Check for max iterations auto-approve
   if [[ "$iteration" -gt "$MAX_ITERATIONS" ]]; then
     log "Iteration $iteration exceeds max_iterations ($MAX_ITERATIONS) - auto-approving"
-    cat <<EOF
+    local auto_response
+    auto_response=$(cat <<EOF
 {
   "verdict": "APPROVED",
   "summary": "Auto-approved after $MAX_ITERATIONS iterations (max_iterations reached)",
@@ -655,6 +738,13 @@ EOF
   "note": "Review converged by iteration limit. Consider adjusting max_iterations in config if needed."
 }
 EOF
+    )
+    if [[ -n "$output_file" ]]; then
+      mkdir -p "$(dirname "$output_file")"
+      echo "$auto_response" > "$output_file"
+      log "Findings written to: $output_file"
+    fi
+    echo "$auto_response"
     exit 0
   fi
 
@@ -691,23 +781,69 @@ EOF
   local raw_content
   raw_content=$(cat "$content_file")
 
+  # ── System Zone Detection (#226) ──────────────────
+  local system_zone_warning=""
+  if [[ "$SYSTEM_ZONE_ALERT" == "true" ]]; then
+    local system_zone_files=""
+    if system_zone_files=$(detect_system_zone_changes "$raw_content"); then
+      local file_list
+      file_list=$(echo "$system_zone_files" | tr '\n' ', ' | sed 's/,$//')
+      system_zone_warning="SYSTEM ZONE (.claude/) CHANGES DETECTED. These files affect framework behavior for ALL future agent sessions. Apply ELEVATED security scrutiny: ${file_list}"
+      log "WARNING: $system_zone_warning"
+    fi
+  fi
+
+  # ── Smart Content Preparation (#226) ──────────────
+  local max_review_tokens="${GPT_REVIEW_MAX_TOKENS:-$DEFAULT_MAX_REVIEW_TOKENS}"
+  local prepared_content
+  prepared_content=$(prepare_content "$raw_content" "$max_review_tokens")
+
+  # Prepend system zone warning to content if detected
+  if [[ -n "$system_zone_warning" ]]; then
+    prepared_content=">>> ${system_zone_warning}"$'\n\n'"${prepared_content}"
+  fi
+
   # Build user prompt with context
   # User prompt = [Product Context] + [Feature Context] + [Content to Review]
   local user_prompt
-  user_prompt=$(build_user_prompt "$context_file" "$raw_content")
+  user_prompt=$(build_user_prompt "$context_file" "$prepared_content")
 
   # Call API with separated prompts
   local response
   response=$(call_api "$model" "$system_prompt" "$user_prompt" "$timeout")
 
-  # Add iteration to response
-  response=$(echo "$response" | jq --arg iter "$iteration" '. + {iteration: ($iter | tonumber)}')
+  # Add metadata to response
+  local metadata_args=(--arg iter "$iteration")
+  local metadata_jq='. + {iteration: ($iter | tonumber)}'
+
+  if [[ -n "$system_zone_warning" ]]; then
+    metadata_args+=(--argjson system_zone "true")
+    metadata_jq+='' # system_zone added via argjson below
+  fi
+
+  response=$(echo "$response" | jq "${metadata_args[@]}" "$metadata_jq")
+
+  # Add system_zone flag if detected
+  if [[ -n "$system_zone_warning" ]]; then
+    response=$(echo "$response" | jq '. + {system_zone_detected: true}')
+  fi
 
   # Sanitize output: strip ANSI escape codes and control characters
   # Defensive measure against malicious API responses
   response=$(echo "$response" | tr -d '\033' | tr -d '\000-\010\013\014\016-\037')
 
-  # Output response
+  # Write to output file if --output specified (Issue #249)
+  if [[ -n "$output_file" ]]; then
+    local output_dir
+    output_dir=$(dirname "$output_file")
+    if [[ ! -d "$output_dir" ]]; then
+      mkdir -p "$output_dir"
+    fi
+    echo "$response" > "$output_file"
+    log "Findings written to: $output_file"
+  fi
+
+  # Output response to stdout (always, for backward compat)
   echo "$response"
 }
 

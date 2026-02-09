@@ -4,88 +4,104 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :white_check_mark: |
-| < 5.0   | :x:                |
+| 0.2.x   | :white_check_mark: |
+| 0.1.x   | :white_check_mark: |
+| < 0.1   | :x:                |
 
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security issue, please report it responsibly.
+We take security seriously. If you discover a security vulnerability, please follow these steps:
 
-### How to Report
+### For Private Disclosure (Preferred)
 
-**Do NOT create a public GitHub issue for security vulnerabilities.**
+1. **Do NOT create a public GitHub issue**
+2. **Email the security team** at jani@0xhoneyjar.xyz with:
+   - Description of the vulnerability
+   - Steps to reproduce
+   - Potential impact assessment
+   - Any suggested fixes (optional)
 
-Instead, please report security vulnerabilities by emailing:
+3. **Expect a response within 48 hours**
 
-**security@0xhoneyjar.xyz**
+4. **Coordinate disclosure timeline** with maintainers
 
-### What to Include
+### What to Report
 
-Please include the following information in your report:
+- Authentication/authorization bypasses
+- Injection vulnerabilities (command, code, etc.)
+- Secrets exposure risks
+- Insecure default configurations
+- Agent prompt injection vectors
+- MCP server security issues
 
-- Type of vulnerability (e.g., SQL injection, XSS, authentication bypass)
-- Full path(s) of the affected source file(s)
-- Step-by-step instructions to reproduce the issue
-- Proof-of-concept or exploit code (if possible)
-- Impact assessment of the vulnerability
+### What NOT to Report
 
-### Response Timeline
-
-- **Initial Response**: Within 48 hours
-- **Status Update**: Within 7 days
-- **Resolution Target**: Within 30 days (depending on severity)
-
-### What to Expect
-
-1. **Acknowledgment**: We will acknowledge receipt of your report within 48 hours
-2. **Assessment**: Our security team will assess the vulnerability and determine its severity
-3. **Updates**: We will keep you informed of our progress
-4. **Resolution**: Once fixed, we will notify you before public disclosure
-5. **Credit**: With your permission, we will credit you in our security advisory
+- Vulnerabilities in dependencies (report to upstream)
+- Social engineering attacks
+- Physical security issues
+- Denial of service (unless critical)
 
 ## Security Measures
 
-Arrakis implements the following security controls:
+### Automated Security Scanning
 
-### Data Protection
-- Row-Level Security (RLS) for multi-tenant isolation
-- Encryption at rest (AWS KMS)
-- TLS 1.3 for all data in transit
-- PII scrubbing in application logs
+This repository uses:
 
-### Authentication & Authorization
-- API key authentication with HMAC-SHA256
-- Rate limiting per tenant
-- Webhook signature verification
+- **TruffleHog** - Secret detection
+- **GitLeaks** - Secret scanning
+- **Dependabot** - Dependency vulnerability alerts
+- **CodeQL** - Static code analysis
 
-### Infrastructure Security
-- Private subnets for compute and data layers
-- VPC Flow Logs for network monitoring
-- AWS WAF for edge protection
-- HashiCorp Vault for secrets management
+### Branch Protection
 
-### Compliance
-- SOC 2 Type II controls mapped
-- GDPR compliant data handling
-- Regular security audits
+The `main` branch is protected with:
+
+- Required pull request reviews
+- Required status checks
+- No force pushes
+- No deletions
+
+### Secrets Management
+
+- All secrets must use environment variables
+- No hardcoded credentials in code
+- `.env` files are gitignored
+- Secret rotation procedures documented
+
+## Security Best Practices for Contributors
+
+### When Adding New Features
+
+1. **Never commit secrets** - Use environment variables
+2. **Validate all inputs** - Especially in agent prompts
+3. **Sanitize outputs** - Prevent information disclosure
+4. **Review MCP integrations** - External APIs need security review
+
+### When Using MCP Servers
+
+1. Use minimal required permissions
+2. Validate data from external sources
+3. Handle errors without exposing sensitive info
+4. Test with mock data before production
+
+## Vulnerability Disclosure Timeline
+
+| Day | Action |
+|-----|--------|
+| 0 | Vulnerability reported |
+| 1-2 | Acknowledgment sent |
+| 3-7 | Initial assessment complete |
+| 8-30 | Fix developed and tested |
+| 31-45 | Coordinated disclosure (if approved) |
 
 ## Security Updates
 
-Security updates are released as patch versions (e.g., 5.1.1) and announced via:
+Security updates are announced via:
 
 - GitHub Security Advisories
-- Release notes in CHANGELOG.md
+- CHANGELOG.md updates
+- Discord announcements (for critical issues)
 
-We recommend keeping your deployment up to date with the latest patch version.
+---
 
-## Scope
-
-This security policy applies to:
-
-- The Arrakis SaaS platform
-- The sietch-service API
-- Discord and Telegram bot integrations
-- Official documentation
-
-Third-party dependencies are covered by their respective security policies.
+Thank you for helping keep Loa secure!

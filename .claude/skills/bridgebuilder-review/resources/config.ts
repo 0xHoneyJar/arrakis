@@ -1,0 +1,369 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { readFile } from "node:fs/promises";
+import type { BridgebuilderConfig } from "./core/types.js";
+
+const execFileAsync = promisify(execFile);
+
+/** Built-in defaults per PRD FR-4 (lowest priority). */
+const DEFAULTS: BridgebuilderConfig = {
+  repos: [],
+  model: "claude-sonnet-4-5-20250929",
+  maxPrs: 10,
+  maxFilesPerPr: 50,
+  maxDiffBytes: 100_000,
+  maxInputTokens: 8_000,
+  maxOutputTokens: 4_000,
+  dimensions: ["security", "quality", "test-coverage"],
+  reviewMarker: "bridgebuilder-review",
+  personaPath: "grimoires/bridgebuilder/BEAUVOIR.md",
+  dryRun: false,
+  excludePatterns: [],
+  sanitizerMode: "default",
+  maxRuntimeMinutes: 30,
+};
+
+export interface CLIArgs {
+  dryRun?: boolean;
+  repos?: string[];
+  pr?: number;
+  noAutoDetect?: boolean;
+}
+
+export interface YamlConfig {
+  enabled?: boolean;
+  repos?: string[];
+  model?: string;
+  max_prs?: number;
+  max_files_per_pr?: number;
+  max_diff_bytes?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  dimensions?: string[];
+  review_marker?: string;
+  persona_path?: string;
+  exclude_patterns?: string[];
+  sanitizer_mode?: "default" | "strict";
+  max_runtime_minutes?: number;
+}
+
+export interface EnvVars {
+  BRIDGEBUILDER_REPOS?: string;
+  BRIDGEBUILDER_MODEL?: string;
+  BRIDGEBUILDER_DRY_RUN?: string;
+}
+
+/**
+ * Parse CLI arguments from process.argv.
+ */
+export function parseCLIArgs(argv: string[]): CLIArgs {
+  const args: CLIArgs = {};
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--dry-run") {
+      args.dryRun = true;
+    } else if (arg === "--no-auto-detect") {
+      args.noAutoDetect = true;
+    } else if (arg === "--repo" && i + 1 < argv.length) {
+      args.repos = args.repos ?? [];
+      args.repos.push(argv[++i]);
+    } else if (arg === "--pr" && i + 1 < argv.length) {
+      const n = Number(argv[++i]);
+      if (isNaN(n) || n <= 0) {
+        throw new Error(`Invalid --pr value: ${argv[i]}. Must be a positive integer.`);
+      }
+      args.pr = n;
+    }
+  }
+
+  return args;
+}
+
+/**
+ * Auto-detect owner/repo from git remote -v.
+ */
+async function autoDetectRepo(): Promise<{ owner: string; repo: string } | null> {
+  try {
+    const { stdout } = await execFileAsync("git", ["remote", "-v"], {
+      timeout: 5_000,
+    });
+    // Match first line: origin	git@github.com:owner/repo.git (fetch)
+    // or:               origin	https://github.com/owner/repo.git (fetch)
+    const match = stdout.match(
+      /(?:github\.com)[:/]([^/\s]+)\/([^/\s.]+?)(?:\.git)?\s/,
+    );
+    if (match) {
+      return { owner: match[1], repo: match[2] };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse "owner/repo" string into components.
+ */
+function parseRepoString(s: string): { owner: string; repo: string } {
+  const parts = s.split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(
+      `Invalid repo format: "${s}". Expected "owner/repo".`,
+    );
+  }
+  return { owner: parts[0], repo: parts[1] };
+}
+
+// Decision: Pure regex YAML parser over yaml/js-yaml library.
+// Zero runtime dependencies is a hard constraint for this skill (PRD NFR-1).
+// The config surface is flat key:value pairs + simple lists — no anchors, aliases,
+// multi-line strings, or nested objects needed. A full YAML parser (~50KB min)
+// would add attack surface and supply chain risk for features we don't use.
+// If nested config objects are ever needed, swap to js-yaml behind this function.
+/**
+ * Load YAML config from .loa.config.yaml if it exists.
+ * Uses a simple key:value parser — no YAML library dependency.
+ * Supports scalar values and YAML list syntax (- item).
+ */
+async function loadYamlConfig(): Promise<YamlConfig> {
+  try {
+    const content = await readFile(".loa.config.yaml", "utf-8");
+    // Find bridgebuilder section
+    const match = content.match(/^bridgebuilder:\s*\n((?:\s+.+\n?)*)/m);
+    if (!match) return {};
+
+    const section = match[1];
+    const config: YamlConfig = {};
+    const lines = section.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const kv = lines[i].match(/^\s+([\w_]+):\s*(.*)/);
+      if (!kv) continue;
+      const [, key, rawValue] = kv;
+      const value = rawValue.replace(/#.*$/, "").trim().replace(/^["']|["']$/g, "");
+
+      // Check if next lines are YAML list items (- value)
+      if (value === "" || value === undefined) {
+        const items: string[] = [];
+        while (i + 1 < lines.length) {
+          const listItem = lines[i + 1].match(/^\s+-\s+(.+)/);
+          if (!listItem) break;
+          items.push(listItem[1].replace(/#.*$/, "").trim().replace(/^["']|["']$/g, ""));
+          i++;
+        }
+        if (items.length > 0) {
+          switch (key) {
+            case "repos":
+              config.repos = items;
+              break;
+            case "dimensions":
+              config.dimensions = items;
+              break;
+            case "exclude_patterns":
+              config.exclude_patterns = items;
+              break;
+          }
+          continue;
+        }
+      }
+
+      switch (key) {
+        case "enabled":
+          config.enabled = value === "true";
+          break;
+        case "model":
+          config.model = value;
+          break;
+        case "max_prs":
+          config.max_prs = Number(value);
+          break;
+        case "max_files_per_pr":
+          config.max_files_per_pr = Number(value);
+          break;
+        case "max_diff_bytes":
+          config.max_diff_bytes = Number(value);
+          break;
+        case "max_input_tokens":
+          config.max_input_tokens = Number(value);
+          break;
+        case "max_output_tokens":
+          config.max_output_tokens = Number(value);
+          break;
+        case "review_marker":
+          config.review_marker = value;
+          break;
+        case "persona_path":
+          config.persona_path = value;
+          break;
+        case "sanitizer_mode":
+          if (value === "default" || value === "strict") {
+            config.sanitizer_mode = value;
+          }
+          break;
+        case "max_runtime_minutes":
+          config.max_runtime_minutes = Number(value);
+          break;
+      }
+    }
+
+    return config;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Resolve config using 5-level precedence: CLI > env > yaml > auto-detect > defaults.
+ * Returns config and provenance (where each key value came from).
+ */
+export async function resolveConfig(
+  cliArgs: CLIArgs,
+  env: EnvVars,
+  yamlConfig?: YamlConfig,
+): Promise<{ config: BridgebuilderConfig; provenance: ConfigProvenance }> {
+  const yaml = yamlConfig ?? (await loadYamlConfig());
+
+  // Check enabled flag from YAML
+  if (yaml.enabled === false) {
+    throw new Error(
+      "Bridgebuilder is disabled in .loa.config.yaml. Set bridgebuilder.enabled: true to enable.",
+    );
+  }
+
+  // Build repos list: first-non-empty-wins (CLI > env > yaml > auto-detect)
+  let repos: Array<{ owner: string; repo: string }> = [];
+  let reposSource: ConfigSource = "default";
+
+  // CLI --repo flags (highest priority)
+  if (cliArgs.repos?.length) {
+    for (const r of cliArgs.repos) {
+      repos.push(parseRepoString(r));
+    }
+    reposSource = "cli";
+  }
+
+  // Env BRIDGEBUILDER_REPOS (comma-separated) — only if CLI didn't set repos
+  if (repos.length === 0 && env.BRIDGEBUILDER_REPOS) {
+    for (const r of env.BRIDGEBUILDER_REPOS.split(",")) {
+      const trimmed = r.trim();
+      if (trimmed) repos.push(parseRepoString(trimmed));
+    }
+    if (repos.length > 0) reposSource = "env";
+  }
+
+  // YAML repos — only if no higher-priority source set repos
+  if (repos.length === 0 && yaml.repos?.length) {
+    for (const r of yaml.repos) {
+      repos.push(parseRepoString(r));
+    }
+    reposSource = "yaml";
+  }
+
+  // Auto-detect (unless --no-auto-detect) — only if no explicit repos configured
+  if (repos.length === 0 && !cliArgs.noAutoDetect) {
+    const detected = await autoDetectRepo();
+    if (detected) {
+      repos.push(detected);
+      reposSource = "auto-detect";
+    }
+  }
+
+  if (repos.length === 0) {
+    throw new Error(
+      "No repos configured. Use --repo owner/repo, set BRIDGEBUILDER_REPOS, or run from a git repo.",
+    );
+  }
+
+  // Track model provenance
+  const modelSource: ConfigSource = env.BRIDGEBUILDER_MODEL
+    ? "env"
+    : yaml.model
+      ? "yaml"
+      : "default";
+
+  // Track dryRun provenance
+  const dryRunSource: ConfigSource = cliArgs.dryRun != null
+    ? "cli"
+    : env.BRIDGEBUILDER_DRY_RUN === "true"
+      ? "env"
+      : "default";
+
+  // Resolve remaining fields: CLI > env > yaml > defaults
+  const config: BridgebuilderConfig = {
+    repos,
+    model:
+      env.BRIDGEBUILDER_MODEL ?? yaml.model ?? DEFAULTS.model,
+    maxPrs: yaml.max_prs ?? DEFAULTS.maxPrs,
+    maxFilesPerPr: yaml.max_files_per_pr ?? DEFAULTS.maxFilesPerPr,
+    maxDiffBytes: yaml.max_diff_bytes ?? DEFAULTS.maxDiffBytes,
+    maxInputTokens: yaml.max_input_tokens ?? DEFAULTS.maxInputTokens,
+    maxOutputTokens: yaml.max_output_tokens ?? DEFAULTS.maxOutputTokens,
+    dimensions: yaml.dimensions ?? DEFAULTS.dimensions,
+    reviewMarker: yaml.review_marker ?? DEFAULTS.reviewMarker,
+    personaPath: yaml.persona_path ?? DEFAULTS.personaPath,
+    dryRun:
+      cliArgs.dryRun ??
+      (env.BRIDGEBUILDER_DRY_RUN === "true" ? true : undefined) ??
+      DEFAULTS.dryRun,
+    excludePatterns: yaml.exclude_patterns ?? DEFAULTS.excludePatterns,
+    sanitizerMode: yaml.sanitizer_mode ?? DEFAULTS.sanitizerMode,
+    maxRuntimeMinutes: yaml.max_runtime_minutes ?? DEFAULTS.maxRuntimeMinutes,
+    ...(cliArgs.pr != null ? { targetPr: cliArgs.pr } : {}),
+  };
+
+  const provenance: ConfigProvenance = {
+    repos: reposSource,
+    model: modelSource,
+    dryRun: dryRunSource,
+  };
+
+  return { config, provenance };
+}
+
+/**
+ * Validate --pr flag: requires exactly one repo (IMP-008).
+ */
+export function resolveRepos(
+  config: BridgebuilderConfig,
+  prNumber?: number,
+): Array<{ owner: string; repo: string }> {
+  if (prNumber != null && config.repos.length > 1) {
+    throw new Error(
+      `--pr ${prNumber} specified but ${config.repos.length} repos configured. ` +
+        "Use --repo owner/repo to target a single repo when using --pr.",
+    );
+  }
+  return config.repos;
+}
+
+export type ConfigSource = "cli" | "env" | "yaml" | "auto-detect" | "default";
+
+export interface ConfigProvenance {
+  repos: ConfigSource;
+  model: ConfigSource;
+  dryRun: ConfigSource;
+}
+
+/**
+ * Format effective config for logging (secrets redacted).
+ * Includes provenance annotations showing where each value originated.
+ */
+export function formatEffectiveConfig(
+  config: BridgebuilderConfig,
+  provenance?: ConfigProvenance,
+): string {
+  const repoNames = config.repos
+    .map((r) => `${r.owner}/${r.repo}`)
+    .join(", ");
+  const p = provenance;
+  const repoSrc = p ? ` (${p.repos})` : "";
+  const modelSrc = p ? ` (${p.model})` : "";
+  const drySrc = p ? ` (${p.dryRun})` : "";
+  const prFilter = config.targetPr != null ? `, target_pr=#${config.targetPr}` : "";
+  return (
+    `[bridgebuilder] Config: repos=[${repoNames}]${repoSrc}, ` +
+    `model=${config.model}${modelSrc}, max_prs=${config.maxPrs}, ` +
+    `dry_run=${config.dryRun}${drySrc}, sanitizer_mode=${config.sanitizerMode}${prFilter}`
+  );
+}

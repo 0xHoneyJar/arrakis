@@ -31,6 +31,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Source cross-platform compatibility library
+if [[ -f "$SCRIPT_DIR/compat-lib.sh" ]]; then
+    source "$SCRIPT_DIR/compat-lib.sh"
+fi
+
 # Configuration from .loa.config.yaml (with defaults)
 CONFIG_FILE="$PROJECT_ROOT/.loa.config.yaml"
 
@@ -111,13 +116,9 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 BOLD='\033[1m'
 
-# Check bash version (associative arrays require bash 4+)
-check_bash_version() {
-    if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-        echo -e "${RED}ERROR: bash 4.0+ required (found ${BASH_VERSION})${NC}" >&2
-        exit 1
-    fi
-}
+# Require bash 4.0+ (associative arrays) — shared guard
+# shellcheck source=bash-version-guard.sh
+source "$SCRIPT_DIR/bash-version-guard.sh"
 
 # Check dependencies
 check_dependencies() {
@@ -133,7 +134,6 @@ check_dependencies() {
     fi
 }
 
-check_bash_version
 check_dependencies
 
 # =============================================================================
@@ -1016,9 +1016,14 @@ validate_path() {
     local resolved_path
     local project_root_resolved
 
-    # Resolve to absolute path
-    resolved_path=$(realpath -m "$file" 2>/dev/null || readlink -f "$file" 2>/dev/null || echo "$file")
-    project_root_resolved=$(realpath -m "$PROJECT_ROOT" 2>/dev/null || readlink -f "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
+    # Resolve to absolute path (use compat-lib if available)
+    if command -v get_canonical_path &>/dev/null; then
+        resolved_path=$(get_canonical_path "$file")
+        project_root_resolved=$(get_canonical_path "$PROJECT_ROOT")
+    else
+        resolved_path=$(realpath -m "$file" 2>/dev/null || readlink -f "$file" 2>/dev/null || echo "$file")
+        project_root_resolved=$(realpath -m "$PROJECT_ROOT" 2>/dev/null || readlink -f "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")
+    fi
 
     # Check if resolved path is within project root
     if [[ "$resolved_path" != "$project_root_resolved"* ]]; then
