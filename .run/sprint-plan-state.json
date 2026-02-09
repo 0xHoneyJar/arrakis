@@ -1,29 +1,33 @@
 {
-  "plan_id": "plan-20260130-sprint13",
-  "branch": "staging",
-  "state": "COMPLETED",
+  "plan_id": "plan-20260209-spicegate",
+  "branch": "feature/spice-gate-phase4",
+  "state": "RUNNING",
   "timestamps": {
-    "started": "2026-01-30T00:15:00Z",
-    "last_activity": "2026-01-30T02:30:00Z",
-    "completed": "2026-01-30T02:30:00Z"
+    "started": "2026-02-09T05:50:00Z",
+    "last_activity": "2026-02-09T06:35:00Z"
   },
   "sprints": {
-    "total": 1,
-    "completed": 1,
-    "current": "sprint-13",
+    "total": 6,
+    "completed": 2,
+    "current": "sprint-2",
     "list": [
-      {"id": "sprint-13", "global_id": 176, "status": "completed", "cycles": 1}
+      {"id": "sprint-0", "global_id": 178, "status": "completed", "cycles": 1, "files_changed": 1},
+      {"id": "sprint-1", "global_id": 179, "status": "completed", "cycles": 1, "files_changed": 12},
+      {"id": "sprint-2", "global_id": 180, "status": "pending"},
+      {"id": "sprint-3", "global_id": 181, "status": "pending"},
+      {"id": "sprint-4", "global_id": 182, "status": "pending"},
+      {"id": "sprint-5", "global_id": 183, "status": "pending"}
     ]
   },
   "options": {
-    "from": 13,
-    "to": 13,
+    "from": 0,
+    "to": 5,
     "max_cycles": 20,
     "timeout_hours": 8
   },
   "metrics": {
-    "total_cycles": 1,
-    "total_files_changed": 12,
-    "total_findings_fixed": 0
+    "total_cycles": 2,
+    "total_files_changed": 13,
+    "total_findings_fixed": 13
   }
 }
