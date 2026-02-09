@@ -30,3 +30,19 @@ export { type AgentGatewayResult, type AgentErrorCode, type AgentErrorResponse }
 
 // Error Messages
 export { AGENT_ERROR_MESSAGES, formatErrorMessage, type ErrorMessageEntry } from './error-messages.js';
+
+// Rate Limiting
+export {
+  AgentRateLimiter,
+  parseRateLimitResult,
+  TIER_LIMITS,
+  type RateLimitResult,
+  type RateLimitDimension,
+  type TierLimits,
+} from './agent-rate-limiter.js';
+
+// Pre-Auth IP Rate Limiting
+export { IpRateLimiter, type IpRateLimitConfig } from './ip-rate-limiter.js';
+
+// loa-finn Client
+export { LoaFinnClient, LoaFinnError, type JwtMinter, type LoaFinnClientDeps } from './loa-finn-client.js';
