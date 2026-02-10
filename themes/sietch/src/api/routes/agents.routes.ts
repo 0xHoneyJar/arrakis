@@ -275,12 +275,19 @@ export function createAgentRoutes(deps: AgentRoutesDeps): Router {
           ? req.headers['last-event-id']
           : undefined;
 
+        // Monotonic SSE event ID counter for browser-native EventSource reconnection.
+        // On disconnect, browser sends Last-Event-ID header → server resumes from that point.
+        // Start from lastEventId if resuming, otherwise 0.
+        let eventSeq = lastEventId ? parseInt(lastEventId, 10) || 0 : 0;
+
         for await (const event of gateway.stream({
           context: agentReq.agentContext,
           ...parsed.data,
         }, { signal: abort.signal, lastEventId })) {
           if (abort.signal.aborted) break;
 
+          eventSeq++;
+          res.write(`id: ${eventSeq}\n`);
           res.write(`event: ${event.type}\n`);
           res.write(`data: ${JSON.stringify(event.data)}\n\n`);
         }

@@ -24,6 +24,7 @@ export {
   AGENT_MAX_MODEL_ALIAS_LENGTH,
   AGENT_MAX_TOOLS,
   AGENT_MAX_IDEMPOTENCY_KEY_LENGTH,
+  KNOWN_MODEL_ALIASES,
   type AgentGatewayConfig,
   type AgentInvokeRequestBody,
   type LoaFinnConfig,
@@ -90,6 +91,9 @@ export {
 
 // Tier Override Types (re-export from mapper)
 export { type TierOverrideProvider } from './tier-access-mapper.js';
+
+// Request Hash (single source of truth — used by JwtService and tests)
+export { computeReqHash } from './req-hash.js';
 
 // Agent Gateway Facade
 export { AgentGateway, AgentGatewayError, type AgentGatewayDeps } from './agent-gateway.js';

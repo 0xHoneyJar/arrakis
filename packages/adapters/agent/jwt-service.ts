@@ -11,8 +11,9 @@
 
 import { SignJWT, importPKCS8, exportJWK, type JWK, type KeyLike } from 'jose';
 import { v4 as uuidv4 } from 'uuid';
-import { createHash, createPublicKey, type KeyObject } from 'node:crypto';
+import { createPublicKey, type KeyObject } from 'node:crypto';
 import type { AgentRequestContext } from '@arrakis/core/ports';
+import { computeReqHash } from './req-hash.js';
 
 // --------------------------------------------------------------------------
 // Tier Name Mapping
@@ -185,10 +186,5 @@ export class JwtService {
 // Helpers
 // --------------------------------------------------------------------------
 
-/**
- * Compute req_hash: base64url(SHA-256(canonical_request_body))
- * Binds the JWT to a specific request payload per trust boundary spec.
- */
-function computeReqHash(body: string): string {
-  return createHash('sha256').update(body).digest('base64url');
-}
+// computeReqHash imported from ./req-hash.js — single source of truth
+// for request body hashing. See ADR: Knight Capital anti-pattern avoidance.

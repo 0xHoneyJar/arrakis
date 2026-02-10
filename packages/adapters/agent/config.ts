@@ -184,6 +184,19 @@ export const AGENT_MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 /** Printable ASCII pattern for idempotency keys (0x20-0x7E) */
 const PRINTABLE_ASCII = /^[\x20-\x7e]+$/;
 
+/**
+ * Known model aliases — data-driven for Hounfour multi-model extensibility.
+ * Add new aliases here when onboarding providers (Claude, GPT, Gemini, DeepSeek, Ollama).
+ * Validated at request time, not compile time, so new models don't require schema changes.
+ */
+export const KNOWN_MODEL_ALIASES = new Set([
+  'cheap',
+  'fast-code',
+  'reviewer',
+  'reasoning',
+  'native',
+]);
+
 /** Schema for agent invoke request body — limits per SDD §7.4 */
 export const agentInvokeRequestSchema = z.object({
   agent: z.string().min(1).max(256),
@@ -191,7 +204,10 @@ export const agentInvokeRequestSchema = z.object({
     role: z.enum(['user', 'assistant', 'system']),
     content: z.string().min(1).max(AGENT_MAX_CONTENT_LENGTH),
   })).min(1).max(AGENT_MAX_MESSAGES),
-  modelAlias: z.enum(['cheap', 'fast-code', 'reviewer', 'reasoning', 'native']).optional(),
+  modelAlias: z.string().min(1).max(AGENT_MAX_MODEL_ALIAS_LENGTH).refine(
+    (v) => KNOWN_MODEL_ALIASES.has(v),
+    { message: 'Unknown model alias' },
+  ).optional(),
   tools: z.array(z.string().min(1).max(256)).max(AGENT_MAX_TOOLS).optional(),
   metadata: z.record(z.unknown()).optional(),
   idempotencyKey: z.string().min(1).max(AGENT_MAX_IDEMPOTENCY_KEY_LENGTH).regex(PRINTABLE_ASCII).optional(),

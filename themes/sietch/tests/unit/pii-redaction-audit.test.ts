@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import pino from 'pino';
 
 // Mock fs before barrel imports
 vi.mock('node:fs', async () => {
@@ -23,6 +24,7 @@ vi.mock('node:fs', async () => {
 import {
   AGENT_REDACTION_PATHS,
   hashWallet,
+  createAgentLogger,
 } from '@arrakis/adapters/agent';
 
 // --------------------------------------------------------------------------
@@ -198,6 +200,79 @@ describe('PII Redaction Audit (§16, NF-RET-1/3)', () => {
     it('safe log entry contains hashed wallet, not raw', () => {
       expect(safeLogEntry).toContain('userWalletHash');
       expect(safeLogEntry).not.toMatch(/0x[a-fA-F0-9]{40}/);
+    });
+  });
+
+  // ========================================================================
+  // Runtime PII Redaction — Pino logger with AGENT_REDACTION_PATHS
+  // ========================================================================
+  describe('Runtime PII redaction — Pino logger actually redacts', () => {
+    it('redacts message content at runtime (not just config check)', () => {
+      const chunks: string[] = [];
+      const writable = {
+        write(chunk: string) {
+          chunks.push(chunk);
+          return true;
+        },
+      };
+
+      const parentLogger = pino(
+        { level: 'info' },
+        writable as unknown as pino.DestinationStream,
+      );
+      const agentLogger = createAgentLogger(parentLogger);
+
+      // Log an entry that contains PII in redacted paths
+      agentLogger.info({
+        messages: [{ content: 'Tell me my bank account number' }],
+        userWallet: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+        jwt: 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.signature',
+        authorization: 'Bearer secret-token-12345',
+      }, 'test-pii-redaction');
+
+      const output = chunks.join('');
+
+      // Message content MUST be redacted
+      expect(output).not.toContain('bank account number');
+      expect(output).toContain('[REDACTED]');
+
+      // Raw wallet address MUST be redacted
+      expect(output).not.toContain('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045');
+
+      // JWT MUST be redacted
+      expect(output).not.toContain('eyJhbGciOiJFUzI1NiJ9');
+
+      // Authorization header MUST be redacted
+      expect(output).not.toContain('secret-token-12345');
+    });
+
+    it('redacts response content and thinking at runtime', () => {
+      const chunks: string[] = [];
+      const writable = {
+        write(chunk: string) {
+          chunks.push(chunk);
+          return true;
+        },
+      };
+
+      const parentLogger = pino(
+        { level: 'info' },
+        writable as unknown as pino.DestinationStream,
+      );
+      const agentLogger = createAgentLogger(parentLogger);
+
+      agentLogger.info({
+        response: {
+          content: 'Here is your SSN: 123-45-6789',
+          thinking: 'Internal chain of thought reasoning about user request',
+        },
+      }, 'test-response-redaction');
+
+      const output = chunks.join('');
+
+      expect(output).not.toContain('123-45-6789');
+      expect(output).not.toContain('chain of thought');
+      expect(output).toContain('[REDACTED]');
     });
   });
 });

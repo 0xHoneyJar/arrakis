@@ -13,6 +13,7 @@
 
 import type { Logger } from 'pino';
 import type { Redis } from 'ioredis';
+import type { Clock } from './jwt-service.js';
 
 // --------------------------------------------------------------------------
 // Types
@@ -58,20 +59,28 @@ const PER_COMMUNITY_TIMEOUT_MS = 10_000;
 // Drift Monitor Job Processor
 // --------------------------------------------------------------------------
 
+/** Default clock using Date.now() */
+const REAL_CLOCK: Clock = { now: () => Date.now() };
+
 export class BudgetDriftMonitor {
+  private readonly clock: Clock;
+
   constructor(
     private readonly redis: Redis,
     private readonly communityProvider: DriftActiveCommunityProvider,
     private readonly usageQuery: BudgetUsageQueryProvider,
     private readonly logger: Logger,
-  ) {}
+    clock?: Clock,
+  ) {
+    this.clock = clock ?? REAL_CLOCK;
+  }
 
   /**
    * Run drift check for all active communities.
    * Called by BullMQ worker on the repeatable schedule.
    */
   async process(): Promise<DriftMonitorResult> {
-    const month = getCurrentMonth();
+    const month = this.getCurrentMonth();
     const communityIds = await this.communityProvider.getActiveCommunityIds();
 
     let driftDetected = 0;
@@ -150,6 +159,12 @@ export class BudgetDriftMonitor {
   /**
    * Check a single community for drift.
    */
+  /** Get current month using injectable clock for deterministic testing */
+  private getCurrentMonth(): string {
+    const d = new Date(this.clock.now());
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
   private async checkCommunity(communityId: string, month: string): Promise<CommunityDrift> {
     // Read Redis committed counter (in cents, stored as integer string)
     const redisKey = `agent:budget:committed:${communityId}:${month}`;
@@ -191,11 +206,6 @@ export const DRIFT_MONITOR_JOB_CONFIG = {
 // --------------------------------------------------------------------------
 // Helpers
 // --------------------------------------------------------------------------
-
-function getCurrentMonth(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
 
 function safeInt(v: string | null, def = 0): number {
   if (v === null) return def;

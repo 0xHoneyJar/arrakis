@@ -39,14 +39,6 @@ import fixtures from '../fixtures/tier-policy-fixtures.json';
 // Helpers
 // --------------------------------------------------------------------------
 
-/** Compute effective aliases: tier_allowed ∩ ceiling[accessLevel] */
-function computeEffective(
-  tierAliases: string[],
-  ceilingAliases: string[],
-): string[] {
-  return tierAliases.filter((a) => ceilingAliases.includes(a));
-}
-
 /** Type-narrowed access to fixtures */
 const tierIds = Object.keys(fixtures.tiers) as Array<keyof typeof fixtures.tiers>;
 const ceilingPolicy = fixtures.ceiling_policy as Record<string, string[]>;
@@ -114,11 +106,21 @@ describe('Two-Layer Authorization Contract Tests (§7.2.3, FR-2.6)', () => {
   describe('Layer 2: effective = tier_allowed ∩ ceiling[accessLevel]', () => {
     it.each(tierEntries)(
       'tier $tier ($accessLevel): effective = $expectedEffective',
-      async ({ tier, allowedAliases, ceiling, expectedEffective }) => {
+      async ({ tier, ceiling, expectedEffective }) => {
         const result = await mapper.resolveAccess(tier);
-        const effective = computeEffective(result.allowedModelAliases, ceiling);
 
-        expect(effective).toEqual(expectedEffective);
+        // Verify against independently-derived fixture values (not test-side computation).
+        // Each alias in expectedEffective must be in BOTH the tier output AND the ceiling.
+        for (const alias of expectedEffective) {
+          expect(result.allowedModelAliases).toContain(alias);
+          expect(ceiling).toContain(alias);
+        }
+        // No alias outside expectedEffective should be in both lists.
+        for (const alias of result.allowedModelAliases) {
+          if (ceiling.includes(alias)) {
+            expect(expectedEffective).toContain(alias);
+          }
+        }
       },
     );
   });
@@ -203,9 +205,12 @@ describe('Two-Layer Authorization Contract Tests (§7.2.3, FR-2.6)', () => {
         'community-restrict-test',
       );
 
+      // Verify directly against fixture expected values (no test-side intersection)
       const proCeiling = ceilingPolicy['pro'];
-      const effective = computeEffective(result.allowedModelAliases, proCeiling);
-      expect(effective).toEqual(scenario.expected);
+      for (const alias of result.allowedModelAliases) {
+        expect(proCeiling).toContain(alias);
+      }
+      expect(result.allowedModelAliases).toEqual(scenario.expected);
     });
   });
 
@@ -260,11 +265,17 @@ describe('Two-Layer Authorization Contract Tests (§7.2.3, FR-2.6)', () => {
       );
 
       const freeCeiling = scenario.ceiling_allows;
-      const effective = computeEffective(result.allowedModelAliases, freeCeiling);
 
-      expect(effective).toEqual(scenario.expected_effective);
-      // 'reasoning' is rejected by ceiling
-      expect(effective).not.toContain('reasoning');
+      // Verify against hardcoded fixture values (no test-side intersection)
+      // Each alias in expected_effective must be in both result and ceiling
+      for (const alias of scenario.expected_effective) {
+        expect(result.allowedModelAliases).toContain(alias);
+        expect(freeCeiling).toContain(alias);
+      }
+      // 'reasoning' is in result (override) but NOT in ceiling → rejected
+      expect(result.allowedModelAliases).toContain('reasoning');
+      expect(freeCeiling).not.toContain('reasoning');
+      expect(scenario.expected_effective).not.toContain('reasoning');
     });
 
     it('validateModelRequest rejects reasoning against free ceiling', () => {
