@@ -9,12 +9,15 @@ Loa can be installed in two ways: **mounting onto an existing repository** (reco
 - [Prerequisites](#prerequisites)
 - [Method 1: Mount onto Existing Repository](#method-1-mount-onto-existing-repository-recommended) (you want to adopt loa in an existing project)
 - [Method 2: Clone Template](#method-2-clone-template) (start a new project from scratch using loa)
+- [Verify Installation](#verify-installation)
+- [Post-Install Enhancements](#post-install-enhancements) (optional tools that extend Loa)
 - [Ownership Model](#ownership-model-v1150)
 - [Configuration](#configuration)
 - [Updates](#updates)
 - [Customization](#customization)
 - [Validation](#validation)
 - [Troubleshooting](#troubleshooting)
+- [Uninstalling Loa](#uninstalling-loa)
 - [Loa Constructs (Commercial Skills)](#loa-constructs-commercial-skills)
 - [Frictionless Permissions](#frictionless-permissions)
 
@@ -46,192 +49,6 @@ yq --version   # Should show "mikefarah/yq"
 git --version
 ```
 
-### Optional Enhancements
-
-#### ck (Semantic Code Search) {#ck-semantic-code-search}
-
-**What it does**: Enables semantic code search using embeddings, dramatically improving agent precision and context loading speed.
-
-**Benefits**:
-- **Semantic understanding**: Find code by meaning, not just keywords
-- **80-90% faster**: Delta-indexed embeddings with high cache hit rate
-- **Ghost Feature detection**: Automatically detect documented features missing from code
-- **Shadow System detection**: Identify undocumented code requiring documentation
-
-**Without ck**: All commands work normally using grep fallbacks. The integration is completely invisible to users.
-
-**Installation**:
-
-```bash
-# Install ck via cargo (requires Rust toolchain)
-cargo install ck-search
-
-# Verify installation
-ck --version
-
-# Expected: ck 0.7.0 or higher
-```
-
-If you don't have Rust/cargo installed:
-
-```bash
-# macOS
-brew install rust
-cargo install ck-search
-
-# Ubuntu/Debian
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source $HOME/.cargo/env
-cargo install ck-search
-```
-
-**Note**: ck is optional. Loa works perfectly without it, using grep-based fallbacks.
-
-#### beads_rust (Task Graph) {#beads_rust-optional}
-
-**What it does**: Persistent task graph tracking across sessions using SQLite + JSONL for git-friendly diffs.
-
-**Benefits**:
-- **Cross-session persistence**: Tasks survive context clears and session restarts
-- **Dependency tracking**: Block tasks on others, track readiness
-- **Sprint integration**: Tasks linked to sprint plans
-
-**Without beads_rust**: Sprint state is tracked in markdown files only. Loa works in this mode but will prompt you about beads at workflow boundaries. For autonomous/run mode, beads is required by default. **Recommended for all projects.**
-
-**Installation**:
-
-```bash
-# Install via cargo
-cargo install beads_rust
-
-# Verify installation
-br --version
-
-# Initialize in project
-br init
-```
-
-#### Memory Stack (Vector Database) {#memory-stack-optional}
-
-**What it does**: SQLite vector database with [sentence-transformers](https://github.com/UKPLab/sentence-transformers) embeddings for mid-stream semantic memory recall during Claude Code sessions.
-
-**Benefits**:
-- **Semantic grounding**: Recall relevant learnings during tool execution
-- **NOTES.md sync**: Automatically extract learnings to searchable database
-- **QMD integration**: Document search with semantic or grep fallback
-
-**Without Memory Stack**: Loa works normally using NOTES.md for structured memory. The Memory Stack adds semantic recall.
-
-**Resource Requirements**:
-> ⚠️ **Warning**: sentence-transformers requires significant disk space and memory.
-> - **Disk**: ~2-3 GB for dependencies (PyTorch, transformers, model weights)
-> - **RAM**: ~500 MB when embedding (model loaded into memory)
-> - **First run**: Downloads ~90 MB model (`all-MiniLM-L6-v2`) to `~/.cache/sentence_transformers/`
-
-**Prerequisites**:
-- Python 3.8+ with pip
-- sentence-transformers ([GitHub](https://github.com/UKPLab/sentence-transformers) | [Docs](https://www.sbert.net/))
-
-**Installation**:
-
-```bash
-# Run setup wizard
-.claude/scripts/memory-setup.sh
-
-# Or manual setup
-pip install sentence-transformers
-mkdir -p .loa
-```
-
-**Configuration** (`.loa.config.yaml`):
-
-```yaml
-memory:
-  pretooluse_hook:
-    enabled: false  # Opt-in for safety
-    thinking_chars: 1500
-    similarity_threshold: 0.35
-    max_memories: 3
-    timeout_ms: 500
-```
-
-**Note**: Memory Stack is opt-in by default. Enable via config after setup.
-
-#### Flatline Protocol - NotebookLM Integration (Optional) {#notebooklm-optional}
-
-**What it does**: Enables Tier 2 knowledge retrieval from Google NotebookLM for the Flatline Protocol's multi-model adversarial review.
-
-**Benefits**:
-- **Curated knowledge**: Query your own NotebookLM notebooks with domain expertise
-- **Two-tier knowledge**: Combines local learnings (Tier 1) with NotebookLM (Tier 2)
-- **Better context**: Models receive relevant domain knowledge before reviewing
-
-**Without NotebookLM**: Flatline Protocol works perfectly with local knowledge only (Tier 1). NotebookLM adds supplementary context for specialized domains.
-
-**Prerequisites**:
-- Python 3.8+
-- A Google account (any gmail or workspace account)
-- Optionally: A NotebookLM notebook with uploaded sources
-
-> **Note**: NotebookLM is NOT Gemini. It's a separate Google product (notebooklm.google.com) for creating personal knowledge bases. No API key required - uses browser session authentication.
-
-**Installation**:
-
-```bash
-# Install patchright (browser automation) - must be accessible as Python module
-pip install --user patchright
-# OR in a virtual environment: pip install patchright
-
-# Install browser binaries (Chromium)
-patchright install chromium
-# OR: python3 -m patchright install chromium
-
-# One-time authentication (opens browser for Google sign-in)
-python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py --setup-auth
-```
-
-**Authentication Process**:
-1. Browser window opens to notebooklm.google.com
-2. Sign in with your Google account
-3. Navigate to any notebook (confirms access)
-4. Close the browser when done
-5. Session saved to `~/.claude/notebooklm-auth/` (with 0700 permissions)
-
-**Configuration** (`.loa.config.yaml`):
-
-```yaml
-flatline_protocol:
-  enabled: true
-  knowledge:
-    notebooklm:
-      enabled: true                    # Enable Tier 2 knowledge
-      notebook_id: "your-notebook-id"  # Optional: specific notebook
-      timeout_ms: 30000                # Query timeout
-```
-
-**Getting a Notebook ID** (optional):
-1. Go to notebooklm.google.com
-2. Open or create a notebook
-3. Copy the ID from the URL: `notebooklm.google.com/notebook/NOTEBOOK_ID`
-
-**Security Notes**:
-- Auth session stored with restrictive permissions (0700)
-- Uses isolated browser profile
-- No credentials stored in plain text
-- Session can be revoked by deleting `~/.claude/notebooklm-auth/`
-
-**Testing**:
-
-```bash
-# Dry run (no browser needed)
-python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py \
-  --dry-run --domain "your domain" --phase prd
-
-# Live query (requires auth setup)
-python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py \
-  --domain "your domain" --phase prd --json
-```
-
 ## Method 1: Mount onto Existing Repository (Recommended)
 
 Mount Loa onto any existing git repository. This is the **sidecar pattern** - Loa rides alongside your project.
@@ -248,22 +65,24 @@ curl -fsSL https://raw.githubusercontent.com/0xHoneyJar/loa/main/.claude/scripts
 # 1. Navigate to your project
 cd your-existing-project
 
-# 2. Add Loa remote
+# 2. Add Loa remote (if loa-upstream already exists, skip this step)
 git remote add loa-upstream https://github.com/0xHoneyJar/loa.git
 git fetch loa-upstream main
 
 # 3. Pull System Zone only
 git checkout loa-upstream/main -- .claude
 
-# 4. Create State Zone (if not exists)
-mkdir -p grimoires/loa/{context,discovery,a2a/trajectory} .beads
+# 4. Create State Zone
+mkdir -p grimoires/loa/{context,discovery,a2a/trajectory}
 
-# 5. Initialize config
-cp .claude/templates/.loa.config.yaml .loa.config.yaml  # or create manually
+# 5. Initialize config (copy the example file and customize)
+cp .loa.config.yaml.example .loa.config.yaml
 
 # 6. Start Claude Code
 claude
 ```
+
+> **Note**: The `.beads/` directory is only needed if you install beads_rust (see [Post-Install Enhancements](#post-install-enhancements)). The one-line installer creates it automatically.
 
 ### What Gets Installed
 
@@ -308,11 +127,135 @@ claude
 After either install method, verify everything is working:
 
 ```bash
-# Inside Claude Code
+# 1. Check that the files exist in your repo
+ls .claude/ grimoires/loa/ .loa.config.yaml
+
+# 2. Start Claude Code and run the health check
+claude
+# Then inside Claude Code (these are slash commands, not shell commands):
 /loa doctor
 ```
 
-A healthy system shows all green checks. Any issues include structured error codes (LOA-E001+) with fix instructions.
+A healthy system shows all green checks. Any issues include structured error codes (LOA-E001+) with fix instructions. If the health check fails, see [Troubleshooting](#troubleshooting).
+
+> `/loa doctor` is a slash command typed inside the Claude Code interactive session, not a shell command. All `/` commands in this guide work the same way.
+
+## Post-Install Enhancements
+
+These tools are **optional** — Loa works fully without them. Install them after Loa is mounted and verified. They are listed in order of recommendation.
+
+### beads_rust (Task Graph) {#beads_rust-optional}
+
+**What it does**: Persistent task graph tracking across sessions using SQLite + JSONL for git-friendly diffs.
+
+**Benefits**:
+- **Cross-session persistence**: Tasks survive context clears and session restarts
+- **Dependency tracking**: Block tasks on others, track readiness
+- **Sprint integration**: Tasks linked to sprint plans
+
+**When you need it**: Required for autonomous/run mode (`/run sprint-N`). Without it, Loa tracks sprint state in markdown only and will prompt you about beads at workflow boundaries. For interactive use (`/plan`, `/build`, `/review`), everything works without beads.
+
+**Installation** (requires Rust toolchain — see ck section below for Rust install):
+
+```bash
+# Install via cargo
+cargo install beads_rust
+
+# Verify installation
+br --version
+
+# Initialize in your project root (creates .beads/ directory)
+br init
+```
+
+### ck (Semantic Code Search) {#ck-semantic-code-search}
+
+**What it does**: Enables semantic code search using embeddings, improving agent precision and context loading speed.
+
+**Without ck**: All commands work normally using grep fallbacks. The integration is invisible to users.
+
+**Installation**:
+
+```bash
+# Install ck via cargo (requires Rust toolchain)
+cargo install ck-search
+
+# Verify installation — expected: ck 0.7.0 or higher
+ck --version
+```
+
+If you don't have Rust/cargo installed:
+
+```bash
+# macOS
+brew install rust
+cargo install ck-search
+
+# Ubuntu/Debian
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+cargo install ck-search
+```
+
+### Memory Stack (Vector Database) {#memory-stack-optional}
+
+**What it does**: SQLite vector database with [sentence-transformers](https://github.com/UKPLab/sentence-transformers) embeddings for mid-stream semantic memory recall.
+
+**Without Memory Stack**: Loa works normally using `grimoires/loa/NOTES.md` for structured memory. Memory Stack adds semantic recall on top.
+
+**Resource Requirements**:
+> sentence-transformers requires ~2-3 GB disk (PyTorch + model weights) and ~500 MB RAM when embedding.
+
+**Installation** (run these from your project root, after Loa is mounted):
+
+```bash
+# Run the setup wizard (available after Loa is installed)
+.claude/scripts/memory-setup.sh
+
+# Or manual setup
+pip install sentence-transformers
+mkdir -p .loa
+```
+
+**Configuration** (add to `.loa.config.yaml`):
+
+```yaml
+memory:
+  pretooluse_hook:
+    enabled: false  # Opt-in — set to true after verifying setup
+```
+
+### Flatline Protocol — NotebookLM Integration {#notebooklm-optional}
+
+**What it does**: Enables Tier 2 knowledge retrieval from Google NotebookLM for the Flatline Protocol's multi-model adversarial review.
+
+**Without NotebookLM**: Flatline Protocol works with local knowledge only (Tier 1). NotebookLM adds supplementary context for specialized domains.
+
+**Prerequisites**: Python 3.8+, a Google account.
+
+**Installation** (run from your project root, after Loa is mounted):
+
+```bash
+# Install patchright (browser automation)
+pip install --user patchright
+
+# Install browser binaries
+patchright install chromium
+
+# One-time authentication (opens browser for Google sign-in)
+python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py --setup-auth
+```
+
+**Configuration** (add to `.loa.config.yaml`):
+
+```yaml
+flatline_protocol:
+  enabled: true
+  knowledge:
+    notebooklm:
+      enabled: true
+      notebook_id: "your-notebook-id"  # Optional: from notebooklm.google.com URL
+```
 
 ## Ownership Model (v1.15.0)
 
@@ -427,11 +370,23 @@ Disabled skills are moved to `.claude/.skills-disabled/` (gitignored) and don't 
 
 ### .loa.config.yaml
 
-User-owned configuration file. Framework updates never touch this.
+User-owned configuration file. Framework updates never touch this. Copied from `.loa.config.yaml.example` during install.
+
+**Minimal working config** (this is all you need to start):
+
+```yaml
+# .loa.config.yaml — minimal
+persistence_mode: standard
+drift_resolution: code
+```
+
+That's it. All other settings have sensible defaults. The full example file (`.loa.config.yaml.example`) documents every option.
+
+**Common configuration options**:
 
 ```yaml
 # Persistence mode
-persistence_mode: standard  # or "stealth" for local-only
+persistence_mode: standard  # or "stealth" for local-only (gitignored)
 
 # Integrity enforcement (Projen-level)
 integrity_enforcement: strict  # or "warn", "disabled"
@@ -479,21 +434,23 @@ Or use the slash command:
 
 1. **Fetch**: Downloads upstream to staging directory
 2. **Validate**: Checks YAML syntax, shell script validity
-3. **Migrate**: Runs any pending schema migrations (blocking)
+3. **Migrate**: Runs any pending schema migrations (blocking — update halts if migration fails)
 4. **Swap**: Atomic replacement of System Zone
 5. **Restore**: Your `.claude/overrides/` are preserved
 6. **Commit**: Creates single atomic commit with version tag
+
+If an update fails mid-way, your previous version is intact — the swap is atomic. Roll back with `git revert HEAD` if the update committed, or re-run the update.
 
 ### Project File Protection (v1.5.0+)
 
 Your `README.md` and `CHANGELOG.md` are automatically preserved during updates via `.gitattributes`.
 
-**One-time setup** (required for `/update-loa`):
+The `/update-loa` command runs this git config automatically, but if you use the update script directly, ensure this one-time setup is done:
 ```bash
 git config merge.ours.driver true
 ```
 
-This tells Git to always keep your version of these files when merging from upstream. The `/update-loa` command runs this automatically, but you can also set it manually.
+This tells Git to always keep your version of these files when merging from upstream.
 
 ### Clean Upgrade (v1.4.0+)
 
@@ -629,6 +586,27 @@ git checkout --theirs .claude/
 git checkout --ours grimoires/loa/
 ```
 
+## Uninstalling Loa
+
+To completely remove Loa from your project:
+
+```bash
+# Remove the framework (System Zone)
+rm -rf .claude/
+
+# Remove state files (optional — contains your project memory and docs)
+rm -rf grimoires/loa/ .beads/ .loa-version.json .loa.config.yaml
+
+# Remove from git tracking
+git rm -r --cached .claude/ grimoires/loa/ .loa-version.json .loa.config.yaml 2>/dev/null
+git commit -m "chore: remove Loa framework"
+
+# Remove the upstream remote (if mounted)
+git remote remove loa-upstream 2>/dev/null
+```
+
+> **Note**: Your application code (`src/`, `lib/`, etc.) is never touched by Loa and remains unaffected.
+
 ## Loa Constructs (Commercial Skills)
 
 Loa Constructs is a registry for commercial skill packs that extend Loa with specialized capabilities (GTM strategy, security auditing, etc.).
@@ -731,7 +709,7 @@ See [CLI-INSTALLATION.md](grimoires/loa/context/CLI-INSTALLATION.md) for the ful
 
 ## Frictionless Permissions
 
-Loa includes a comprehensive `.claude/settings.json` that pre-approves 300+ common development commands, eliminating permission prompts for standard workflows.
+Loa ships with a `.claude/settings.json` (installed automatically as part of the System Zone) that pre-approves 300+ common development commands, eliminating permission prompts for standard workflows. You don't need to create this file — it's included in the framework.
 
 ### What's Pre-Approved
 
@@ -842,17 +820,19 @@ Loa's agents focus on design, implementation, and review—not formatting code.
 
 ## Next Steps
 
-After installation:
+After installation, start Claude Code and run these slash commands inside it:
 
 ```bash
-# 1. Start Claude Code
+# 1. Start Claude Code (this is a shell command)
 claude
 
-# 2. Check system health
+# 2. Inside Claude Code — check system health (slash command)
 /loa doctor
 
 # 3. Begin (no setup required!)
 /plan
 ```
 
-Type `/loa` at any time to see where you are and what to do next. See [README.md](README.md) for the complete workflow.
+`/plan` takes 2-5 minutes on first run and creates `grimoires/loa/prd.md`. Type `/loa` at any time to see where you are and what to do next.
+
+If something goes wrong, see [Troubleshooting](#troubleshooting) or run `/loa doctor` for structured diagnostics. See [README.md](README.md) for the complete workflow.
