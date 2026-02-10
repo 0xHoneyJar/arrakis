@@ -30,6 +30,7 @@ import type { TierAccessMapper } from './tier-access-mapper.js';
 import type { StreamReconciliationJob } from './stream-reconciliation-worker.js';
 import { getCurrentMonth } from './budget-manager.js';
 import { BUDGET_WARNING_THRESHOLD } from './config.js';
+import { resolvePoolId, ALIAS_TO_POOL } from './pool-mapping.js';
 
 // --------------------------------------------------------------------------
 // Types
@@ -103,9 +104,21 @@ export class AgentGateway implements IAgentGateway {
       );
     }
 
-    // 3. Estimate cost and reserve budget
-    const estimatedCost = this.budget.estimateCost({
-      modelAlias: request.modelAlias ?? 'cheap',
+    // 3. Pool resolution — tier-aware model→pool mapping (Sprint 3)
+    //    Must run BEFORE budget estimation so cost uses resolved pool pricing (F-2)
+    const { poolId, allowedPools } = resolvePoolId(request.modelAlias, context.accessLevel);
+
+    // Log pool fallback when resolved pool differs from requested alias (F-4)
+    if (request.modelAlias && poolId !== ALIAS_TO_POOL[request.modelAlias]) {
+      log.info(
+        { requested: request.modelAlias, resolved: poolId, accessLevel: context.accessLevel },
+        'pool-fallback: resolved pool differs from requested alias',
+      );
+    }
+
+    // 4. Estimate cost and reserve budget (using resolved poolId, not raw alias)
+    const estimatedCostCents = this.budget.estimateCost({
+      modelAlias: poolId,
       estimatedInputTokens: this.estimateInputTokens(request),
       // 1000: Conservative sync estimate. Median Claude response is ~500 tokens;
       // 1000 covers p90 without over-reserving budget. See SDD §4.3.
@@ -117,8 +130,8 @@ export class AgentGateway implements IAgentGateway {
       communityId: context.tenantId,
       userId: context.userId,
       idempotencyKey: context.idempotencyKey,
-      modelAlias: request.modelAlias ?? 'cheap',
-      estimatedCost,
+      modelAlias: poolId,
+      estimatedCost: estimatedCostCents,
     });
 
     if (reserveResult.status === 'BUDGET_EXCEEDED') {
@@ -142,15 +155,16 @@ export class AgentGateway implements IAgentGateway {
       );
     }
 
-    // 4. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
-    // 3× estimated cost in micro-cents — loa-finn enforces this ceiling
-    const maxCostMicroCents = estimatedCost * 3 * 100; // cents → micro-cents (×100)
+    // 5. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
+    // 3× estimated cost (cents) × 100 → micro-cents. loa-finn enforces this ceiling.
+    const maxCostMicroCents = estimatedCostCents * 3 * 100;
     request = {
       ...request,
+      context: { ...context, poolId, allowedPools },
       metadata: { ...request.metadata, max_cost_micro_cents: maxCostMicroCents },
     };
 
-    // 5. Execute via loa-finn
+    // 6. Execute via loa-finn
     try {
       const response = await this.loaFinn.invoke(request);
 
@@ -166,7 +180,7 @@ export class AgentGateway implements IAgentGateway {
         traceId: context.traceId,
       });
 
-      this.checkBudgetDrift(actualCostCents, estimatedCost, context.traceId, log);
+      this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log);
 
       return response;
     } catch (err) {
@@ -216,9 +230,21 @@ export class AgentGateway implements IAgentGateway {
       });
     }
 
-    // 3. Reserve budget
-    const estimatedCost = this.budget.estimateCost({
-      modelAlias: request.modelAlias ?? 'cheap',
+    // 3. Pool resolution — tier-aware model→pool mapping (Sprint 3)
+    //    Must run BEFORE budget estimation so cost uses resolved pool pricing (F-2)
+    const { poolId, allowedPools } = resolvePoolId(request.modelAlias, context.accessLevel);
+
+    // Log pool fallback when resolved pool differs from requested alias (F-4)
+    if (request.modelAlias && poolId !== ALIAS_TO_POOL[request.modelAlias]) {
+      log.info(
+        { requested: request.modelAlias, resolved: poolId, accessLevel: context.accessLevel },
+        'pool-fallback: resolved pool differs from requested alias',
+      );
+    }
+
+    // 4. Reserve budget (using resolved poolId, not raw alias)
+    const estimatedCostCents = this.budget.estimateCost({
+      modelAlias: poolId,
       estimatedInputTokens: this.estimateInputTokens(request),
       // 2000: Stream requests tend to produce longer responses (multi-turn, tool use).
       // 2x sync estimate balances budget accuracy vs over-reservation. See SDD §4.3.
@@ -230,8 +256,8 @@ export class AgentGateway implements IAgentGateway {
       communityId: context.tenantId,
       userId: context.userId,
       idempotencyKey: context.idempotencyKey,
-      modelAlias: request.modelAlias ?? 'cheap',
-      estimatedCost,
+      modelAlias: poolId,
+      estimatedCost: estimatedCostCents,
     });
 
     if (reserveResult.status === 'BUDGET_EXCEEDED') {
@@ -254,14 +280,16 @@ export class AgentGateway implements IAgentGateway {
       );
     }
 
-    // 4. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
-    const maxCostMicroCents = estimatedCost * 3 * 100; // cents → micro-cents (×100)
+    // 5. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
+    // 3× estimated cost (cents) × 100 → micro-cents. loa-finn enforces this ceiling.
+    const maxCostMicroCents = estimatedCostCents * 3 * 100;
     request = {
       ...request,
+      context: { ...context, poolId, allowedPools },
       metadata: { ...request.metadata, max_cost_micro_cents: maxCostMicroCents },
     };
 
-    // 5. Stream from loa-finn with finalize-once semantics
+    // 6. Stream from loa-finn with finalize-once semantics
     //    Pass downstream signal for abort propagation (SDD §4.7)
     let finalized = false;
 
@@ -281,7 +309,7 @@ export class AgentGateway implements IAgentGateway {
           });
           finalized = true;
 
-          this.checkBudgetDrift(actualCostCents, estimatedCost, context.traceId, log);
+          this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log);
         }
 
         yield event;

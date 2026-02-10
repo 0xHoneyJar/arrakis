@@ -7,6 +7,7 @@
  *
  * @see SDD §4.2 JWT Service
  * @see Trust Boundary Document §3.2 JWT Claims
+ * @see Hounfour RFC #31 §9 Metering, Billing & Cost Attribution — pool claim inclusion rationale
  */
 
 import { SignJWT, importPKCS8, exportJWK, type JWK, type KeyLike } from 'jose';
@@ -106,7 +107,8 @@ export class JwtService {
    * Sign a JWT with all required claims from the agent request context.
    *
    * Claims include: tenant_id, nft_id, tier, tier_name, access_level,
-   * allowed_model_aliases, platform, channel_id, idempotency_key, req_hash.
+   * allowed_model_aliases, pool_id, allowed_pools, platform, channel_id,
+   * idempotency_key, req_hash.
    *
    * @param context - Agent request context
    * @param requestBody - Canonical request body for req_hash binding
@@ -125,10 +127,13 @@ export class JwtService {
       tier_name: TIER_NAMES[context.tier] ?? `Tier${context.tier}`,
       access_level: context.accessLevel,
       allowed_model_aliases: context.allowedModelAliases,
+      pool_id: context.poolId,
+      allowed_pools: context.allowedPools,
       platform: context.platform,
       channel_id: context.channelId,
       idempotency_key: context.idempotencyKey,
       req_hash: reqHash,
+      v: 1, // JWT schema version — @see Bridgebuilder F-10
     })
       .setProtectedHeader({ alg: 'ES256', kid: this.config.keyId, typ: 'JWT' })
       .setIssuer('arrakis')

@@ -1,36 +1,35 @@
 {
-  "plan_id": "plan-20260210-bridgebuilder-r3",
-  "branch": "feature/spice-gate-phase4",
+  "plan_id": "plan-20260211-bridgebuilder-round2",
+  "branch": "feature/hounfour-integration",
   "state": "JACKED_OUT",
   "timestamps": {
-    "started": "2026-02-10T12:00:00Z",
-    "last_activity": "2026-02-10T20:30:00Z",
-    "completed": "2026-02-10T20:30:00Z"
+    "started": "2026-02-11T09:30:00Z",
+    "last_activity": "2026-02-11T10:15:00Z"
   },
   "sprints": {
     "total": 2,
     "completed": 2,
     "current": null,
     "list": [
-      {"id": "sprint-13", "status": "completed", "cycles": 1},
-      {"id": "sprint-14", "status": "completed", "cycles": 1}
+      {"id": "sprint-1", "status": "completed", "cycles": 1},
+      {"id": "sprint-2", "status": "completed", "cycles": 1}
     ]
   },
   "options": {
-    "from": 13,
-    "to": 14,
+    "from": 1,
+    "to": 2,
     "max_cycles": 20,
     "timeout_hours": 8
   },
   "metrics": {
     "total_cycles": 2,
-    "total_files_changed": 25,
-    "total_findings_fixed": 8
+    "total_files_changed": 22,
+    "total_findings_fixed": 6
   },
   "context": {
-    "sprint_plan": "grimoires/loa/sprint-hounfour-phase4-v3.md",
-    "ledger_cycle": "cycle-011",
-    "global_sprint_ids": [189, 190],
-    "source": "Bridgebuilder Deep Review PR #47 Comment 4"
+    "sprint_plan": "grimoires/loa/sprint-bridgebuilder-round2.md",
+    "ledger_cycle": "cycle-014",
+    "global_sprint_ids": [197, 198],
+    "source": "Bridgebuilder Round 2 — Protocol Versioning & Capability Architecture"
   }
 }

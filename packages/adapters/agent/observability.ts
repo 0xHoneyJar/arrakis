@@ -113,7 +113,30 @@ export const AGENT_METRICS = {
   RATE_LIMIT_HITS: 'agent_rate_limit_hits',
   BUDGET_SPEND_CENTS: 'agent_budget_spend_cents',
   CIRCUIT_BREAKER_STATE: 'agent_circuit_breaker_state',
+  POOL_CLAIM_VALIDATION: 'agent_pool_claim_validation',
 } as const;
+
+/**
+ * Structured log schema for pool claim validation events (F-14, T2.4).
+ * All 4 event paths MUST emit a log object conforming to this shape.
+ *
+ * Events: pool-claim-valid, pool-claim-mismatch, pool-claim-unknown-access-level, pool-claim-skipped
+ */
+export interface PoolClaimValidationLog {
+  event: 'pool-claim-valid' | 'pool-claim-mismatch' | 'pool-claim-unknown-access-level' | 'pool-claim-skipped'
+  enforcement: 'warn' | 'reject'
+  reportId: string
+  /** Present for valid/mismatch events */
+  valid?: boolean
+  /** Present for mismatch events */
+  reason?: string
+  /** Present for valid/mismatch/unknown events */
+  poolId?: string
+  /** Present for valid/mismatch/unknown events */
+  accessLevel?: string
+  /** Present for mismatch events */
+  allowedPools?: string[]
+}
 
 /**
  * No-op metric emitter for environments without CloudWatch.

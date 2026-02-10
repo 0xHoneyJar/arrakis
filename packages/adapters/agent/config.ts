@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { MODEL_ALIAS_VALUES } from '@arrakis/core/ports';
 import type { JwtServiceConfig } from './jwt-service.js';
+import type { S2SJwtValidatorConfig } from './s2s-jwt-validator.js';
 import type { TierMappingConfig } from './tier-access-mapper.js';
 import { DEFAULT_TIER_MAP } from './tier-access-mapper.js';
 
@@ -85,6 +86,37 @@ export interface RateLimitConfig {
   burstLimit: number;
 }
 
+/** S2S JWT validation configuration (inbound loa-finn → arrakis) */
+export interface S2SValidationConfig {
+  /** loa-finn base URL for JWKS fetch */
+  loaFinnBaseUrl: string;
+  /** Expected JWT issuer (default: "loa-finn") */
+  expectedIssuer: string;
+  /** Expected JWT audience (default: "arrakis") */
+  expectedAudience: string;
+  /** JWKS cache TTL in ms (default: 3,600,000 = 1h) */
+  jwksCacheTtlMs: number;
+  /** Max stale-if-error TTL in ms (default: 259,200,000 = 72h) */
+  jwksStaleMaxMs: number;
+  /** Min interval between JWKS refreshes in ms (default: 60,000 = 60s) */
+  jwksRefreshCooldownMs: number;
+  /** Clock-skew leeway in seconds for exp/nbf/iat (default: 30) */
+  clockToleranceSec: number;
+}
+
+/** Pool claim enforcement mode — @see Bridgebuilder F-14 */
+export type PoolClaimEnforcement = 'warn' | 'reject';
+
+/** Usage receiver configuration (inbound usage reports from loa-finn) */
+export interface UsageReceiverConfig {
+  /** Maximum cost per report in micro-USD (safety cap, default: 100B = $100K) */
+  maxCostMicroUsd: bigint;
+  /** Maximum report_id length (default: 256) */
+  maxReportIdLength: number;
+  /** Pool claim enforcement mode: 'warn' (default) or 'reject' — @see Bridgebuilder F-14 */
+  poolClaimEnforcement: PoolClaimEnforcement;
+}
+
 /** Full agent gateway configuration */
 export interface AgentGatewayConfig {
   /** Whether agent gateway is enabled */
@@ -101,6 +133,10 @@ export interface AgentGatewayConfig {
   budget: BudgetConfig;
   /** Rate limits */
   rateLimits: RateLimitConfig;
+  /** S2S JWT validation (inbound from loa-finn) */
+  s2sValidation: S2SValidationConfig;
+  /** Usage receiver */
+  usageReceiver: UsageReceiverConfig;
 }
 
 // --------------------------------------------------------------------------
@@ -119,6 +155,18 @@ const ENV_VARS = {
   AGENT_RATE_LIMIT_CHANNEL_PER_MIN: 'AGENT_RATE_LIMIT_CHANNEL_PER_MIN',
   AGENT_RATE_LIMIT_BURST: 'AGENT_RATE_LIMIT_BURST',
   AGENT_PREAUTH_RATE_LIMIT_PER_MIN: 'AGENT_PREAUTH_RATE_LIMIT_PER_MIN',
+  // S2S validation (inbound from loa-finn)
+  S2S_EXPECTED_ISSUER: 'S2S_EXPECTED_ISSUER',
+  S2S_EXPECTED_AUDIENCE: 'S2S_EXPECTED_AUDIENCE',
+  S2S_JWKS_CACHE_TTL_MS: 'S2S_JWKS_CACHE_TTL_MS',
+  S2S_JWKS_STALE_MAX_MS: 'S2S_JWKS_STALE_MAX_MS',
+  S2S_JWKS_REFRESH_COOLDOWN_MS: 'S2S_JWKS_REFRESH_COOLDOWN_MS',
+  S2S_CLOCK_SKEW_LEEWAY_SEC: 'S2S_CLOCK_SKEW_LEEWAY_SEC',
+  // Usage receiver
+  USAGE_MAX_COST_MICRO_USD: 'USAGE_MAX_COST_MICRO_USD',
+  USAGE_MAX_REPORT_ID_LENGTH: 'USAGE_MAX_REPORT_ID_LENGTH',
+  // Pool claim enforcement (F-14)
+  AGENT_POOL_CLAIM_ENFORCEMENT: 'AGENT_POOL_CLAIM_ENFORCEMENT',
 } as const;
 
 // --------------------------------------------------------------------------
@@ -137,6 +185,17 @@ const DEFAULTS = {
   communityPerMinute: 200,
   channelPerMinute: 60,
   burstLimit: 5,
+  // S2S validation defaults (SDD §3.1)
+  s2sExpectedIssuer: 'loa-finn',
+  s2sExpectedAudience: 'arrakis',
+  s2sJwksCacheTtlMs: 3_600_000,        // 1h
+  s2sJwksStaleMaxMs: 259_200_000,       // 72h
+  s2sJwksRefreshCooldownMs: 60_000,     // 60s
+  s2sClockToleranceSec: 30,             // 30s leeway
+  // Usage receiver defaults
+  usageMaxCostMicroUsd: 100_000_000_000n, // $100K (PRD cap)
+  usageMaxReportIdLength: 256,
+  poolClaimEnforcement: 'warn' as PoolClaimEnforcement,
 };
 
 // --------------------------------------------------------------------------
@@ -154,6 +213,22 @@ function parseIntEnv(value: string | undefined, fallback: number): number {
   if (value == null || value.trim() === '') return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+const VALID_POOL_CLAIM_ENFORCEMENT = new Set<string>(['warn', 'reject']);
+
+/** Strip trailing slashes without polynomial regex (CodeQL js/polynomial-redos). */
+function stripTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end--;
+  return url.slice(0, end);
+}
+
+function parsePoolClaimEnforcement(value: string | undefined): PoolClaimEnforcement {
+  if (value != null && VALID_POOL_CLAIM_ENFORCEMENT.has(value)) {
+    return value as PoolClaimEnforcement;
+  }
+  return DEFAULTS.poolClaimEnforcement;
 }
 
 // --------------------------------------------------------------------------
@@ -271,7 +346,41 @@ export function loadAgentGatewayConfig(
       burstLimit: parseIntEnv(env[ENV_VARS.AGENT_RATE_LIMIT_BURST], DEFAULTS.burstLimit),
       ...overrides?.rateLimits,
     },
+
+    s2sValidation: {
+      loaFinnBaseUrl: env[ENV_VARS.LOA_FINN_BASE_URL] ?? DEFAULTS.loaFinnBaseUrl,
+      expectedIssuer: env[ENV_VARS.S2S_EXPECTED_ISSUER] ?? DEFAULTS.s2sExpectedIssuer,
+      expectedAudience: env[ENV_VARS.S2S_EXPECTED_AUDIENCE] ?? DEFAULTS.s2sExpectedAudience,
+      jwksCacheTtlMs: parseIntEnv(env[ENV_VARS.S2S_JWKS_CACHE_TTL_MS], DEFAULTS.s2sJwksCacheTtlMs),
+      jwksStaleMaxMs: parseIntEnv(env[ENV_VARS.S2S_JWKS_STALE_MAX_MS], DEFAULTS.s2sJwksStaleMaxMs),
+      jwksRefreshCooldownMs: parseIntEnv(env[ENV_VARS.S2S_JWKS_REFRESH_COOLDOWN_MS], DEFAULTS.s2sJwksRefreshCooldownMs),
+      clockToleranceSec: parseIntEnv(env[ENV_VARS.S2S_CLOCK_SKEW_LEEWAY_SEC], DEFAULTS.s2sClockToleranceSec),
+      ...overrides?.s2sValidation,
+    },
+
+    usageReceiver: {
+      maxCostMicroUsd: DEFAULTS.usageMaxCostMicroUsd,
+      maxReportIdLength: parseIntEnv(env[ENV_VARS.USAGE_MAX_REPORT_ID_LENGTH], DEFAULTS.usageMaxReportIdLength),
+      poolClaimEnforcement: parsePoolClaimEnforcement(env[ENV_VARS.AGENT_POOL_CLAIM_ENFORCEMENT]),
+      ...overrides?.usageReceiver,
+    },
   };
 
   return config;
+}
+
+/**
+ * Build S2SJwtValidatorConfig from the S2SValidationConfig section.
+ * Computes the JWKS URL from the base URL.
+ */
+export function buildS2SJwtValidatorConfig(s2s: S2SValidationConfig): S2SJwtValidatorConfig {
+  return {
+    jwksUrl: `${stripTrailingSlashes(s2s.loaFinnBaseUrl)}/.well-known/jwks.json`,
+    expectedIssuer: s2s.expectedIssuer,
+    expectedAudience: s2s.expectedAudience,
+    jwksCacheTtlMs: s2s.jwksCacheTtlMs,
+    jwksStaleMaxMs: s2s.jwksStaleMaxMs,
+    jwksRefreshCooldownMs: s2s.jwksRefreshCooldownMs,
+    clockToleranceSec: s2s.clockToleranceSec,
+  };
 }

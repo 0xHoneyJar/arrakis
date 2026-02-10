@@ -17,6 +17,7 @@ export { TierAccessMapper, DEFAULT_TIER_MAP, type TierMappingConfig, type TierMa
 // Configuration
 export {
   loadAgentGatewayConfig,
+  buildS2SJwtValidatorConfig,
   agentInvokeRequestSchema,
   RESERVATION_TTL_MS,
   FINALIZED_MARKER_TTL_S,
@@ -33,7 +34,43 @@ export {
   type LoaFinnConfig,
   type BudgetConfig,
   type RateLimitConfig,
+  type S2SValidationConfig,
+  type UsageReceiverConfig,
+  type PoolClaimEnforcement,
 } from './config.js';
+
+// Budget Unit Bridge (micro-USD ↔ micro-cents)
+export {
+  microUsdToMicroCents,
+  microCentsToMicroUsd,
+  parseMicroUnit,
+  CONVERSION_FACTOR,
+  MAX_MICRO_USD,
+  MAX_MICRO_CENTS,
+} from './budget-unit-bridge.js';
+
+// S2S JWT Validator (inbound loa-finn → arrakis)
+export {
+  S2SJwtValidator,
+  type S2SJwtValidatorConfig,
+  type S2SJwtPayload,
+} from './s2s-jwt-validator.js';
+
+// S2S Auth Middleware (Express middleware for loa-finn Bearer tokens)
+export {
+  createS2SAuthMiddleware,
+  type S2SAuthenticatedRequest,
+  type S2SAuthMiddlewareDeps,
+} from './s2s-auth-middleware.js';
+
+// Usage Receiver (inbound usage reports from loa-finn)
+export {
+  UsageReceiver,
+  UsageReceiverError,
+  type UsageReceiverDeps,
+  type UsageReceiverResult,
+  type UsageReport,
+} from './usage-receiver.js';
 
 // Types
 export { type AgentGatewayResult, type AgentErrorCode, type AgentErrorResponse } from './types.js';
@@ -95,6 +132,20 @@ export {
 // Tier Override Types (re-export from mapper)
 export { type TierOverrideProvider } from './tier-access-mapper.js';
 
+// Pool Mapping (tier-aware pool resolution — Sprint 3)
+export {
+  resolvePoolId,
+  validatePoolClaims,
+  ACCESS_LEVEL_POOLS,
+  POOL_IDS,
+  VALID_POOL_IDS,
+  ALIAS_TO_POOL,
+  isAccessLevel,
+  type PoolId,
+  type PoolResolution,
+  type PoolClaimValidation,
+} from './pool-mapping.js';
+
 // Request Hash (single source of truth — used by JwtService and tests)
 export { computeReqHash } from './req-hash.js';
 
@@ -151,4 +202,5 @@ export {
   type MetricUnit,
   type MetricDimensions,
   type AgentRequestLog,
+  type PoolClaimValidationLog,
 } from './observability.js';
