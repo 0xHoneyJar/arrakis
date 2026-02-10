@@ -1,0 +1,88 @@
+{
+  "simstim_id": "simstim-20260210-013900",
+  "schema_version": 1,
+  "state": "RUNNING",
+  "phase": "flatline_sprint",
+  "timestamps": {
+    "started": "2026-02-10T01:39:00Z",
+    "last_activity": "2026-02-10T08:35:00Z"
+  },
+  "phases": {
+    "preflight": "completed",
+    "discovery": "completed",
+    "flatline_prd": "completed",
+    "architecture": "completed",
+    "flatline_sdd": "completed",
+    "planning": "completed",
+    "flatline_sprint": "completed",
+    "flatline_beads": "completed",
+    "implementation": "pending",
+    "complete": "pending"
+  },
+  "artifacts": {
+    "prd": {
+      "path": "grimoires/loa/prd-hounfour-phase4.md",
+      "checksum": null
+    },
+    "sdd": {
+      "path": "grimoires/loa/sdd-hounfour-phase4.md",
+      "checksum": "sha256:cd9ec15916bc83a32ae2b2976fc2ee9880c70836ec3b5d01bad784c9720d37d7"
+    },
+    "sprint": {
+      "path": "grimoires/loa/sprint-hounfour-phase4-v2.md",
+      "checksum": null
+    }
+  },
+  "flatline_results": {
+    "prd": {
+      "high_consensus_integrated": 4,
+      "disputed": 0,
+      "blockers_addressed": 11,
+      "gpt_review_iteration": 3,
+      "gpt_review_verdict": "APPROVED",
+      "note": "v1.3.0: 6 blocking fixes from GPT review + 5 RFC v4 gap additions"
+    },
+    "sdd": {
+      "gpt_review_iteration": 4,
+      "gpt_review_verdict": "APPROVED",
+      "flatline_high_consensus_integrated": 6,
+      "flatline_disputed": 0,
+      "flatline_blockers_overridden": 6,
+      "flatline_blocker_decisions": {
+        "SKP-001": "override:false_positive",
+        "SKP-002": "override:phase4_scope_adequate",
+        "SKP-003": "override:phase4_scope_adequate",
+        "SKP-004": "override:phase4_scope_adequate",
+        "SKP-005": "override:phase4_scope_adequate",
+        "SKP-006": "override:phase4_scope_adequate"
+      },
+      "note": "v2.0.0: GPT review converged at iteration 3. Flatline Protocol: 6 HIGH_CONSENSUS integrated (idempotency races, abort propagation, req_hash mismatch, input limits, budget overrun, platform idempotency keys). 6 blockers overridden (1 false positive, 5 deferred to Phase 5+ hardening)."
+    },
+    "sprint": {
+      "gpt_review_iteration": 3,
+      "gpt_review_verdict": "APPROVED",
+      "note": "v1.1.0: 5 blocking fixes from GPT review iteration 1 (req_hash canonicalization, injectable clock, HTTP API idempotency task, reconciliation on abort, versioned tier-policy fixtures). Task numbering fix in iteration 2. Approved iteration 3.",
+      "ledger_cycle": "cycle-011",
+      "global_sprint_ids": [186, 187, 188],
+      "flatline_high_consensus_integrated": 3,
+      "flatline_disputed": 0,
+      "flatline_blockers_addressed": 1,
+      "flatline_blockers_overridden": 3,
+      "flatline_blocker_decisions": {
+        "SKP-001": "override:ai_assisted_timeline",
+        "SKP-002": "addressed:idempotency_state_machine_S11-T0",
+        "SKP-003": "override:canonicalization_already_addresses",
+        "SKP-004": "override:implementation_detail"
+      },
+      "flatline_note": "3 HIGH_CONSENSUS integrated (benchmark harness, k6 load test, Redis failover procedure). 1 blocker addressed (idempotency state machine spec S11-T0). 3 blockers overridden."
+    }
+  },
+  "context": {
+    "cycle": "cycle-010",
+    "codename": "Spice Gate",
+    "rfc": "loa-finn #31",
+    "prd_version": "1.3.0",
+    "sdd_version": "2.0.0",
+    "restart_reason": "PRD v1.3.0 has 6 blocking correctness fixes that invalidate previous SDD/sprint"
+  }
+}

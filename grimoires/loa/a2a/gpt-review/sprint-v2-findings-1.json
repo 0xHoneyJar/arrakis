@@ -1,0 +1,38 @@
+{
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "This plan is close, but a few missing/incorrectly-scoped tasks and test dependencies will likely block completion (especially around req_hash contract testing, JWKS TTL verification feasibility, and idempotency coverage for HTTP/SSE).",
+  "blocking_issues": [
+    {
+      "location": "Sprint 11 — S11-T3: req_hash Mismatch Contract Test (IMP-003)",
+      "issue": "The acceptance criteria requires a wire-bytes req_hash contract test, but the plan does not include the prerequisite capability to capture/serialize the exact wire payload bytes used for the loa-finn request (including canonical JSON encoding, header ordering/normalization rules, and any compression).",
+      "why_blocking": "Without an explicit canonicalization strategy or a way to obtain the exact bytes loa-finn hashes, the test will be flaky or impossible to make pass reliably; this can stall Sprint 11 and cascade into Sprint 12 ship gates.",
+      "fix": "Add a concrete task/subtask to define and implement req_hash canonicalization and test harness: (1) specify exact hashing input (raw HTTP body bytes vs canonical JSON), (2) implement a helper that produces the hashed byte buffer from the same code path that sends the request, and (3) in tests, assert against that buffer (or use an HTTP mock that records raw request bytes). Update acceptance criteria to reference the defined canonicalization."
+    },
+    {
+      "location": "Sprint 12 — S12-T2: JWKS 72h Safety TTL Verification (FR-1.9)",
+      "issue": "The plan schedules multi-hour/day outage and rotation tests (73h TTL, 48h retention) but does not include any mechanism to control time (fake clock) or to configure TTLs for test environments.",
+      "why_blocking": "You cannot practically run 73-hour integration tests inside a 2–3 day sprint, and without time control these tests will be skipped or rewritten late, risking Sprint 12 failure and blocking ship gate SG-7.",
+      "fix": "Add an explicit testability task: introduce injectable clock/time provider in JWKS cache (or a configuration override for TTLs in test) and write tests using simulated time. Acceptance criteria should require simulated-time coverage for 72h/48h behaviors rather than real-time waiting."
+    },
+    {
+      "location": "Sprint 11 — S11-T2 Per-Platform Idempotency Key Derivation + Sprint 10 — S10-T1 header validation",
+      "issue": "HTTP API idempotency behavior is underspecified: S10-T1 validates `X-Idempotency-Key` format/length, but there is no task ensuring idempotency is actually enforced end-to-end for HTTP invoke/stream (including SSE reconnect semantics) using that key, nor tests that cover HTTP idempotent retries.",
+      "why_blocking": "Ship gate SG-11 (“Idempotency correct”) can fail if only Discord/Telegram are deterministic while HTTP/SSE paths still generate UUID fallbacks or don’t persist idempotency across retries/reconnects. This is a common integration gap that surfaces late.",
+      "fix": "Add a task (likely Sprint 11) to: (1) confirm the gateway uses the derived/passed idempotency key for both invoke and stream paths, (2) define behavior for missing header (generate server-side key vs require header), and (3) add integration tests for HTTP invoke retry and SSE reconnect using the same `X-Idempotency-Key` + `Last-Event-ID`."
+    },
+    {
+      "location": "Sprint 10 — S10-T2 Stream Abort Propagation",
+      "issue": "Acceptance criteria references “Reconciliation job still scheduled when stream aborted before `usage` event”, but the plan does not include any task to implement/adjust that scheduling behavior if it doesn’t already exist, nor does it specify where reconciliation is triggered in the code path.",
+      "why_blocking": "If reconciliation scheduling is not already implemented exactly as assumed, this becomes a hidden dependency discovered during testing; abort propagation changes control flow and can easily bypass finalize/reconcile hooks, causing budget/accounting drift and failing later ship gates.",
+      "fix": "Add an explicit subtask to locate and, if needed, refactor the finalize/reconcile scheduling so it runs on abort paths (e.g., in `finally` with idempotent enqueue). Add a targeted unit/integration test that asserts the reconcile job enqueue happens even when the stream is aborted early."
+    },
+    {
+      "location": "Sprint 12 — S12-T1 Two-Layer Authorization Contract Tests (§7.2.3, FR-2.6)",
+      "issue": "This is test-only, but it depends on having a deterministic source of truth for the 9 tiers × 3 access levels mapping and the loa-finn “global ceiling” policy in the test environment; the plan doesn’t include fixtures/config or a mock policy endpoint/response to make these tests stable.",
+      "why_blocking": "If the tier/ceiling mapping is currently embedded in config or fetched dynamically, integration tests will be brittle or impossible to run in CI. This can block Sprint 12 completion because the task is defined as 27 concrete cases.",
+      "fix": "Add a prerequisite task to create versioned fixtures for tier→aliases and ceiling policy (or a stable mock of loa-finn policy responses) used by tests. Acceptance criteria should state tests run in CI with no external dependencies beyond the test harness."
+    }
+  ],
+  "question": "",
+  "iteration": 1
+}

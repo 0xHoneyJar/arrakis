@@ -5,6 +5,9 @@
  * Exports all agent adapter components for the gateway system.
  */
 
+// Clock (shared time interface — S13-T2)
+export { REAL_CLOCK, type Clock } from './clock.js';
+
 // JWT Service
 export { JwtService, type JwtServiceConfig, type PreviousKeyConfig, type KeyLoader } from './jwt-service.js';
 
@@ -18,6 +21,13 @@ export {
   RESERVATION_TTL_MS,
   FINALIZED_MARKER_TTL_S,
   BUDGET_WARNING_THRESHOLD,
+  AGENT_BODY_LIMIT,
+  AGENT_MAX_MESSAGES,
+  AGENT_MAX_CONTENT_LENGTH,
+  AGENT_MAX_MODEL_ALIAS_LENGTH,
+  AGENT_MAX_TOOLS,
+  AGENT_MAX_IDEMPOTENCY_KEY_LENGTH,
+  KNOWN_MODEL_ALIASES,
   type AgentGatewayConfig,
   type AgentInvokeRequestBody,
   type LoaFinnConfig,
@@ -85,6 +95,9 @@ export {
 // Tier Override Types (re-export from mapper)
 export { type TierOverrideProvider } from './tier-access-mapper.js';
 
+// Request Hash (single source of truth — used by JwtService and tests)
+export { computeReqHash } from './req-hash.js';
+
 // Agent Gateway Facade
 export { AgentGateway, AgentGatewayError, type AgentGatewayDeps } from './agent-gateway.js';
 
@@ -101,6 +114,29 @@ export {
 
 // Gateway Factory
 export { createAgentGateway, type CreateAgentGatewayOptions } from './factory.js';
+
+// Budget Drift Monitor
+export {
+  BudgetDriftMonitor,
+  DRIFT_THRESHOLD_MICRO_CENTS,
+  DRIFT_LAG_FACTOR_SECONDS,
+  DRIFT_MAX_THRESHOLD_MICRO_CENTS,
+  DRIFT_MONITOR_JOB_CONFIG,
+  type DriftActiveCommunityProvider,
+  type BudgetUsageQueryProvider,
+  type DriftMonitorResult,
+  type CommunityDrift,
+} from './budget-drift-monitor.js';
+
+// SSE Event ID Generators (S14-T1: Distributed SSE)
+export {
+  createEventIdGenerator,
+  parseLastEventId,
+  MonotonicEventIdGenerator,
+  CompositeEventIdGenerator,
+  type SseEventIdGenerator,
+  type ParsedEventId,
+} from './sse-event-id.js';
 
 // Observability
 export {

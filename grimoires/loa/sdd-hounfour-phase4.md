@@ -1,16 +1,16 @@
 # Software Design Document: Hounfour Phase 4 — Spice Gate
 
-**Version**: 1.4.0
-**Date**: February 9, 2026
+**Version**: 2.0.0
+**Date**: February 10, 2026
 **Status**: Draft
 **Cycle**: cycle-010
-**PRD Reference**: `grimoires/loa/prd-hounfour-phase4.md` v1.2.0
+**PRD Reference**: `grimoires/loa/prd-hounfour-phase4.md` v1.3.0
 
 ---
 
 ## 1. Executive Summary
 
-This SDD defines the software architecture for **Spice Gate** — the Arrakis distribution layer that gates AI agent access through token-gated communities. It translates PRD v1.2.0 into concrete component designs, data models, API contracts, and Redis Lua scripts.
+This SDD defines the software architecture for **Spice Gate** — the Arrakis distribution layer that gates AI agent access through token-gated communities. It translates PRD v1.3.0 into concrete component designs, data models, API contracts, and Redis Lua scripts.
 
 **Architecture approach**: Extend Arrakis's existing hexagonal architecture by adding a new `agent` domain with its own port (`IAgentGateway`), adapters (JWT service, loa-finn client, rate limiter, budget manager), and bot handlers. All new code follows established patterns from the chain provider system.
 
@@ -20,6 +20,10 @@ This SDD defines the software architecture for **Spice Gate** — the Arrakis di
 3. Redis Lua scripts for atomic budget operations — no separate microservice
 4. Express middleware chain for agent API — extends existing `routes.ts`
 5. SSE proxy via `undici` — replaces axios for streaming support
+6. Two-layer authorization model — Arrakis per-community policy ∩ loa-finn global ceiling (FR-2.6)
+7. `jti` for transport-level replay protection, `idempotency_key` for business-level at-most-once execution (FR-1.4/1.7)
+8. Integer micro-cents (1 USD = 100,000,000) for budget arithmetic — zero IEEE 754 drift (FR-7)
+9. JWKS with 72h safety TTL for outage tolerance — retained old `kid` for 48h+ after rotation (FR-1.9)
 
 ---
 
@@ -227,19 +231,29 @@ export interface UsageInfo {
 }
 
 /** Discriminated union for SSE stream events. Validated with zod at the SSE parse boundary. */
+/**
+ * SSE event types — `data` field shapes match loa-finn wire format (PRD §4.5.1).
+ * content/thinking use `delta` (not `text`) to match loa-finn SSE frames.
+ * done uses `finish_reason` (not null) per loa-finn contract.
+ */
 export type AgentStreamEvent =
-  | { type: 'content'; data: { text: string }; id?: string }
-  | { type: 'thinking'; data: { text: string }; id?: string }
-  | { type: 'tool_call'; data: { name: string; args: Record<string, unknown> }; id?: string }
+  | { type: 'content'; data: { delta: string }; id?: string }
+  | { type: 'thinking'; data: { delta: string }; id?: string }
+  | { type: 'tool_call'; data: { id: string; name: string; arguments: string }; id?: string }
   | { type: 'usage'; data: UsageInfo; id?: string }
-  | { type: 'done'; data: null; id?: string }
-  | { type: 'error'; data: { code: string; message: string }; id?: string }
+  | { type: 'done'; data: { finish_reason: string }; id?: string }
+  | { type: 'error'; data: { code: number; message: string }; id?: string }
 
+/**
+ * Currency unit: integer micro-cents (1 USD = 100,000,000 micro-cents).
+ * Floating-point arithmetic is PROHIBITED in budget code paths.
+ * Display conversion: amount / 100_000_000 only at rendering time. (FR-7)
+ */
 export interface BudgetStatus {
   communityId: string
-  monthlyLimitCents: number
-  currentSpendCents: number
-  remainingCents: number
+  monthlyLimitMicroCents: number
+  currentSpendMicroCents: number
+  remainingMicroCents: number
   percentUsed: number
   warningThresholdReached: boolean
 }
@@ -305,6 +319,11 @@ export interface IAgentGateway {
 - Sign JWTs with all required claims (FR-1)
 - Serve JWKS endpoint with public key(s) (FR-1.9)
 - Handle key rotation (FR-1.5)
+
+**Critical: `jti` vs `idempotency_key` Separation (FR-1.4/1.7)**:
+- `jti` = transport-level replay protection. One unique UUID v4 per HTTP request. loa-finn stores `SETNX agent:jti:{jti}` with TTL = exp + 30s. Duplicate jti → 409 Conflict. On 409, Arrakis mints a NEW JWT (new `jti`) and retries with the SAME `idempotency_key`.
+- `idempotency_key` = business-level at-most-once execution. One key per user intent (one Discord message = one idempotency_key). loa-finn caches results by idempotency_key for 5 minutes. Same idempotency_key → cached result, no re-execution, no re-billing.
+- `idempotency_key` is NEVER cleared to allow re-billing. If a new billed execution is needed (e.g., user retries), Arrakis generates a NEW `idempotency_key`.
 
 ```typescript
 import { SignJWT, importPKCS8, exportJWK } from 'jose'
@@ -444,10 +463,12 @@ export class TierAccessMapper {
 ```typescript
 export interface RateLimitResult {
   allowed: boolean
-  dimension: 'community' | 'user' | 'channel' | 'burst' | null  // which limit hit
+  dimension: 'community' | 'user' | 'channel' | 'burst' | null  // which limit hit (most restrictive)
   remaining: number
-  resetAt: number       // Unix timestamp
+  limit: number         // limit of the constraining dimension
+  resetAt: number       // Unix timestamp (sliding window: window end; token bucket: next refill)
   retryAfter: number    // seconds
+  policy: string        // constraining dimension name for X-RateLimit-Policy header (FR-3.3)
 }
 
 export class AgentRateLimiter {
@@ -527,13 +548,13 @@ Redis is in the hot path for rate limiting, budget, and tier cache. Each compone
 export interface BudgetReservation {
   reservationId: string
   communityId: string
-  estimatedCostCents: number
+  estimatedCostMicroCents: number   // integer micro-cents (FR-7)
   createdAt: number
 }
 
 export type BudgetCheckResult =
   | { status: 'RESERVED'; reservationId: string; warningThreshold: boolean }
-  | { status: 'BUDGET_EXCEEDED'; currentSpendCents: number; limitCents: number }
+  | { status: 'BUDGET_EXCEEDED'; currentSpendMicroCents: number; limitMicroCents: number }
 
 export class BudgetManager {
   private readonly reserveLuaScript: string
@@ -546,7 +567,7 @@ export class BudgetManager {
     hasTools: boolean
     idempotencyKey: string
   }): Promise<BudgetCheckResult> {
-    const estimatedCents = this.estimateCost(params.modelAlias, params.hasTools)
+    const estimatedMicroCents = this.estimateCost(params.modelAlias, params.hasTools)
     const month = this.getCurrentMonth()  // "2026-02"
     const nowMs = Date.now()
 
@@ -560,8 +581,8 @@ export class BudgetManager {
       `agent:budget:limit:${params.communityId}`,                                           // KEYS[3]
       `agent:budget:reservation:${params.communityId}:${params.userId}:${params.idempotencyKey}`, // KEYS[4]
       `agent:budget:expiry:${params.communityId}:${month}`,                                 // KEYS[5]
-      // ARGV[1-7]
-      estimatedCents,                    // ARGV[1] estimated cost
+      // ARGV[1-7] — all monetary values in integer micro-cents (FR-7)
+      estimatedMicroCents,               // ARGV[1] estimated cost in micro-cents
       300,                               // ARGV[2] reservation TTL (5 min)
       params.communityId,                // ARGV[3]
       params.userId,                     // ARGV[4]
@@ -573,11 +594,22 @@ export class BudgetManager {
     return parseBudgetResult(result)
   }
 
+  /**
+   * ALREADY_RESERVED semantics (IMP-001: multi-replica race):
+   * Redis Lua is the serialization point. If two Arrakis replicas call reserve()
+   * concurrently with the same idempotency_key, the Lua script's EXISTS check
+   * ensures exactly one reservation is created. The second caller receives
+   * ALREADY_RESERVED, which parseBudgetResult maps to the same
+   * { status: 'RESERVED', reservationId, warningThreshold } response — idempotent
+   * success, not an error. The caller proceeds as if it created the reservation.
+   * This avoids double-counting in the reserved counter.
+   */
+
   async finalize(params: {
     idempotencyKey: string
     communityId: string
     userId: string
-    actualCostCents: number
+    actualCostMicroCents: number   // integer micro-cents (FR-7)
   }): Promise<void> {
     const month = this.getCurrentMonth()
 
@@ -591,19 +623,35 @@ export class BudgetManager {
       `agent:budget:reservation:${params.communityId}:${params.userId}:${params.idempotencyKey}`, // KEYS[3]
       `agent:budget:expiry:${params.communityId}:${month}`,                                 // KEYS[4]
       `agent:budget:finalized:${params.communityId}:${params.userId}:${params.idempotencyKey}`,   // KEYS[5]
-      // ARGV
-      params.actualCostCents,            // ARGV[1]
+      // ARGV — all monetary values in integer micro-cents (FR-7)
+      params.actualCostMicroCents,       // ARGV[1] actual cost in micro-cents
       `${params.userId}:${params.idempotencyKey}`,  // ARGV[2] ZSET member
     )
   }
 
   private estimateCost(alias: ModelAlias, hasTools: boolean): number {
-    const baseCents = PRICING_TABLE[alias]  // e.g., cheap=1, reasoning=15
+    // All values in integer micro-cents (1 USD = 100_000_000). No floating-point. (FR-7)
+    const baseMicroCents = PRICING_TABLE_MICRO_CENTS[alias]  // e.g., cheap=100_000, reasoning=1_500_000
     const multiplier = hasTools ? 2 : 1     // tool-call amplification (FR-7.12)
-    return baseCents * multiplier
+    return baseMicroCents * multiplier
   }
 }
 ```
+
+#### 4.5.1 Budget Overrun Policy (IMP-008)
+
+The estimate-then-finalize model means actual cost can exceed the reservation. This is acceptable within bounds but must be controlled:
+
+| Scenario | Policy | Implementation |
+|----------|--------|----------------|
+| Actual ≤ estimated | Normal: committed incremented by actual, difference returned to available budget | §8.3 finalize script |
+| Actual > estimated but within 2× estimate | **Accept**: finalize proceeds, drift logged at `warn` level, metric `agent_budget_drift_micro_cents` incremented | §8.3 finalize + observability |
+| Actual > 2× estimate | **Accept + Alert**: finalize proceeds, `BUDGET_DRIFT_HIGH` alarm fires, pricing table review queued | §10.3 alarms |
+| Community effective spend > limit after finalize | **Post-hoc enforcement**: next request blocked (budget already exceeded), but current response is delivered. No mid-stream abort. | §8.2 reserve check on next request |
+
+**Max-cost ceiling** (defense-in-depth): AgentGateway passes `max_cost_micro_cents` = `3 × estimatedCostMicroCents` in the loa-finn request metadata. loa-finn SHOULD terminate generation if running cost exceeds this ceiling (best-effort — streaming may overshoot by one chunk). This bounds worst-case overrun to ~3× estimate per request.
+
+**Drift monitoring**: A scheduled job (every 15 minutes) compares `SUM(cost_micro_cents)` from `agent_usage_log` against Redis committed counters. Drift > 500,000 micro-cents ($0.50) triggers `BUDGET_ACCOUNTING_DRIFT` alarm.
 
 ### 4.6 loa-finn Client
 
@@ -755,9 +803,60 @@ export class LoaFinnClient {
   private async executeWithRetry<T>(fn: (attempt: number) => Promise<T>): Promise<T> {
     // Exponential backoff: 1s, 2s, 4s
     // Only retry on 502, 503, 504
+    // On 409 (jti replay): mint new JWT immediately, same idempotency_key (FR-1.4)
+    // On 409 STREAM_RESUME_LOST: do NOT retry — propagate to caller (FR-1.8)
     // New JWT minted per retry (new jti, same idempotency_key)
   }
 }
+```
+
+#### 4.6.1 STREAM_RESUME_LOST Handling (FR-1.8)
+
+When an SSE stream drops and reconnects with `Last-Event-ID`, loa-finn may return 409 `STREAM_RESUME_LOST` if stream state was evicted before completion. This is orthogonal to the idempotency contract:
+
+```typescript
+export class LoaFinnClient {
+  async *streamWithResume(
+    jwt: string,
+    request: AgentInvokeRequest,
+    lastEventId?: string
+  ): AsyncIterable<AgentStreamEvent> {
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${jwt}`,
+      'X-Idempotency-Key': request.context.idempotencyKey,
+      'X-Trace-ID': request.context.traceId,
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    }
+    if (lastEventId) {
+      headers['Last-Event-ID'] = lastEventId
+    }
+
+    const response = await undiciRequest(/* ... */)
+
+    if (response.statusCode === 409) {
+      const body = await response.body.text()
+      if (body.includes('STREAM_RESUME_LOST')) {
+        // Stream state evicted, request NOT FINALIZED
+        // Caller MUST generate a NEW idempotency_key for re-execution
+        throw new StreamResumeLostError(request.context.idempotencyKey)
+      }
+      // Regular 409 (jti replay) — retry with new JWT
+      throw new JtiReplayError()
+    }
+
+    // ... normal SSE parsing as in stream()
+  }
+}
+```
+
+**State transitions for streaming resume**:
+| Stream State | `Last-Event-ID` Sent | loa-finn Behavior | Arrakis Action |
+|-------------|---------------------|------------------|----------------|
+| Active | Yes | Resume from event ID | Continue proxying, no new billing |
+| FINALIZED | Yes or No | Return cached full response (non-streaming) | Deliver to user, no new billing |
+| Evicted + NOT FINALIZED | Yes | 409 `STREAM_RESUME_LOST` | Generate NEW `idempotency_key`, new billed execution, show user "restarted" indicator |
+| Never existed | N/A | 404 | Treat as new request |
 ```
 
 ### 4.7 Agent Gateway Facade
@@ -808,19 +907,27 @@ export class AgentGateway implements IAgentGateway {
       throw new BudgetExhaustedError(budgetResult)
     }
 
-    // 4. Sign JWT
-    const jwt = await this.jwtService.sign(request.context)
+    // 4. Build wire payload and sign JWT (req_hash binds JWT to exact body bytes)
+    const wirePayload = JSON.stringify({
+      agent: request.agent,
+      messages: request.messages,
+      model_alias: request.modelAlias,
+      tools: request.tools,
+      metadata: request.metadata,
+    })
+    const jwt = await this.jwtService.sign(request.context, wirePayload)
 
     // STATE: EXECUTING
     try {
-      const response = await this.loaFinnClient.invoke(jwt, request)
+      const response = await this.loaFinnClient.invokeRaw(jwt, wirePayload)
 
       // STATE: FINALIZED
+      // Convert USD to integer micro-cents: costUsd * 100_000_000, rounded (FR-7)
       await this.budgetManager.finalize({
         idempotencyKey: request.context.idempotencyKey,
         communityId: request.context.tenantId,
         userId: request.context.userId,
-        actualCostCents: Math.round(response.usage.costUsd * 100),
+        actualCostMicroCents: Math.round(response.usage.costUsd * 100_000_000),
       })
 
       if (budgetResult.warningThreshold) {
@@ -835,7 +942,10 @@ export class AgentGateway implements IAgentGateway {
     }
   }
 
-  async *stream(request: AgentInvokeRequest): AsyncIterable<AgentStreamEvent> {
+  async *stream(
+    request: AgentInvokeRequest,
+    downstreamSignal?: AbortSignal  // IMP-002: caller passes signal tied to client disconnect
+  ): AsyncIterable<AgentStreamEvent> {
     // Steps 1-4 identical to invoke()
     // 1. Validate model alias
     if (request.modelAlias && !this.tierMapper.validateModelRequest(request.modelAlias, request.context.allowedModelAliases)) {
@@ -858,26 +968,44 @@ export class AgentGateway implements IAgentGateway {
       idempotencyKey: request.context.idempotencyKey,
     })
     if (budgetResult.status === 'BUDGET_EXCEEDED') throw new BudgetExhaustedError(budgetResult)
-    // 4. Sign JWT
-    const jwt = await this.jwtService.sign(request.context)
+    // 4. Build wire payload and sign JWT (req_hash binds JWT to exact body bytes)
+    const wirePayload = JSON.stringify({
+      agent: request.agent,
+      messages: request.messages,
+      model_alias: request.modelAlias,
+      tools: request.tools,
+      metadata: request.metadata,
+    })
+    const jwt = await this.jwtService.sign(request.context, wirePayload)
+
+    // IMP-002: Compose upstream AbortController with downstream signal.
+    // When the client disconnects (Express req 'close', Discord interaction timeout,
+    // Telegram message deleted), downstreamSignal aborts, which propagates to
+    // loa-finn via upstreamController — stopping upstream token generation immediately.
+    const upstreamController = new AbortController()
+    const onDownstreamAbort = () => upstreamController.abort()
+    downstreamSignal?.addEventListener('abort', onDownstreamAbort, { once: true })
 
     // Proxy SSE events from loa-finn
     let finalized = false
     try {
-      for await (const event of this.loaFinnClient.stream(jwt, request)) {
+      for await (const event of this.loaFinnClient.stream(jwt, request, upstreamController.signal)) {
         if (event.type === 'usage') {
-          // Finalize budget with actual cost from loa-finn
+          // Finalize budget with actual cost from loa-finn (micro-cents, FR-7)
           await this.budgetManager.finalize({
             idempotencyKey: request.context.idempotencyKey,
             communityId: request.context.tenantId,
             userId: request.context.userId,
-            actualCostCents: Math.round(event.data.costUsd * 100),
+            actualCostMicroCents: Math.round(event.data.costUsd * 100_000_000),
           })
           finalized = true
         }
         yield event
       }
     } finally {
+      downstreamSignal?.removeEventListener('abort', onDownstreamAbort)
+      upstreamController.abort()  // ensure upstream is always cleaned up
+
       if (!finalized) {
         // Stream dropped before 'usage' event — schedule reconciliation
         // Do NOT release reservation here (reaper handles TTL expiry)
@@ -928,13 +1056,14 @@ export class StreamReconciliationWorker {
     const usage = await this.loaFinnClient.getUsage(idempotencyKey)
 
     if (usage) {
-      // loa-finn processed the request — finalize with actual cost
+      // loa-finn processed the request — finalize with actual cost (micro-cents, FR-7)
       await this.budgetManager.finalize({
         idempotencyKey,
         communityId,
-        actualCostCents: Math.round(usage.costUsd * 100),
+        userId,
+        actualCostMicroCents: Math.round(usage.costUsd * 100_000_000),
       })
-      this.logger.info({ idempotencyKey, traceId, costCents: usage.costUsd * 100 },
+      this.logger.info({ idempotencyKey, traceId, costMicroCents: Math.round(usage.costUsd * 100_000_000) },
         'stream-reconciliation: finalized with actual cost')
     } else {
       // loa-finn has no record — request was never processed
@@ -1003,9 +1132,9 @@ All agent-related keys use the `agent:` prefix to separate from existing Arrakis
 | `agent:rl:user:{wallet}:{windowMs}` | Sorted Set | window+10s | User rate limit (sliding window, ms scores) |
 | `agent:rl:channel:{id}:{windowMs}` | Sorted Set | window+10s | Channel rate limit (sliding window, ms scores) |
 | `agent:rl:burst:{wallet}` | Hash | 120s | Token bucket state (tokens, last_refill_ms) |
-| `agent:budget:committed:{community_id}:{month}` | String (int) | 35 days | Committed spend counter (cents) — finalized actual costs |
-| `agent:budget:reserved:{community_id}:{month}` | String (int) | 35 days | Reserved spend counter (cents) — pending estimated costs |
-| `agent:budget:limit:{community_id}` | String (int) | — | Community budget limit (cents) |
+| `agent:budget:committed:{community_id}:{month}` | String (int) | 35 days | Committed spend counter (micro-cents, 1 USD = 100M) — finalized actual costs |
+| `agent:budget:reserved:{community_id}:{month}` | String (int) | 35 days | Reserved spend counter (micro-cents) — pending estimated costs |
+| `agent:budget:limit:{community_id}` | String (int) | — | Community budget limit (micro-cents) |
 | `agent:budget:reservation:{community_id}:{user_id}:{idempotency_key}` | Hash | 300s | Active reservation (tenant-scoped) |
 | `agent:budget:expiry:{community_id}:{month}` | Sorted Set | 360s | Reservation expiry tracker (for reaper job) |
 | `agent:budget:finalized:{community_id}:{user_id}:{idempotency_key}` | String (int) | 24h | Finalization idempotency marker (prevents double-commit) |
@@ -1029,7 +1158,7 @@ All agent-related keys use the `agent:` prefix to separate from existing Arrakis
 CREATE TABLE community_agent_config (
   community_id UUID PRIMARY KEY REFERENCES communities(id),
   ai_enabled BOOLEAN NOT NULL DEFAULT false,
-  monthly_budget_cents INTEGER NOT NULL DEFAULT 100,  -- $1.00 default
+  monthly_budget_micro_cents BIGINT NOT NULL DEFAULT 100000000,  -- $1.00 in micro-cents (FR-7)
   tier_overrides JSONB DEFAULT NULL,                  -- per-community tier→access mapping
   pricing_overrides JSONB DEFAULT NULL,               -- per-community pricing
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1053,8 +1182,8 @@ CREATE TABLE agent_usage_log (
   model_alias TEXT NOT NULL,
   prompt_tokens INTEGER NOT NULL,
   completion_tokens INTEGER NOT NULL,
-  cost_cents INTEGER NOT NULL,
-  estimated_cost_cents INTEGER NOT NULL,      -- original estimate for drift analysis
+  cost_micro_cents BIGINT NOT NULL,              -- actual cost in micro-cents (FR-7)
+  estimated_cost_micro_cents BIGINT NOT NULL,  -- original estimate for drift analysis (FR-7)
   idempotency_key TEXT NOT NULL,
   trace_id TEXT NOT NULL,
   source TEXT NOT NULL DEFAULT 'finalize',     -- 'finalize' | 'reconciliation' | 'late_finalize'
@@ -1087,7 +1216,7 @@ import { pgTable, uuid, boolean, integer, jsonb, text, timestamp } from 'drizzle
 export const communityAgentConfig = pgTable('community_agent_config', {
   communityId: uuid('community_id').primaryKey(),
   aiEnabled: boolean('ai_enabled').notNull().default(false),
-  monthlyBudgetCents: integer('monthly_budget_cents').notNull().default(100),
+  monthlyBudgetMicroCents: bigint('monthly_budget_micro_cents', { mode: 'number' }).notNull().default(100_000_000),
   tierOverrides: jsonb('tier_overrides'),
   pricingOverrides: jsonb('pricing_overrides'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1101,7 +1230,8 @@ export const agentUsageLog = pgTable('agent_usage_log', {
   modelAlias: text('model_alias').notNull(),
   promptTokens: integer('prompt_tokens').notNull(),
   completionTokens: integer('completion_tokens').notNull(),
-  costCents: integer('cost_cents').notNull(),
+  costMicroCents: bigint('cost_micro_cents', { mode: 'number' }).notNull(),
+  estimatedCostMicroCents: bigint('estimated_cost_micro_cents', { mode: 'number' }).notNull(),
   idempotencyKey: text('idempotency_key').notNull(),
   traceId: text('trace_id').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1141,10 +1271,11 @@ Mounted at `/api/agents` in the existing Express router chain.
   }
 }
 
-// Headers
+// Headers (FR-3.3: reports most restrictive dimension)
 X-RateLimit-Limit: 60
 X-RateLimit-Remaining: 58
 X-RateLimit-Reset: 1707451260
+X-RateLimit-Policy: community
 X-Trace-ID: <uuid>
 ```
 
@@ -1159,6 +1290,7 @@ Cache-Control: no-cache
 Connection: keep-alive
 X-RateLimit-Limit: 60
 X-RateLimit-Remaining: 58
+X-RateLimit-Policy: user
 
 event: content
 data: {"delta": "The current "}
@@ -1195,14 +1327,21 @@ id: evt-004
 
 ```json
 // Response (200)
+// All monetary values in integer micro-cents (1 USD = 100,000,000). (FR-7)
+// Display conversion: value / 100_000_000 at rendering time only.
 {
   "community_id": "abc-123",
-  "monthly_limit_cents": 1000,
-  "current_spend_cents": 450,
-  "remaining_cents": 550,
+  "monthly_limit_micro_cents": 100000000000,
+  "current_spend_micro_cents": 45000000000,
+  "remaining_micro_cents": 55000000000,
   "percent_used": 45,
   "warning_threshold_reached": false,
-  "resets_at": "2026-03-01T00:00:00Z"
+  "resets_at": "2026-03-01T00:00:00Z",
+  "display": {
+    "monthly_limit_usd": "$1,000.00",
+    "current_spend_usd": "$450.00",
+    "remaining_usd": "$550.00"
+  }
 }
 ```
 
@@ -1321,9 +1460,11 @@ Arrakis depends on loa-finn implementing these behaviors. This is a versioned co
 |----------|----------|-------------------|
 | JWT verification via JWKS | Cache by `kid` for 1h, background refresh, negative-cache unknown `kid` for 30s, singleflight coalescing | §7.2.2 |
 | JWT replay protection | `SETNX agent:jti:{jti}` with TTL = `exp - now + 30s`, reject if SETNX returns 0 | §7.2.1 |
-| Tier→model recomputation | loa-finn MUST recompute `allowed_model_aliases` from `access_level` claim, not trust `allowed_model_aliases` blindly | §7.2 (FR-2.6) |
-| Idempotency | Same `idempotencyKey` + same payload = same response (no double execution) | §4.5 |
+| Tier→model recomputation (two-layer auth) | loa-finn MUST compute ceiling set from `access_level` claim and intersect with `allowed_model_aliases`. Aliases outside ceiling → 403 + `POLICY_ESCALATION` alert. Within ceiling, trust `allowed_model_aliases` (Arrakis per-community policy). | §7.2.3 (FR-2.6) |
+| Idempotency | Same `idempotencyKey` + same payload = same response (no double execution). Cache NEVER cleared for re-billing. `IN_PROGRESS` → 202 + `Retry-After: 5`. `FINALIZED` → cached result. | §4.5, FR-1.7 |
 | Usage event in SSE | Stream MUST emit exactly one `event: usage` frame with `UsageInfo` before `event: done` | §4.1, §4.7 |
+| Stream resume | `Last-Event-ID` resumes active stream. FINALIZED → cached response. Evicted + NOT FINALIZED → 409 `STREAM_RESUME_LOST` | §4.6.1 (FR-1.8) |
+| req_hash mismatch (IMP-003) | If `req_hash` in JWT does not match SHA-256 of received body, loa-finn MUST reject with **400** `REQ_HASH_MISMATCH` (not 401/403 — the JWT is valid, the body is wrong). Response: `{ "error": "REQ_HASH_MISMATCH", "expected_prefix": "<first 8 chars>", "received_prefix": "<first 8 chars>" }`. Arrakis MUST NOT retry on 400 (non-retryable). Log at `warn` level with trace_id for debugging re-serialization issues. | §4.2, §7.2 |
 
 #### 6.3.3 Deployment Gate
 
@@ -1394,10 +1535,51 @@ Arrakis deployment MUST verify loa-finn contract compatibility before rollout:
 │  Threats mitigated:                                             │
 │  - JWT forgery → ES256 cryptographic verification               │
 │  - JWT replay → jti deduplication with TTL                      │
-│  - Confused deputy → loa-finn recomputes from tier (FR-2.6)     │
+│  - Confused deputy → two-layer auth model (FR-2.6, see below)   │
 │  - Key compromise → monthly rotation, 48h overlap, JWKS         │
 │  - Clock skew → ±30s tolerance on iat validation                │
+│  - Policy escalation → loa-finn ceiling intersection            │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+#### 7.2.3 Two-Layer Authorization Model (FR-2.6)
+
+Arrakis and loa-finn share authorization responsibility to prevent confused-deputy attacks:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ARRAKIS (per-community policy authority)                        │
+│                                                                  │
+│  tier (1-9) → access_level → allowed_model_aliases              │
+│  Includes community admin overrides (FR-2.2)                    │
+│  JWT carries: access_level + allowed_model_aliases               │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ JWT
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  LOA-FINN (global ceiling enforcement)                           │
+│                                                                  │
+│  Computes ceiling from access_level claim:                       │
+│    free       → { cheap }                                        │
+│    pro        → { cheap, fast-code, reviewer }                   │
+│    enterprise → { all aliases }                                  │
+│                                                                  │
+│  effective_aliases = JWT.allowed_model_aliases ∩ ceiling          │
+│                                                                  │
+│  If JWT.allowed_model_aliases ⊄ ceiling:                         │
+│    → 403 + POLICY_ESCALATION alert (compromised Arrakis?)        │
+│                                                                  │
+│  Within ceiling: JWT.allowed_model_aliases is trusted             │
+│  (reflects Arrakis per-community overrides)                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Why two layers**: A compromised Arrakis instance could forge JWTs claiming `enterprise` aliases for `free` users. The loa-finn ceiling ensures that even with a compromised Arrakis, the blast radius is bounded by the access_level in the JWT. loa-finn never needs per-community policy data — it only needs the global ceiling per access_level.
+
+**Contract test (FR-2.6)**: For all 9 tiers × 3 access levels, verify:
+1. Arrakis-produced `allowed_model_aliases` ⊆ loa-finn ceiling for that access_level
+2. loa-finn rejects aliases outside the ceiling with 403 + `POLICY_ESCALATION`
+3. Per-community overrides that restrict (but don't expand beyond ceiling) are honored
 ```
 
 #### 7.2.1 JWT Replay Protection Contract
@@ -1430,7 +1612,10 @@ Arrakis publishes JWKS at `/.well-known/jwks.json`. loa-finn MUST follow this ca
 | Unknown `kid` | Fetch JWKS once, cache result for 1h by `kid` |
 | Unknown `kid` after fresh fetch | Reject with 401 (negative cache for 30s to prevent abuse) |
 | Background refresh | Every 1h, refresh JWKS regardless (handles rotation proactively) |
-| Fetch failure | Use cached keys, retry in 60s (fail-open for cached keys only) |
+| Fetch failure | Use cached keys with **72h safety TTL** (fail-open for cached keys only). After 72h with no successful refresh, fail closed with 503. |
+| Previously-seen `kid` after JWKS refresh | **Retain for 48h** even if new JWKS response no longer includes it. This ensures in-flight JWTs signed with old key are accepted during rotation. |
+
+**Safety TTL (FR-1.9)**: JWKS keys do NOT have an `exp` field. Cache lifetime is governed by `Cache-Control` max-age (3600s) for normal operation. During outages (JWKS endpoint unreachable), cached keys are valid for up to **72 hours** (safety TTL). This covers extended Arrakis outages without breaking loa-finn's ability to validate existing tokens. After 72h with no successful JWKS refresh, loa-finn MUST fail closed with 503.
 
 **Thundering herd prevention**: loa-finn MUST coalesce concurrent JWKS fetch requests into a single HTTP call (e.g., via a mutex/singleflight pattern). At most 1 JWKS fetch per 30s regardless of concurrent unknown-kid requests.
 
@@ -1438,9 +1623,16 @@ Arrakis publishes JWKS at `/.well-known/jwks.json`. loa-finn MUST follow this ca
 ```
 Day 0: Generate new key pair, add to JWKS (both keys served)
 Day 0+: New tokens signed with new kid
-Day 2 (48h): Remove old key from JWKS
-Safety margin: 48h >> 120s token exp + 30s skew = 150s
+Day 2 (48h): Remove old key from JWKS response
+Day 2+: loa-finn retains old kid in local cache for 48h after last seen in JWKS
+Safety margin: 48h overlap + 48h retention >> 120s token exp + 30s skew = 150s
+Outage tolerance: 72h safety TTL >> 48h overlap
 ```
+
+**Integration tests required (FR-1.9)**:
+1. Simulate key rotation during live traffic — verify zero 401s during 48h overlap
+2. JWKS endpoint unreachable for 1h during rotation — verify old `kid` still accepted from cache
+3. JWKS endpoint unreachable for 73h — verify loa-finn fails closed with 503
 
 ### 7.3 Request Logging & PII
 
@@ -1454,7 +1646,39 @@ const AGENT_REDACT_PATHS = [
 ]
 ```
 
-Logged metadata (not redacted): trace_id, tenant_id, user_wallet (hashed), tier, model_alias, latency_ms, cost_cents, rate_limit_remaining.
+Logged metadata (not redacted): trace_id, tenant_id, user_wallet (hashed), tier, model_alias, latency_ms, cost_micro_cents, rate_limit_remaining.
+
+### 7.4 Input Validation Limits (IMP-006)
+
+All agent API endpoints enforce input size limits to prevent DoS, memory exhaustion, and budget heuristic bypass. Validation occurs in Express middleware **before** any business logic:
+
+| Input | Limit | Enforcement | Error Code |
+|-------|-------|-------------|------------|
+| HTTP request body | 128 KB | `express.json({ limit: '128kb' })` | 413 Payload Too Large |
+| `messages` array length | 50 messages | zod `.max(50)` | 400 `INVALID_REQUEST` |
+| Single message `content` | 32,000 characters | zod `.max(32000)` | 400 `INVALID_REQUEST` |
+| `model_alias` | 64 characters, alphanumeric + hyphen | zod `.max(64).regex(/^[a-z0-9-]+$/)` | 400 `INVALID_REQUEST` |
+| `tools` array length | 20 tools | zod `.max(20)` | 400 `INVALID_REQUEST` |
+| `agent` name | 64 characters | zod `.max(64)` | 400 `INVALID_REQUEST` |
+| `idempotency_key` (header) | 128 characters, printable ASCII | middleware regex check | 400 `INVALID_REQUEST` |
+| JWT token size | 4 KB | `Authorization` header check before parse | 401 `TOKEN_TOO_LARGE` |
+
+**Rationale**: Without body size limits, an attacker can send a 100MB messages array that passes rate limiting (1 request) but costs $50+ in tokens — bypassing the budget heuristic which estimates cost from `model_alias` alone. The 128KB body limit and 50-message cap bound the worst-case cost per request.
+
+**Zod schema** (shared between Express routes and bot handlers):
+
+```typescript
+export const AgentRequestSchema = z.object({
+  agent: z.string().max(64).default('default'),
+  messages: z.array(z.object({
+    role: z.enum(['user', 'assistant', 'system']),
+    content: z.string().max(32_000),
+  })).min(1).max(50),
+  model_alias: z.string().max(64).regex(/^[a-z0-9-]+$/).optional(),
+  tools: z.array(z.string().max(64)).max(20).optional(),
+  metadata: z.record(z.string().max(256)).optional(),
+})
+```
 
 ---
 
@@ -1552,7 +1776,7 @@ return {'ok', tostring(remaining), tostring(limit), '0', tostring(resetAtMs)}
 
 ### 8.2 Budget Reservation Script (Two-Counter Model)
 
-**Design**: Two separate counters — `committed` (finalized actual spend) and `reserved` (pending estimated spend). Effective spend = committed + reserved. This prevents failed requests from permanently inflating the spend counter.
+**Design**: Two separate counters — `committed` (finalized actual spend) and `reserved` (pending estimated spend). Effective spend = committed + reserved. This prevents failed requests from permanently inflating the spend counter. All values are integer micro-cents (1 USD = 100,000,000). No floating-point arithmetic in any budget Lua script (FR-7).
 
 ```lua
 -- KEYS[1] = committed counter:  agent:budget:committed:{communityId}:{month}
@@ -1560,7 +1784,7 @@ return {'ok', tostring(remaining), tostring(limit), '0', tostring(resetAtMs)}
 -- KEYS[3] = budget limit:       agent:budget:limit:{communityId}
 -- KEYS[4] = reservation hash:   agent:budget:reservation:{communityId}:{userId}:{idempotencyKey}
 -- KEYS[5] = expiry sorted set:  agent:budget:expiry:{communityId}:{month}
--- ARGV[1] = estimated cost (cents, integer)
+-- ARGV[1] = estimated cost (micro-cents, integer — 1 USD = 100,000,000)
 -- ARGV[2] = reservation TTL (seconds)
 -- ARGV[3] = community_id
 -- ARGV[4] = user_id (wallet)
@@ -1594,7 +1818,7 @@ redis.call('INCRBY', KEYS[2], estimatedCost)
 
 -- Store reservation with explicit fields
 redis.call('HMSET', KEYS[4],
-  'estimated_cost', estimatedCost,
+  'estimated_cost_micro_cents', estimatedCost,
   'community_id', ARGV[3],
   'user_id', ARGV[4],
   'idempotency_key', ARGV[5],
@@ -1627,7 +1851,7 @@ return {'RESERVED', tostring(newEffective), tostring(warning)}
 -- KEYS[3] = reservation hash:   agent:budget:reservation:{communityId}:{userId}:{idempotencyKey}
 -- KEYS[4] = expiry sorted set:  agent:budget:expiry:{communityId}:{month}
 -- KEYS[5] = finalized marker:   agent:budget:finalized:{communityId}:{userId}:{idempotencyKey}
--- ARGV[1] = actual cost (cents, integer, must be >= 0)
+-- ARGV[1] = actual cost (micro-cents, integer, must be >= 0 — 1 USD = 100,000,000)
 -- ARGV[2] = expiry ZSET member (userId:idempotencyKey — matches reserve script)
 
 local actualCost = tonumber(ARGV[1])
@@ -1640,7 +1864,7 @@ if alreadyFinalized then
 end
 
 -- Get reservation details via HGET (not HGETALL — avoids field ordering issues)
-local estimatedCost = tonumber(redis.call('HGET', KEYS[3], 'estimated_cost'))
+local estimatedCost = tonumber(redis.call('HGET', KEYS[3], 'estimated_cost_micro_cents'))
 if not estimatedCost then
   -- Reservation expired (reaped) but not yet finalized
   -- Commit actual cost directly; set finalized marker to prevent double-commit
@@ -1694,7 +1918,7 @@ for _, member in ipairs(expired) do
   -- Reconstruct full reservation key: prefix already ends with communityId:
   -- member = userId:idempotencyKey → full key = prefix..member
   local reservationKey = prefix .. member
-  local cost = tonumber(redis.call('HGET', reservationKey, 'estimated_cost'))
+  local cost = tonumber(redis.call('HGET', reservationKey, 'estimated_cost_micro_cents'))
   if cost then
     totalReclaimed = totalReclaimed + cost
     redis.call('DEL', reservationKey)
@@ -1849,6 +2073,45 @@ function createThrottledEditor(editFn: (content: string) => Promise<void>, inter
 }
 ```
 
+### 9.4 Per-Platform Idempotency Key Derivation (IMP-010)
+
+Each platform generates deterministic `idempotency_key` values from platform-native identifiers to prevent double-billing on webhook retries and message edits:
+
+| Platform | Source ID | Idempotency Key Formula | Dedupe Window |
+|----------|-----------|------------------------|---------------|
+| Discord slash command | `interaction.id` | `discord:interaction:{interaction.id}` | Interaction tokens expire after 15min |
+| Discord message (prefix command) | `message.id` | `discord:msg:{message.id}` | Message IDs are snowflakes (unique) |
+| Discord message edit | `message.id` + edit flag | `discord:msg:{message.id}:edit` | New key — edit triggers fresh execution |
+| Telegram command | `update.update_id` | `telegram:update:{update_id}` | Telegram guarantees unique update_id |
+| Telegram callback query | `callback_query.id` | `telegram:callback:{callback_query_id}` | Unique per callback |
+| HTTP API (direct) | `X-Idempotency-Key` header | Passthrough (caller-generated) | 24h (finalized marker TTL) |
+
+**Key properties**:
+- Deterministic: same platform event always produces the same key (safe for webhook retries)
+- Platform-scoped: prefix prevents cross-platform collisions
+- Edit semantics: Discord/Telegram message edits generate a NEW key (user intends a new execution)
+- Fallback: if platform ID is unavailable, generate UUIDv4 (non-idempotent, logged at `warn`)
+
+```typescript
+function deriveIdempotencyKey(platform: Platform, ctx: PlatformContext): string {
+  switch (platform) {
+    case 'discord':
+      if (ctx.interactionId) return `discord:interaction:${ctx.interactionId}`
+      if (ctx.messageId) return `discord:msg:${ctx.messageId}${ctx.isEdit ? ':edit' : ''}`
+      break
+    case 'telegram':
+      if (ctx.updateId) return `telegram:update:${ctx.updateId}`
+      if (ctx.callbackQueryId) return `telegram:callback:${ctx.callbackQueryId}`
+      break
+    case 'api':
+      if (ctx.idempotencyHeader) return ctx.idempotencyHeader
+      break
+  }
+  // Fallback: non-idempotent (logged at warn)
+  return `${platform}:fallback:${crypto.randomUUID()}`
+}
+```
+
 ---
 
 ## 10. Observability
@@ -1867,9 +2130,9 @@ logger.info({
   access_level: context.accessLevel,
   model_alias: request.modelAlias,
   latency_ms: elapsed,
-  cost_cents: actualCostCents,
+  cost_micro_cents: actualCostMicroCents,
   rate_limit_remaining: rlResult.remaining,
-  budget_remaining_cents: budgetStatus.remainingCents,
+  budget_remaining_micro_cents: budgetStatus.remainingMicroCents,
 }, 'Agent request completed')
 ```
 
@@ -1883,7 +2146,7 @@ Custom metrics emitted via `prom-client` (existing) + CloudWatch embedded metric
 | `agent_latency_ms` | Histogram | community, tier | Request latency |
 | `agent_errors_total` | Counter | community, error_code | Error counts |
 | `agent_rate_limit_hits` | Counter | community, dimension | Rate limit violations |
-| `agent_budget_spend_cents` | Gauge | community | Current month spend |
+| `agent_budget_spend_micro_cents` | Gauge | community | Current month spend (micro-cents) |
 | `agent_budget_reservations` | Gauge | — | Active reservations count |
 | `agent_circuit_breaker_state` | Gauge | — | 0=closed, 1=open, 0.5=half-open |
 | `agent_redis_latency_ms` | Histogram | operation | Redis operation latency |
@@ -2069,7 +2332,106 @@ infrastructure/
 | JWT signing key leak via logging | PII scrubber redacts `*.jwt` paths; keys never leave JwtService class | Sprint 1 |
 | Budget drift exceeds tolerance | Reconciliation job every 15min; alert on drift > $0.50; manual correction API | Sprint 5 |
 | Discord rate limits on message edits | Throttle edits to 500ms intervals; respect `X-RateLimit-*` headers from Discord | Sprint 4 |
-| loa-finn contract drift | Contract tests in CI; POLICY_DRIFT alert on tier mismatch (FR-2.6) | Sprint 6 |
+| loa-finn contract drift | Contract tests in CI; `POLICY_ESCALATION` alert on ceiling violation (FR-2.6) | Sprint 6 |
+| STREAM_RESUME_LOST double-billing | New `idempotency_key` on 409; original key NEVER cleared; user shown "restarted" indicator (FR-1.8) | Sprint 3 |
+| Micro-cent integer overflow | JavaScript `Number.MAX_SAFE_INTEGER` = 9,007,199,254,740,991 micro-cents ≈ $90 billion. No overflow risk for community budgets. | Sprint 5 |
+| JWKS outage during key rotation | 72h safety TTL on cached keys; loa-finn retains old `kid` 48h+ after removal from JWKS response (FR-1.9) | Sprint 6 |
+
+---
+
+## 16. Data Retention & Privacy (NF-RET-1 through NF-RET-4)
+
+### 16.1 Data Classification
+
+| Data Category | Storage | Retention | Encryption |
+|--------------|---------|-----------|------------|
+| User prompts / agent responses | **NOT stored** at rest by Arrakis | Ephemeral (request lifecycle only) | TLS in transit |
+| Thinking traces (from SSE) | **NOT stored** by Arrakis | Displayed during stream, discarded | TLS in transit |
+| Request metadata (trace_id, tenant_id, tier, model, latency, cost) | Structured logs + `agent_usage_log` table | 90 days (logs), indefinite (usage table) | Encrypted at rest (EBS/RDS) |
+| JWT tokens | In-memory only (JwtService) | Request lifecycle only | ES256 signed |
+| Signing keys | AWS Secrets Manager | Until rotated + 48h overlap | KMS encrypted |
+| Budget counters | Redis | 35 days (monthly + buffer) | ElastiCache encryption at rest |
+
+### 16.2 PII Redaction
+
+All structured logs pass through pino's redaction pipeline before emission:
+
+```typescript
+const AGENT_REDACT_PATHS = [
+  '*.messages[*].content',     // User message content (NF-RET-1)
+  '*.response.content',        // AI response content (NF-RET-1)
+  '*.thinking',                // Thinking traces (NF-RET-2)
+  '*.jwt',                     // Full JWT tokens
+]
+
+// Wallet addresses: first 6 + last 4 chars only (NF-RET-3)
+function redactWallet(wallet: string): string {
+  if (wallet.length <= 10) return '***'
+  return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
+}
+
+// Additional NF-RET-3 patterns
+const PII_PATTERNS = [
+  /(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*\S+/g,
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+]
+```
+
+### 16.3 Tenant Isolation (NF-RET-4)
+
+- Log queries are scoped by `tenant_id` — no cross-community log access
+- Budget dashboard queries include `WHERE community_id = $1` — enforced at ORM level
+- CloudWatch metric dimensions include `community` — metric filters prevent cross-tenant visibility
+- PostgreSQL RLS policies on `community_agent_config` and `agent_usage_log` tables enforce row-level isolation
+
+### 16.4 Persona Injection Prevention (NF-SEC-8)
+
+Phase 4 does NOT send custom persona content to loa-finn — agent selection is by alias only. This section documents the cross-repo contract for Phase 5+ extensibility:
+
+- If Arrakis passes user-configurable content that becomes part of a system prompt (e.g., community persona), that content MUST pass input guardrail validation (injection detection) before inclusion
+- loa-finn is independently responsible for validating its own persona content
+- Guardrail API: `.claude/protocols/input-guardrails.md` injection_detection with threshold 0.7
+
+---
+
+## 17. Phase 4 Exit Criteria (PRD §9.1)
+
+Phase 4 is complete when ALL of the following are demonstrated end-to-end:
+
+| # | Exit Gate | Verification Method | Sprint |
+|---|----------|-------------------|--------|
+| 1 | Discord user sends message to AI agent in token-gated community | Manual E2E test | Sprint 4 |
+| 2 | Arrakis authenticates user, resolves tier, signs JWT | Integration test | Sprint 1 |
+| 3 | Tier gating: free→`cheap`, pro→`cheap`+`fast-code`+`reviewer`, enterprise→all | Contract test (FR-2.6) | Sprint 1 |
+| 4 | loa-finn receives JWT, validates, routes to correct model | Integration test | Sprint 2 |
+| 5 | Response streams back through Arrakis to Discord channel | E2E streaming test | Sprint 3-4 |
+| 6 | Cost attributed to community in Redis counters + loa-finn ledger | Reconciliation test | Sprint 5 |
+| 7 | Rate limiting returns 429 when limits exceeded | Penetration test | Sprint 2 |
+| 8 | Budget enforcement returns 402 when exhausted | Load test (FR-7.13) | Sprint 5 |
+| 9 | All 8 PR #39 tech debt findings resolved and verified | Sprint 0 audit | Sprint 0 |
+
+---
+
+## 18. Ship Gate Checklist (PRD §11)
+
+Production readiness gates — ALL must pass before Phase 4 ships:
+
+| # | Gate | Target | Test Type | Sprint |
+|---|------|--------|-----------|--------|
+| SG-1 | JWT round-trip < 5ms | M-1 | Benchmark | Sprint 1 |
+| SG-2 | Tier→model correct for 9 tiers × 3 access levels | FR-2.6 | Contract test | Sprint 1 |
+| SG-3 | Rate limit zero bypass | M-3 | Penetration test | Sprint 2 |
+| SG-4 | Gateway overhead < 50ms | M-4 | E2E latency | Sprint 3 |
+| SG-5 | 8/8 PR #39 tech debt resolved | M-5 | Sprint 0 audit | Sprint 0 |
+| SG-6 | Budget: zero overspend under 100 concurrent | FR-7.13 | Load test | Sprint 5 |
+| SG-7 | Key rotation: zero 401s during overlap | FR-1.9 | Integration test | Sprint 6 |
+| SG-8 | Redis failover: 503 within 30s, no bypass | NF-REL-4 | Failover test | Sprint 6 |
+| SG-9 | No raw prompts/responses persisted | NF-RET-1 | Audit | Sprint 6 |
+| SG-10 | No PII in structured logs | NF-RET-3 | Log scan | Sprint 6 |
+| SG-11 | Idempotency: same key returns cached, no double-billing | FR-1.7 | Integration test | Sprint 3 |
+| SG-12 | STREAM_RESUME_LOST handled correctly | FR-1.8 | Integration test | Sprint 3 |
+| SG-13 | Trust boundary document approved | Sprint 0 | Manual review | Sprint 0 |
+| SG-14 | Discord E2E: user invokes agent, receives streamed response | — | Manual verification | Sprint 4 |
 
 ---
 

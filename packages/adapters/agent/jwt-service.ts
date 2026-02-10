@@ -11,8 +11,10 @@
 
 import { SignJWT, importPKCS8, exportJWK, type JWK, type KeyLike } from 'jose';
 import { v4 as uuidv4 } from 'uuid';
-import { createHash, createPublicKey, type KeyObject } from 'node:crypto';
+import { createPublicKey, type KeyObject } from 'node:crypto';
 import type { AgentRequestContext } from '@arrakis/core/ports';
+import { computeReqHash } from './req-hash.js';
+import { REAL_CLOCK, type Clock } from './clock.js';
 
 // --------------------------------------------------------------------------
 // Tier Name Mapping
@@ -63,6 +65,8 @@ export interface KeyLoader {
   load(): Promise<string>;
 }
 
+// Clock interface and REAL_CLOCK imported from ./clock.js (S13-T2: shared types extraction)
+
 // --------------------------------------------------------------------------
 // JWT Service
 // --------------------------------------------------------------------------
@@ -71,11 +75,15 @@ export class JwtService {
   private privateKey!: KeyLike;
   private publicJwk!: JWK;
   private initialized = false;
+  private readonly clock: Clock;
 
   constructor(
     private readonly config: JwtServiceConfig,
     private readonly keyLoader: KeyLoader,
-  ) {}
+    clock?: Clock,
+  ) {
+    this.clock = clock ?? REAL_CLOCK;
+  }
 
   /**
    * Initialize the service by loading the private key and exporting the public JWK.
@@ -107,7 +115,7 @@ export class JwtService {
   async sign(context: AgentRequestContext, requestBody: string): Promise<string> {
     this.assertInitialized();
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = Math.floor(this.clock.now() / 1000);
     const reqHash = computeReqHash(requestBody);
 
     return new SignJWT({
@@ -145,9 +153,11 @@ export class JwtService {
       { ...this.publicJwk, kid: this.config.keyId, use: 'sig', alg: 'ES256', kty: 'EC', crv: 'P-256' },
     ];
 
-    if (this.config.previousKey && this.config.previousKey.expiresAt > new Date()) {
+    if (this.config.previousKey && this.config.previousKey.expiresAt.getTime() > this.clock.now()) {
+      // Strip private parameters (defense-in-depth: publicJwk should already be public-only)
+      const { d: _d, ...publicOnly } = this.config.previousKey.publicJwk;
       keys.push({
-        ...this.config.previousKey.publicJwk,
+        ...publicOnly,
         kid: this.config.previousKey.keyId,
         use: 'sig',
         alg: 'ES256',
@@ -170,10 +180,5 @@ export class JwtService {
 // Helpers
 // --------------------------------------------------------------------------
 
-/**
- * Compute req_hash: base64url(SHA-256(canonical_request_body))
- * Binds the JWT to a specific request payload per trust boundary spec.
- */
-function computeReqHash(body: string): string {
-  return createHash('sha256').update(body).digest('base64url');
-}
+// computeReqHash imported from ./req-hash.js — single source of truth
+// for request body hashing. See ADR: Knight Capital anti-pattern avoidance.

@@ -1,29 +1,36 @@
 {
-  "plan_id": "plan-20260209-hardening",
+  "plan_id": "plan-20260210-bridgebuilder-r3",
   "branch": "feature/spice-gate-phase4",
-  "state": "RUNNING",
+  "state": "JACKED_OUT",
   "timestamps": {
-    "started": "2026-02-09T12:00:00Z",
-    "last_activity": "2026-02-09T12:00:00Z"
+    "started": "2026-02-10T12:00:00Z",
+    "last_activity": "2026-02-10T20:30:00Z",
+    "completed": "2026-02-10T20:30:00Z"
   },
   "sprints": {
     "total": 2,
-    "completed": 0,
-    "current": "sprint-6",
+    "completed": 2,
+    "current": null,
     "list": [
-      {"id": "sprint-6", "global_id": 184, "status": "in_progress", "cycles": 0, "files_changed": 0},
-      {"id": "sprint-7", "global_id": 185, "status": "pending", "cycles": 0, "files_changed": 0}
+      {"id": "sprint-13", "status": "completed", "cycles": 1},
+      {"id": "sprint-14", "status": "completed", "cycles": 1}
     ]
   },
   "options": {
-    "from": 6,
-    "to": 7,
+    "from": 13,
+    "to": 14,
     "max_cycles": 20,
     "timeout_hours": 8
   },
   "metrics": {
-    "total_cycles": 0,
-    "total_files_changed": 0,
-    "total_findings_fixed": 0
+    "total_cycles": 2,
+    "total_files_changed": 25,
+    "total_findings_fixed": 8
+  },
+  "context": {
+    "sprint_plan": "grimoires/loa/sprint-hounfour-phase4-v3.md",
+    "ledger_cycle": "cycle-011",
+    "global_sprint_ids": [189, 190],
+    "source": "Bridgebuilder Deep Review PR #47 Comment 4"
   }
 }
