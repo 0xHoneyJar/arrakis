@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest'
 import {
   resolvePoolId,
   validatePoolClaims,
+  isAccessLevel,
   ACCESS_LEVEL_POOLS,
   POOL_IDS,
   VALID_POOL_IDS,
@@ -306,4 +307,23 @@ describe('validatePoolClaims — all 5 pools × 3 tiers (AC-H1.3)', () => {
       })
     }
   }
+})
+
+// --------------------------------------------------------------------------
+// isAccessLevel type guard (F-16: eliminate `as any` cast)
+// --------------------------------------------------------------------------
+
+describe('isAccessLevel — type guard (F-16)', () => {
+  it('isAccessLevel returns true for valid levels', () => {
+    expect(isAccessLevel('free')).toBe(true)
+    expect(isAccessLevel('pro')).toBe(true)
+    expect(isAccessLevel('enterprise')).toBe(true)
+  })
+
+  it('isAccessLevel returns false for unknown strings', () => {
+    expect(isAccessLevel('unknown')).toBe(false)
+    expect(isAccessLevel('')).toBe(false)
+    expect(isAccessLevel('premium')).toBe(false)
+    expect(isAccessLevel('FREE')).toBe(false) // case-sensitive
+  })
 })

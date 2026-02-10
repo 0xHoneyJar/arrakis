@@ -20,7 +20,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { Logger } from 'pino'
 import type { S2SJwtValidator, S2SJwtPayload } from './s2s-jwt-validator.js'
 import { microUsdToMicroCents, parseMicroUnit, MAX_MICRO_USD } from './budget-unit-bridge.js'
-import { validatePoolClaims } from './pool-mapping.js'
+import { validatePoolClaims, isAccessLevel } from './pool-mapping.js'
 import { agentUsageLog } from '../storage/agent-schema.js'
 
 // --------------------------------------------------------------------------
@@ -164,25 +164,37 @@ export class UsageReceiver {
       )
     }
 
-    // Step 5b: Pool claim cross-validation (F-5 defense-in-depth, warn-only)
+    // Step 5b: Pool claim cross-validation (F-5 defense-in-depth, F-16 type guard)
     if (report.pool_id && report.access_level && report.allowed_pools) {
-      const claimResult = validatePoolClaims(
-        report.pool_id,
-        report.allowed_pools,
-        report.access_level as any,
-      )
-      if (!claimResult.valid) {
+      if (!isAccessLevel(report.access_level)) {
+        // Unknown access_level — data quality issue, not security concern
         this.logger.warn(
           {
-            event: 'pool-claim-mismatch',
+            event: 'pool-claim-unknown-access-level',
             reportId: report.report_id,
-            poolId: report.pool_id,
             accessLevel: report.access_level,
-            allowedPools: report.allowed_pools,
-            reason: claimResult.reason,
           },
-          'Pool claim validation failed — possible key compromise or config drift',
+          'Unknown access_level in usage report — skipping pool claim validation',
         )
+      } else {
+        const claimResult = validatePoolClaims(
+          report.pool_id,
+          report.allowed_pools,
+          report.access_level,
+        )
+        if (!claimResult.valid) {
+          this.logger.warn(
+            {
+              event: 'pool-claim-mismatch',
+              reportId: report.report_id,
+              poolId: report.pool_id,
+              accessLevel: report.access_level,
+              allowedPools: report.allowed_pools,
+              reason: claimResult.reason,
+            },
+            'Pool claim validation failed — possible key compromise or config drift',
+          )
+        }
       }
     }
 

@@ -147,6 +147,18 @@ describe('AgentGateway invoke() — lifecycle ordering (F-2)', () => {
     const estimateCall = (deps.budgetManager.estimateCost as any).mock.calls[0][0]
     expect(estimateCall.modelAlias).toBe('fast-code') // pro tier default
   })
+
+  it('invoke passes estimatedCostCents to budget manager (F-12)', async () => {
+    const deps = createMockDeps()
+    ;(deps.budgetManager.estimateCost as any).mockReturnValue(250) // 250 cents
+    const gateway = new AgentGateway(deps)
+
+    await gateway.invoke(createInvokeRequest('cheap', 'free'))
+
+    // reserve should receive the estimatedCostCents value
+    const reserveCall = (deps.budgetManager.reserve as any).mock.calls[0][0]
+    expect(reserveCall.estimatedCost).toBe(250)
+  })
 })
 
 // --------------------------------------------------------------------------

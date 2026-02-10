@@ -460,6 +460,80 @@ describe('UsageReceiver', () => {
   });
 
   // ========================================================================
+  // Step 5b: Pool Claim Cross-Validation — Type Guard (F-16)
+  // ========================================================================
+
+  describe('Step 5b: pool claim cross-validation (F-16)', () => {
+    it('unknown access_level emits pool-claim-unknown-access-level', async () => {
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'cheap',
+          access_level: 'platinum', // unknown access level
+          allowed_pools: ['cheap'],
+        }))),
+      );
+
+      const claims = makeJwtClaims();
+      const result = await receiver.receive(claims, 'valid.jws.compact');
+
+      expect(result.status).toBe('accepted');
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'pool-claim-unknown-access-level',
+          accessLevel: 'platinum',
+        }),
+        expect.stringContaining('Unknown access_level'),
+      );
+    });
+
+    it('unknown access_level skips validatePoolClaims (no mismatch log)', async () => {
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'architect',
+          access_level: 'platinum',
+          allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+        }))),
+      );
+
+      const claims = makeJwtClaims();
+      await receiver.receive(claims, 'valid.jws.compact');
+
+      // Should log unknown-access-level, NOT pool-claim-mismatch
+      const mismatchCalls = (deps.logger.warn as any).mock.calls.filter(
+        (call: any[]) => call[0]?.event === 'pool-claim-mismatch',
+      );
+      expect(mismatchCalls).toHaveLength(0);
+
+      const unknownCalls = (deps.logger.warn as any).mock.calls.filter(
+        (call: any[]) => call[0]?.event === 'pool-claim-unknown-access-level',
+      );
+      expect(unknownCalls).toHaveLength(1);
+    });
+
+    it('valid access_level with mismatched pools emits pool-claim-mismatch', async () => {
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'architect',
+          access_level: 'free',
+          allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+        }))),
+      );
+
+      const claims = makeJwtClaims();
+      await receiver.receive(claims, 'valid.jws.compact');
+
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'pool-claim-mismatch',
+          poolId: 'architect',
+          accessLevel: 'free',
+        }),
+        expect.stringContaining('Pool claim validation failed'),
+      );
+    });
+  });
+
+  // ========================================================================
   // Edge Cases
   // ========================================================================
 

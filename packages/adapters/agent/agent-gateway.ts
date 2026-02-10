@@ -117,7 +117,7 @@ export class AgentGateway implements IAgentGateway {
     }
 
     // 4. Estimate cost and reserve budget (using resolved poolId, not raw alias)
-    const estimatedCost = this.budget.estimateCost({
+    const estimatedCostCents = this.budget.estimateCost({
       modelAlias: poolId,
       estimatedInputTokens: this.estimateInputTokens(request),
       // 1000: Conservative sync estimate. Median Claude response is ~500 tokens;
@@ -131,7 +131,7 @@ export class AgentGateway implements IAgentGateway {
       userId: context.userId,
       idempotencyKey: context.idempotencyKey,
       modelAlias: poolId,
-      estimatedCost,
+      estimatedCost: estimatedCostCents,
     });
 
     if (reserveResult.status === 'BUDGET_EXCEEDED') {
@@ -156,8 +156,8 @@ export class AgentGateway implements IAgentGateway {
     }
 
     // 5. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
-    // 3× estimated cost in micro-cents — loa-finn enforces this ceiling
-    const maxCostMicroCents = estimatedCost * 3 * 100; // cents → micro-cents (×100)
+    // 3× estimated cost (cents) × 100 → micro-cents. loa-finn enforces this ceiling.
+    const maxCostMicroCents = estimatedCostCents * 3 * 100;
     request = {
       ...request,
       context: { ...context, poolId, allowedPools },
@@ -180,7 +180,7 @@ export class AgentGateway implements IAgentGateway {
         traceId: context.traceId,
       });
 
-      this.checkBudgetDrift(actualCostCents, estimatedCost, context.traceId, log);
+      this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log);
 
       return response;
     } catch (err) {
@@ -243,7 +243,7 @@ export class AgentGateway implements IAgentGateway {
     }
 
     // 4. Reserve budget (using resolved poolId, not raw alias)
-    const estimatedCost = this.budget.estimateCost({
+    const estimatedCostCents = this.budget.estimateCost({
       modelAlias: poolId,
       estimatedInputTokens: this.estimateInputTokens(request),
       // 2000: Stream requests tend to produce longer responses (multi-turn, tool use).
@@ -257,7 +257,7 @@ export class AgentGateway implements IAgentGateway {
       userId: context.userId,
       idempotencyKey: context.idempotencyKey,
       modelAlias: poolId,
-      estimatedCost,
+      estimatedCost: estimatedCostCents,
     });
 
     if (reserveResult.status === 'BUDGET_EXCEEDED') {
@@ -281,7 +281,8 @@ export class AgentGateway implements IAgentGateway {
     }
 
     // 5. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
-    const maxCostMicroCents = estimatedCost * 3 * 100; // cents → micro-cents (×100)
+    // 3× estimated cost (cents) × 100 → micro-cents. loa-finn enforces this ceiling.
+    const maxCostMicroCents = estimatedCostCents * 3 * 100;
     request = {
       ...request,
       context: { ...context, poolId, allowedPools },
@@ -308,7 +309,7 @@ export class AgentGateway implements IAgentGateway {
           });
           finalized = true;
 
-          this.checkBudgetDrift(actualCostCents, estimatedCost, context.traceId, log);
+          this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log);
         }
 
         yield event;

@@ -53,6 +53,8 @@ export interface S2SJwtPayload {
   jti?: string
   purpose: string
   report_id?: string
+  /** JWT schema version — @see Bridgebuilder F-10 */
+  v?: number
 }
 
 interface JwksResponse {
@@ -97,14 +99,17 @@ export class S2SJwtValidator {
       throw new Error('S2S JWT must have typ: JWT')
     }
 
+    const custom = payload as Record<string, unknown>
+
     return {
       iss: payload.iss!,
       aud: payload.aud as string,
       exp: payload.exp!,
       iat: payload.iat!,
       jti: payload.jti,
-      purpose: (payload as Record<string, unknown>).purpose as string,
-      report_id: (payload as Record<string, unknown>).report_id as string | undefined,
+      purpose: custom.purpose as string,
+      report_id: custom.report_id as string | undefined,
+      v: typeof custom.v === 'number' ? custom.v : undefined,
     }
   }
 

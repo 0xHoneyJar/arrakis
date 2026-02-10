@@ -53,6 +53,21 @@ const NATIVE_POOL: Record<AccessLevel, PoolId> = {
 };
 
 // --------------------------------------------------------------------------
+// Access Level Type Guard (F-16: eliminate `as any` cast)
+// --------------------------------------------------------------------------
+
+const VALID_ACCESS_LEVELS: ReadonlySet<string> = new Set(['free', 'pro', 'enterprise']);
+
+/**
+ * Type guard for AccessLevel strings. Separates "unknown access level" (data quality)
+ * from "valid access level with mismatched pools" (security concern).
+ * @see Bridgebuilder F-16
+ */
+export function isAccessLevel(s: string): s is AccessLevel {
+  return VALID_ACCESS_LEVELS.has(s);
+}
+
+// --------------------------------------------------------------------------
 // Pool Claim Validation (F-5: confused deputy prevention)
 // --------------------------------------------------------------------------
 

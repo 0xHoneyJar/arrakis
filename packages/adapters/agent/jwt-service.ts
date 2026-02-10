@@ -133,6 +133,7 @@ export class JwtService {
       channel_id: context.channelId,
       idempotency_key: context.idempotencyKey,
       req_hash: reqHash,
+      v: 1, // JWT schema version — @see Bridgebuilder F-10
     })
       .setProtectedHeader({ alg: 'ES256', kid: this.config.keyId, typ: 'JWT' })
       .setIssuer('arrakis')

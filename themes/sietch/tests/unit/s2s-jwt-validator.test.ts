@@ -516,6 +516,36 @@ describe('S2SJwtValidator', () => {
   })
 
   // ========================================================================
+  // JWT Schema Version Extraction (Bridgebuilder F-10, T1.2)
+  // ========================================================================
+  describe('validateJwt — v claim extraction (F-10)', () => {
+    it('validateJwt extracts v from payload', async () => {
+      const validator = new S2SJwtValidator(makeConfig(), noopLogger, clock)
+      const token = await createTestJwt(keyPairA.privateKey, 'kid-a', { v: 1 })
+
+      const payload = await validator.validateJwt(token)
+      expect(payload.v).toBe(1)
+    })
+
+    it('validateJwt returns v=undefined for legacy tokens', async () => {
+      const validator = new S2SJwtValidator(makeConfig(), noopLogger, clock)
+      // Token without v claim (legacy format)
+      const token = await createTestJwt(keyPairA.privateKey, 'kid-a')
+
+      const payload = await validator.validateJwt(token)
+      expect(payload.v).toBeUndefined()
+    })
+
+    it('validateJwt ignores non-numeric v claim', async () => {
+      const validator = new S2SJwtValidator(makeConfig(), noopLogger, clock)
+      const token = await createTestJwt(keyPairA.privateKey, 'kid-a', { v: 'not-a-number' })
+
+      const payload = await validator.validateJwt(token)
+      expect(payload.v).toBeUndefined()
+    })
+  })
+
+  // ========================================================================
   // Key resolution fallback
   // ========================================================================
   describe('key resolution', () => {

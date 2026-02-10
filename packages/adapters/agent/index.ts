@@ -139,6 +139,7 @@ export {
   POOL_IDS,
   VALID_POOL_IDS,
   ALIAS_TO_POOL,
+  isAccessLevel,
   type PoolId,
   type PoolResolution,
   type PoolClaimValidation,
