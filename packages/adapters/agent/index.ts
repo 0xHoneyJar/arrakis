@@ -17,6 +17,7 @@ export { TierAccessMapper, DEFAULT_TIER_MAP, type TierMappingConfig, type TierMa
 // Configuration
 export {
   loadAgentGatewayConfig,
+  buildS2SJwtValidatorConfig,
   agentInvokeRequestSchema,
   RESERVATION_TTL_MS,
   FINALIZED_MARKER_TTL_S,
@@ -33,7 +34,26 @@ export {
   type LoaFinnConfig,
   type BudgetConfig,
   type RateLimitConfig,
+  type S2SValidationConfig,
+  type UsageReceiverConfig,
 } from './config.js';
+
+// Budget Unit Bridge (micro-USD ↔ micro-cents)
+export {
+  microUsdToMicroCents,
+  microCentsToMicroUsd,
+  parseMicroUnit,
+  CONVERSION_FACTOR,
+  MAX_MICRO_USD,
+  MAX_MICRO_CENTS,
+} from './budget-unit-bridge.js';
+
+// S2S JWT Validator (inbound loa-finn → arrakis)
+export {
+  S2SJwtValidator,
+  type S2SJwtValidatorConfig,
+  type S2SJwtPayload,
+} from './s2s-jwt-validator.js';
 
 // Types
 export { type AgentGatewayResult, type AgentErrorCode, type AgentErrorResponse } from './types.js';
