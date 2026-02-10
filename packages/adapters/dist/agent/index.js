@@ -29,7 +29,7 @@ export { BudgetReaperJob, REAPER_JOB_CONFIG, } from './budget-reaper-job.js';
 // Budget Config Provider
 export { BudgetConfigProvider, BUDGET_SYNC_JOB_CONFIG, BUDGET_MONTHLY_RESET_JOB_CONFIG, } from './budget-config-provider.js';
 // Budget Drift Monitor
-export { BudgetDriftMonitor, DRIFT_THRESHOLD_MICRO_CENTS, DRIFT_MONITOR_JOB_CONFIG, } from './budget-drift-monitor.js';
+export { BudgetDriftMonitor, DRIFT_THRESHOLD_MICRO_CENTS, DRIFT_LAG_FACTOR_SECONDS, DRIFT_MAX_THRESHOLD_MICRO_CENTS, DRIFT_MONITOR_JOB_CONFIG, } from './budget-drift-monitor.js';
 // Request Hash
 export { computeReqHash } from './req-hash.js';
 // Agent Gateway Facade
@@ -38,6 +38,8 @@ export { AgentGateway, AgentGatewayError } from './agent-gateway.js';
 export { requireAgentAuth, buildAgentRequestContext, } from './agent-auth-middleware.js';
 // Gateway Factory
 export { createAgentGateway } from './factory.js';
+// SSE Event ID Generators (S14-T1)
+export { createEventIdGenerator, parseLastEventId, MonotonicEventIdGenerator, CompositeEventIdGenerator, } from './sse-event-id.js';
 // Observability
 export { createAgentLogger, hashWallet, logAgentRequest, LogMetricEmitter, NoopMetricEmitter, AGENT_METRICS, AGENT_REDACTION_PATHS, } from './observability.js';
 //# sourceMappingURL=index.js.map

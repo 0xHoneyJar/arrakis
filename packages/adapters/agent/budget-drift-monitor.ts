@@ -28,6 +28,8 @@ export interface DriftActiveCommunityProvider {
 export interface BudgetUsageQueryProvider {
   /** SUM(cost_micro_cents) for a community in a given month (YYYY-MM) */
   getCommittedMicroCents(communityId: string, month: string): Promise<number>;
+  /** Trailing-window throughput stats for adaptive drift threshold (S14-T2) */
+  getRequestRate(communityId: string, windowMinutes: number): Promise<{ ratePerMinute: number; avgCostMicroCents: number }>;
 }
 
 export interface DriftMonitorResult {
@@ -49,8 +51,17 @@ export interface CommunityDrift {
 // Constants
 // --------------------------------------------------------------------------
 
-/** 500,000 micro-cents = $0.50 — threshold for BUDGET_ACCOUNTING_DRIFT alarm */
+/** 500,000 micro-cents = $0.50 — static threshold for BUDGET_ACCOUNTING_DRIFT alarm */
 export const DRIFT_THRESHOLD_MICRO_CENTS = 500_000;
+
+/** Estimated Redis→PG propagation delay in seconds (S14-T2) */
+export const DRIFT_LAG_FACTOR_SECONDS = 30;
+
+/** Maximum adaptive threshold: 100,000,000 micro-cents = $100.00 (S14-T2) */
+export const DRIFT_MAX_THRESHOLD_MICRO_CENTS = 100_000_000;
+
+/** Trailing window for request rate calculation — 60 min avoids feedback with 15-min drift cycle */
+const DRIFT_RATE_WINDOW_MINUTES = 60;
 
 /** Per-community query timeout */
 const PER_COMMUNITY_TIMEOUT_MS = 10_000;
@@ -97,6 +108,18 @@ export class BudgetDriftMonitor {
         const absDrift = Math.abs(drift.driftMicroCents);
         maxDriftMicroCents = Math.max(maxDriftMicroCents, absDrift);
 
+        // Compute adaptive threshold from trailing-window throughput (S14-T2)
+        const { ratePerMinute, avgCostMicroCents } = await this.usageQuery.getRequestRate(
+          communityId,
+          DRIFT_RATE_WINDOW_MINUTES,
+        );
+        const lagAdjustment = ratePerMinute * (DRIFT_LAG_FACTOR_SECONDS / 60) * avgCostMicroCents;
+        const adaptiveThreshold = clamp(
+          DRIFT_THRESHOLD_MICRO_CENTS + lagAdjustment,
+          DRIFT_THRESHOLD_MICRO_CENTS,
+          DRIFT_MAX_THRESHOLD_MICRO_CENTS,
+        );
+
         // Log all drift at debug level for monitoring
         this.logger.debug(
           {
@@ -105,13 +128,18 @@ export class BudgetDriftMonitor {
             pgMicroCents: drift.pgMicroCents,
             driftMicroCents: drift.driftMicroCents,
             driftDirection: drift.driftDirection,
+            staticThresholdMicroCents: DRIFT_THRESHOLD_MICRO_CENTS,
+            adaptiveThresholdMicroCents: adaptiveThreshold,
+            ratePerMinute,
+            avgCostMicroCents,
             month,
           },
           'budget-drift-monitor: community check',
         );
 
-        // Fire alarm if drift exceeds threshold
-        if (absDrift > DRIFT_THRESHOLD_MICRO_CENTS) {
+        // Hard overspend rule (S14-T2): PG > Redis means actual spend exceeds tracking
+        // Fire alarm unconditionally — this is never lag, it's a real accounting error
+        if (drift.driftDirection === 'pg_over' && drift.pgMicroCents > drift.redisMicroCents) {
           driftDetected++;
           this.logger.error(
             {
@@ -121,10 +149,44 @@ export class BudgetDriftMonitor {
               driftMicroCents: drift.driftMicroCents,
               driftDirection: drift.driftDirection,
               thresholdMicroCents: DRIFT_THRESHOLD_MICRO_CENTS,
+              adaptiveThresholdMicroCents: adaptiveThreshold,
+              month,
+              alarm: 'BUDGET_HARD_OVERSPEND',
+            },
+            'BUDGET_HARD_OVERSPEND: PG committed exceeds Redis committed — real accounting error',
+          );
+        } else if (absDrift > adaptiveThreshold) {
+          // Drift exceeds adaptive threshold — alarm
+          driftDetected++;
+          this.logger.error(
+            {
+              communityId,
+              redisMicroCents: drift.redisMicroCents,
+              pgMicroCents: drift.pgMicroCents,
+              driftMicroCents: drift.driftMicroCents,
+              driftDirection: drift.driftDirection,
+              thresholdMicroCents: DRIFT_THRESHOLD_MICRO_CENTS,
+              adaptiveThresholdMicroCents: adaptiveThreshold,
               month,
               alarm: 'BUDGET_ACCOUNTING_DRIFT',
             },
-            'BUDGET_ACCOUNTING_DRIFT: Redis/PG budget mismatch exceeds threshold',
+            'BUDGET_ACCOUNTING_DRIFT: Redis/PG budget mismatch exceeds adaptive threshold',
+          );
+        } else if (absDrift > DRIFT_THRESHOLD_MICRO_CENTS) {
+          // Drift exceeds static but within adaptive — warn (expected lag at current throughput)
+          this.logger.warn(
+            {
+              communityId,
+              redisMicroCents: drift.redisMicroCents,
+              pgMicroCents: drift.pgMicroCents,
+              driftMicroCents: drift.driftMicroCents,
+              driftDirection: drift.driftDirection,
+              staticThresholdMicroCents: DRIFT_THRESHOLD_MICRO_CENTS,
+              adaptiveThresholdMicroCents: adaptiveThreshold,
+              ratePerMinute,
+              month,
+            },
+            'budget-drift-monitor: drift within expected lag range',
           );
         }
       } catch (err) {
@@ -210,6 +272,10 @@ function safeInt(v: string | null, def = 0): number {
   if (v === null) return def;
   const n = Number(v);
   return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : def;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(value, max));
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, communityId: string): Promise<T> {

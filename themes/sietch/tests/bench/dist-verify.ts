@@ -39,14 +39,27 @@ async function verify() {
     errors.push(`jwt-service.js: import failed — ${(e as Error).message}`);
   }
 
-  // 3. Verify budget-drift-monitor.js imports from clock.js
+  // 3. Verify budget-drift-monitor.js imports from clock.js + adaptive constants (S14-T2)
   try {
     const drift = await import(`${DIST_BASE}/budget-drift-monitor.js`);
     assert(drift.BudgetDriftMonitor != null, 'budget-drift-monitor.js: BudgetDriftMonitor class');
     assert(drift.DRIFT_THRESHOLD_MICRO_CENTS != null, 'budget-drift-monitor.js: DRIFT_THRESHOLD_MICRO_CENTS');
+    assert(drift.DRIFT_LAG_FACTOR_SECONDS === 30, 'budget-drift-monitor.js: DRIFT_LAG_FACTOR_SECONDS');
+    assert(drift.DRIFT_MAX_THRESHOLD_MICRO_CENTS === 100_000_000, 'budget-drift-monitor.js: DRIFT_MAX_THRESHOLD_MICRO_CENTS');
     assert(drift.DRIFT_MONITOR_JOB_CONFIG != null, 'budget-drift-monitor.js: DRIFT_MONITOR_JOB_CONFIG');
   } catch (e) {
     errors.push(`budget-drift-monitor.js: import failed — ${(e as Error).message}`);
+  }
+
+  // 3b. Verify sse-event-id.js exports (S14-T1)
+  try {
+    const sse = await import(`${DIST_BASE}/sse-event-id.js`);
+    assert(typeof sse.createEventIdGenerator === 'function', 'sse-event-id.js: createEventIdGenerator');
+    assert(typeof sse.parseLastEventId === 'function', 'sse-event-id.js: parseLastEventId');
+    assert(sse.MonotonicEventIdGenerator != null, 'sse-event-id.js: MonotonicEventIdGenerator');
+    assert(sse.CompositeEventIdGenerator != null, 'sse-event-id.js: CompositeEventIdGenerator');
+  } catch (e) {
+    errors.push(`sse-event-id.js: import failed — ${(e as Error).message}`);
   }
 
   // 4. Verify config.js has KNOWN_MODEL_ALIASES as a Set
@@ -87,10 +100,11 @@ async function verify() {
     process.exit(1);
   }
 
-  console.log('dist-verify: OK — all exports present');
+  console.log('dist-verify: OK — all 8 modules verified');
   console.log('  ✓ clock.js (REAL_CLOCK)');
   console.log('  ✓ jwt-service.js (JwtService)');
-  console.log('  ✓ budget-drift-monitor.js (BudgetDriftMonitor, DRIFT_THRESHOLD_MICRO_CENTS)');
+  console.log('  ✓ budget-drift-monitor.js (BudgetDriftMonitor, adaptive thresholds)');
+  console.log('  ✓ sse-event-id.js (createEventIdGenerator, parseLastEventId)');
   console.log('  ✓ config.js (KNOWN_MODEL_ALIASES, agentInvokeRequestSchema)');
   console.log('  ✓ req-hash.js (computeReqHash)');
   console.log('  ✓ observability.js (createAgentLogger, hashWallet)');

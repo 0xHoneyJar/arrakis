@@ -27,6 +27,8 @@ vi.mock('node:fs', async () => {
 import {
   BudgetDriftMonitor,
   DRIFT_THRESHOLD_MICRO_CENTS,
+  DRIFT_LAG_FACTOR_SECONDS,
+  DRIFT_MAX_THRESHOLD_MICRO_CENTS,
   DRIFT_MONITOR_JOB_CONFIG,
   type DriftActiveCommunityProvider,
   type BudgetUsageQueryProvider,
@@ -59,9 +61,11 @@ function mockCommunityProvider(ids: string[]): DriftActiveCommunityProvider {
 
 function mockUsageQuery(
   data: Record<string, number> = {},
+  rateData: Record<string, { ratePerMinute: number; avgCostMicroCents: number }> = {},
 ): BudgetUsageQueryProvider {
   return {
     getCommittedMicroCents: vi.fn(async (communityId: string) => data[communityId] ?? 0),
+    getRequestRate: vi.fn(async (communityId: string) => rateData[communityId] ?? { ratePerMinute: 0, avgCostMicroCents: 0 }),
   };
 }
 
@@ -312,7 +316,9 @@ describe('BudgetDriftMonitor', () => {
       const result = await monitor.process();
 
       expect(result.communitiesChecked).toBe(3);
-      expect(result.driftDetected).toBe(1); // only comm-1
+      // comm-1: drift 1,000,000 (redis_over) > adaptive → BUDGET_ACCOUNTING_DRIFT
+      // comm-3: PG 400,000 > Redis 0 → BUDGET_HARD_OVERSPEND (S14-T2: PG > Redis = unconditional)
+      expect(result.driftDetected).toBe(2);
       expect(result.maxDriftMicroCents).toBe(1_000_000);
       expect(result.errors).toBe(0);
     });
@@ -330,6 +336,7 @@ describe('BudgetDriftMonitor', () => {
           if (communityId === 'comm-2') throw new Error('PG timeout');
           return 0;
         }),
+        getRequestRate: vi.fn(async () => ({ ratePerMinute: 0, avgCostMicroCents: 0 })),
       };
       const logger = mockLogger();
       const monitor = new BudgetDriftMonitor(
@@ -360,9 +367,10 @@ describe('BudgetDriftMonitor', () => {
 
       const result = await monitor.process();
 
-      // 0 × 10,000 = 0; 0 - 100,000 = -100,000 → pg_over, under threshold
+      // 0 × 10,000 = 0; 0 - 100,000 = -100,000 → pg_over
+      // S14-T2: PG > Redis fires BUDGET_HARD_OVERSPEND unconditionally
       expect(result.maxDriftMicroCents).toBe(100_000);
-      expect(result.driftDetected).toBe(0);
+      expect(result.driftDetected).toBe(1);
     });
   });
 
@@ -560,6 +568,354 @@ describe('BudgetDriftMonitor', () => {
         }),
         'budget-drift-monitor: cycle complete',
       );
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Adaptive Drift Thresholds (S14-T2)
+  // --------------------------------------------------------------------------
+
+  describe('adaptive drift thresholds (S14-T2)', () => {
+    it('exports new constants', () => {
+      expect(DRIFT_LAG_FACTOR_SECONDS).toBe(30);
+      expect(DRIFT_MAX_THRESHOLD_MICRO_CENTS).toBe(100_000_000);
+    });
+
+    it('at zero throughput, threshold equals static DRIFT_THRESHOLD_MICRO_CENTS', async () => {
+      // Redis: 100 cents = 1,000,000 μ¢; PG: 0 → drift = 1,000,000 (> 500,000 static)
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '100' });
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 0 },
+        { 'comm-1': { ratePerMinute: 0, avgCostMicroCents: 0 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      const result = await monitor.process();
+
+      // Zero throughput → adaptive = static = 500,000; drift 1,000,000 > 500,000 → alarm
+      expect(result.driftDetected).toBe(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          alarm: 'BUDGET_ACCOUNTING_DRIFT',
+          adaptiveThresholdMicroCents: DRIFT_THRESHOLD_MICRO_CENTS,
+        }),
+        expect.stringContaining('BUDGET_ACCOUNTING_DRIFT'),
+      );
+    });
+
+    it('at high throughput, drift within expected lag triggers warn not alarm', async () => {
+      // Scenario: 1000 req/min, avg cost 5000 μ¢, lag 30s
+      // Expected lag drift: 1000 * (30/60) * 5000 = 2,500,000 μ¢
+      // Adaptive threshold: 500,000 + 2,500,000 = 3,000,000 μ¢
+      // Redis: 300 cents = 3,000,000 μ¢; PG: 1,000,000 → drift = 2,000,000
+      // 2,000,000 > static (500,000) but < adaptive (3,000,000) → WARN
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '300' });
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 1_000_000 },
+        { 'comm-1': { ratePerMinute: 1000, avgCostMicroCents: 5000 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      const result = await monitor.process();
+
+      // Should warn, not alarm
+      expect(result.driftDetected).toBe(0);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          communityId: 'comm-1',
+          staticThresholdMicroCents: DRIFT_THRESHOLD_MICRO_CENTS,
+          adaptiveThresholdMicroCents: 3_000_000,
+        }),
+        'budget-drift-monitor: drift within expected lag range',
+      );
+    });
+
+    it('at high throughput, drift exceeding adaptive threshold fires alarm', async () => {
+      // 1000 req/min, avg cost 5000 μ¢ → adaptive = 3,000,000
+      // Redis: 500 cents = 5,000,000; PG: 1,000,000 → drift = 4,000,000 > 3,000,000
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '500' });
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 1_000_000 },
+        { 'comm-1': { ratePerMinute: 1000, avgCostMicroCents: 5000 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      const result = await monitor.process();
+
+      expect(result.driftDetected).toBe(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          alarm: 'BUDGET_ACCOUNTING_DRIFT',
+          adaptiveThresholdMicroCents: 3_000_000,
+        }),
+        expect.stringContaining('BUDGET_ACCOUNTING_DRIFT'),
+      );
+    });
+
+    it('adaptive threshold never exceeds DRIFT_MAX_THRESHOLD_MICRO_CENTS ceiling', async () => {
+      // Extreme throughput: 100,000 req/min, avg cost 100,000 μ¢
+      // Raw: 500,000 + 100,000 * 0.5 * 100,000 = 5,000,500,000 → clamped to 100,000,000
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '10100' }); // 101,000,000 μ¢
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 0 },
+        { 'comm-1': { ratePerMinute: 100_000, avgCostMicroCents: 100_000 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      const result = await monitor.process();
+
+      // Drift = 101,000,000 > ceiling 100,000,000 → alarm fires
+      expect(result.driftDetected).toBe(1);
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adaptiveThresholdMicroCents: DRIFT_MAX_THRESHOLD_MICRO_CENTS,
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('adaptive threshold never drops below static floor (monotonicity)', async () => {
+      // Even with zero rate, threshold = static floor
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '5' });
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 50_000 },
+        { 'comm-1': { ratePerMinute: 0, avgCostMicroCents: 0 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      await monitor.process();
+
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adaptiveThresholdMicroCents: DRIFT_THRESHOLD_MICRO_CENTS,
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('increasing throughput never decreases threshold (property test)', async () => {
+      const thresholds: number[] = [];
+
+      for (const rate of [0, 10, 100, 500, 1000, 5000, 10000]) {
+        const redis = mockRedis({ [redisKey('comm-1', month)]: '5' });
+        const usageQuery = mockUsageQuery(
+          { 'comm-1': 50_000 },
+          { 'comm-1': { ratePerMinute: rate, avgCostMicroCents: 3000 } },
+        );
+        const logger = mockLogger();
+        const monitor = new BudgetDriftMonitor(
+          redis,
+          mockCommunityProvider(['comm-1']),
+          usageQuery,
+          logger,
+        );
+
+        await monitor.process();
+
+        // Extract adaptive threshold from debug log
+        const debugCall = (logger.debug as ReturnType<typeof vi.fn>).mock.calls[0];
+        thresholds.push(debugCall[0].adaptiveThresholdMicroCents);
+      }
+
+      // Each threshold must be >= the previous one (monotonic non-decreasing)
+      for (let i = 1; i < thresholds.length; i++) {
+        expect(thresholds[i]).toBeGreaterThanOrEqual(thresholds[i - 1]);
+      }
+
+      // All thresholds must be >= static floor
+      for (const t of thresholds) {
+        expect(t).toBeGreaterThanOrEqual(DRIFT_THRESHOLD_MICRO_CENTS);
+      }
+
+      // All thresholds must be <= ceiling
+      for (const t of thresholds) {
+        expect(t).toBeLessThanOrEqual(DRIFT_MAX_THRESHOLD_MICRO_CENTS);
+      }
+    });
+
+    it('uses 60-min trailing window for request rate (not 15-min)', async () => {
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '5' });
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 50_000 },
+        { 'comm-1': { ratePerMinute: 100, avgCostMicroCents: 1000 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      await monitor.process();
+
+      // Verify getRequestRate was called with 60-min window
+      expect(usageQuery.getRequestRate).toHaveBeenCalledWith('comm-1', 60);
+    });
+
+    it('debug log includes full observability fields', async () => {
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '5' });
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 50_000 },
+        { 'comm-1': { ratePerMinute: 200, avgCostMicroCents: 2000 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      await monitor.process();
+
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({
+          staticThresholdMicroCents: DRIFT_THRESHOLD_MICRO_CENTS,
+          adaptiveThresholdMicroCents: expect.any(Number),
+          ratePerMinute: 200,
+          avgCostMicroCents: 2000,
+        }),
+        expect.any(String),
+      );
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Hard Overspend Rule (S14-T2)
+  // --------------------------------------------------------------------------
+
+  describe('hard overspend rule (S14-T2)', () => {
+    it('PG > Redis fires BUDGET_HARD_OVERSPEND alarm unconditionally', async () => {
+      // Redis: 0 cents; PG: 1,000,000 μ¢ → PG over Redis → hard overspend
+      const redis = mockRedis({});
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 1_000_000 },
+        { 'comm-1': { ratePerMinute: 0, avgCostMicroCents: 0 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      const result = await monitor.process();
+
+      expect(result.driftDetected).toBe(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          communityId: 'comm-1',
+          alarm: 'BUDGET_HARD_OVERSPEND',
+          driftDirection: 'pg_over',
+        }),
+        expect.stringContaining('BUDGET_HARD_OVERSPEND'),
+      );
+    });
+
+    it('PG > Redis fires alarm even with high adaptive threshold', async () => {
+      // High throughput should NOT suppress overspend
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '10' }); // 100,000 μ¢
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 200_000 }, // PG: 200,000 > Redis: 100,000
+        { 'comm-1': { ratePerMinute: 10000, avgCostMicroCents: 50000 } }, // Very high throughput
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      const result = await monitor.process();
+
+      expect(result.driftDetected).toBe(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          alarm: 'BUDGET_HARD_OVERSPEND',
+        }),
+        expect.stringContaining('BUDGET_HARD_OVERSPEND'),
+      );
+    });
+
+    it('Redis > PG does NOT trigger hard overspend (normal lag pattern)', async () => {
+      // Redis: 100 cents = 1,000,000 μ¢; PG: 0 → redis_over (normal lag)
+      const redis = mockRedis({ [redisKey('comm-1', month)]: '100' });
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 0 },
+        { 'comm-1': { ratePerMinute: 0, avgCostMicroCents: 0 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      const result = await monitor.process();
+
+      // Should be BUDGET_ACCOUNTING_DRIFT, not BUDGET_HARD_OVERSPEND
+      expect(result.driftDetected).toBe(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          alarm: 'BUDGET_ACCOUNTING_DRIFT',
+        }),
+        expect.stringContaining('BUDGET_ACCOUNTING_DRIFT'),
+      );
+    });
+
+    it('PG = Redis = 0 does not trigger any alarm', async () => {
+      const redis = mockRedis({});
+      const usageQuery = mockUsageQuery(
+        { 'comm-1': 0 },
+        { 'comm-1': { ratePerMinute: 0, avgCostMicroCents: 0 } },
+      );
+      const logger = mockLogger();
+      const monitor = new BudgetDriftMonitor(
+        redis,
+        mockCommunityProvider(['comm-1']),
+        usageQuery,
+        logger,
+      );
+
+      const result = await monitor.process();
+
+      expect(result.driftDetected).toBe(0);
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
     });
   });
 });

@@ -119,12 +119,24 @@ export { createAgentGateway, type CreateAgentGatewayOptions } from './factory.js
 export {
   BudgetDriftMonitor,
   DRIFT_THRESHOLD_MICRO_CENTS,
+  DRIFT_LAG_FACTOR_SECONDS,
+  DRIFT_MAX_THRESHOLD_MICRO_CENTS,
   DRIFT_MONITOR_JOB_CONFIG,
   type DriftActiveCommunityProvider,
   type BudgetUsageQueryProvider,
   type DriftMonitorResult,
   type CommunityDrift,
 } from './budget-drift-monitor.js';
+
+// SSE Event ID Generators (S14-T1: Distributed SSE)
+export {
+  createEventIdGenerator,
+  parseLastEventId,
+  MonotonicEventIdGenerator,
+  CompositeEventIdGenerator,
+  type SseEventIdGenerator,
+  type ParsedEventId,
+} from './sse-event-id.js';
 
 // Observability
 export {

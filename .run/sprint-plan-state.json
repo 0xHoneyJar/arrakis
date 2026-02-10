@@ -1,18 +1,19 @@
 {
   "plan_id": "plan-20260210-bridgebuilder-r3",
   "branch": "feature/spice-gate-phase4",
-  "state": "RUNNING",
+  "state": "JACKED_OUT",
   "timestamps": {
     "started": "2026-02-10T12:00:00Z",
-    "last_activity": "2026-02-10T20:05:00Z"
+    "last_activity": "2026-02-10T20:30:00Z",
+    "completed": "2026-02-10T20:30:00Z"
   },
   "sprints": {
     "total": 2,
-    "completed": 1,
-    "current": "sprint-14",
+    "completed": 2,
+    "current": null,
     "list": [
       {"id": "sprint-13", "status": "completed", "cycles": 1},
-      {"id": "sprint-14", "status": "in_progress", "cycles": 0}
+      {"id": "sprint-14", "status": "completed", "cycles": 1}
     ]
   },
   "options": {
@@ -22,9 +23,9 @@
     "timeout_hours": 8
   },
   "metrics": {
-    "total_cycles": 1,
-    "total_files_changed": 15,
-    "total_findings_fixed": 4
+    "total_cycles": 2,
+    "total_files_changed": 25,
+    "total_findings_fixed": 8
   },
   "context": {
     "sprint_plan": "grimoires/loa/sprint-hounfour-phase4-v3.md",

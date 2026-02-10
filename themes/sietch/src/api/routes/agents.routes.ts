@@ -17,6 +17,7 @@ import type { JWK } from 'jose';
 import type { IAgentGateway } from '@arrakis/core/ports';
 import type { AgentAuthenticatedRequest } from '@arrakis/adapters/agent/agent-auth-middleware';
 import { agentInvokeRequestSchema, AGENT_BODY_LIMIT, AGENT_MAX_IDEMPOTENCY_KEY_LENGTH } from '@arrakis/adapters/agent/config';
+import { createEventIdGenerator, parseLastEventId } from '@arrakis/adapters/agent';
 import express from 'express';
 
 // --------------------------------------------------------------------------
@@ -275,10 +276,27 @@ export function createAgentRoutes(deps: AgentRoutesDeps): Router {
           ? req.headers['last-event-id']
           : undefined;
 
-        // Monotonic SSE event ID counter for browser-native EventSource reconnection.
-        // On disconnect, browser sends Last-Event-ID header → server resumes from that point.
-        // Start from lastEventId if resuming, otherwise 0.
-        let eventSeq = lastEventId ? parseInt(lastEventId, 10) || 0 : 0;
+        // SSE event ID generator — Monotonic (default) or Composite (when SSE_SERVER_ID set).
+        // IDs are for client-side ordering and same-server resume only.
+        // Cross-server reconnect defers to STREAM_RESUME_LOST FSM.
+        // See Bridgebuilder PR #47 Comment 4, Finding B.
+        let idGen = createEventIdGenerator();
+        if (lastEventId) {
+          idGen = idGen.fromLastEventId(lastEventId);
+
+          // Detect server switch for composite IDs — log warning
+          const parsed_id = parseLastEventId(lastEventId);
+          const currentServerId = process.env.SSE_SERVER_ID;
+          if (parsed_id.serverId && currentServerId && parsed_id.serverId !== currentServerId) {
+            // Different server — STREAM_RESUME_LOST FSM will handle this upstream
+            // Log for observability
+            (req as Record<string, unknown>).log?.({
+              lastEventServerId: parsed_id.serverId,
+              currentServerId,
+              msg: 'SSE server switch detected — deferring to STREAM_RESUME_LOST FSM',
+            });
+          }
+        }
 
         for await (const event of gateway.stream({
           context: agentReq.agentContext,
@@ -286,8 +304,8 @@ export function createAgentRoutes(deps: AgentRoutesDeps): Router {
         }, { signal: abort.signal, lastEventId })) {
           if (abort.signal.aborted) break;
 
-          eventSeq++;
-          res.write(`id: ${eventSeq}\n`);
+          const eventId = idGen.next();
+          res.write(`id: ${eventId}\n`);
           res.write(`event: ${event.type}\n`);
           res.write(`data: ${JSON.stringify(event.data)}\n\n`);
         }
