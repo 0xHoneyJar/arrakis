@@ -1,29 +1,29 @@
 {
-  "plan_id": "plan-20260209-hardening",
+  "plan_id": "plan-20260209-hardening2",
   "branch": "feature/spice-gate-phase4",
-  "state": "RUNNING",
+  "state": "JACKED_OUT",
   "timestamps": {
-    "started": "2026-02-09T12:00:00Z",
-    "last_activity": "2026-02-09T12:00:00Z"
+    "started": "2026-02-09T16:00:00Z",
+    "last_activity": "2026-02-09T18:00:00Z"
   },
   "sprints": {
     "total": 2,
-    "completed": 0,
-    "current": "sprint-6",
+    "completed": 2,
+    "current": null,
     "list": [
-      {"id": "sprint-6", "global_id": 184, "status": "in_progress", "cycles": 0, "files_changed": 0},
-      {"id": "sprint-7", "global_id": 185, "status": "pending", "cycles": 0, "files_changed": 0}
+      {"id": "sprint-8", "status": "completed", "cycles": 1, "files_changed": 7},
+      {"id": "sprint-9", "status": "completed", "cycles": 1, "files_changed": 6}
     ]
   },
   "options": {
-    "from": 6,
-    "to": 7,
+    "from": 8,
+    "to": 9,
     "max_cycles": 20,
     "timeout_hours": 8
   },
   "metrics": {
-    "total_cycles": 0,
-    "total_files_changed": 0,
-    "total_findings_fixed": 0
+    "total_cycles": 2,
+    "total_files_changed": 13,
+    "total_findings_fixed": 9
   }
 }
