@@ -217,6 +217,13 @@ function parseIntEnv(value: string | undefined, fallback: number): number {
 
 const VALID_POOL_CLAIM_ENFORCEMENT = new Set<string>(['warn', 'reject']);
 
+/** Strip trailing slashes without polynomial regex (CodeQL js/polynomial-redos). */
+function stripTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end--;
+  return url.slice(0, end);
+}
+
 function parsePoolClaimEnforcement(value: string | undefined): PoolClaimEnforcement {
   if (value != null && VALID_POOL_CLAIM_ENFORCEMENT.has(value)) {
     return value as PoolClaimEnforcement;
@@ -368,7 +375,7 @@ export function loadAgentGatewayConfig(
  */
 export function buildS2SJwtValidatorConfig(s2s: S2SValidationConfig): S2SJwtValidatorConfig {
   return {
-    jwksUrl: `${s2s.loaFinnBaseUrl.replace(/\/+$/, '')}/.well-known/jwks.json`,
+    jwksUrl: `${stripTrailingSlashes(s2s.loaFinnBaseUrl)}/.well-known/jwks.json`,
     expectedIssuer: s2s.expectedIssuer,
     expectedAudience: s2s.expectedAudience,
     jwksCacheTtlMs: s2s.jwksCacheTtlMs,
