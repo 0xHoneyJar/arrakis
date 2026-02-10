@@ -4,16 +4,16 @@
   "state": "RUNNING",
   "timestamps": {
     "started": "2026-02-11T01:05:00Z",
-    "last_activity": "2026-02-11T01:05:00Z"
+    "last_activity": "2026-02-11T02:30:00Z"
   },
   "sprints": {
     "total": 4,
-    "completed": 0,
-    "current": "sprint-1",
+    "completed": 2,
+    "current": "sprint-3",
     "list": [
-      {"id": "sprint-1", "status": "in_progress", "cycles": 0},
-      {"id": "sprint-2", "status": "pending", "cycles": 0},
-      {"id": "sprint-3", "status": "pending", "cycles": 0},
+      {"id": "sprint-1", "status": "completed", "cycles": 1},
+      {"id": "sprint-2", "status": "completed", "cycles": 1},
+      {"id": "sprint-3", "status": "in_progress", "cycles": 0},
       {"id": "sprint-4", "status": "pending", "cycles": 0}
     ]
   },
@@ -24,9 +24,9 @@
     "timeout_hours": 8
   },
   "metrics": {
-    "total_cycles": 0,
-    "total_files_changed": 0,
-    "total_findings_fixed": 0
+    "total_cycles": 2,
+    "total_files_changed": 21,
+    "total_findings_fixed": 1
   },
   "context": {
     "sprint_plan": "grimoires/loa/sprint-hounfour-integration.md",

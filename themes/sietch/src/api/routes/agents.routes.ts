@@ -1,12 +1,14 @@
 /**
  * Agent Gateway Routes
- * Sprint S1-T5 + S4-T3: JWKS + Agent API routes
+ * Sprint S1-T5 + S4-T3 + Hounfour-192: JWKS + Agent API + Internal Usage
  *
  * Public JWKS endpoint for loa-finn JWT verification.
  * Agent API routes: invoke, stream, models, budget, health.
+ * Internal routes: usage report ingestion from loa-finn (S2S JWT auth).
  *
  * @see SDD §4.2 JWKS Endpoint
  * @see SDD §6.1 Agent API Routes
+ * @see SDD §3.2 UsageReceiver
  * @see Trust Boundary §3.1 JWKS Trust Model
  */
 
@@ -18,6 +20,9 @@ import type { IAgentGateway } from '@arrakis/core/ports';
 import type { AgentAuthenticatedRequest } from '@arrakis/adapters/agent/agent-auth-middleware';
 import { agentInvokeRequestSchema, AGENT_BODY_LIMIT, AGENT_MAX_IDEMPOTENCY_KEY_LENGTH } from '@arrakis/adapters/agent/config';
 import { createEventIdGenerator, parseLastEventId } from '@arrakis/adapters/agent';
+import type { UsageReceiver } from '@arrakis/adapters/agent/usage-receiver';
+import { UsageReceiverError } from '@arrakis/adapters/agent/usage-receiver';
+import type { S2SAuthenticatedRequest } from '@arrakis/adapters/agent/s2s-auth-middleware';
 import express from 'express';
 
 // --------------------------------------------------------------------------
@@ -354,6 +359,64 @@ export function createAgentRoutes(deps: AgentRoutesDeps): Router {
       res.json(status);
     } catch {
       res.status(500).json({ error: 'INTERNAL_ERROR' });
+    }
+  });
+
+  return router;
+}
+
+// --------------------------------------------------------------------------
+// Error Handler
+// --------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------
+// Internal Agent Routes (Hounfour Integration — Sprint 192)
+// --------------------------------------------------------------------------
+
+/** Dependencies for internal agent routes (S2S loa-finn → arrakis) */
+export interface InternalAgentRoutesDeps {
+  /** S2S JWT auth middleware (validates loa-finn Bearer tokens) */
+  requireS2SAuth: (req: Request, res: Response, next: NextFunction) => void
+  /** Usage report receiver */
+  usageReceiver: UsageReceiver
+}
+
+/**
+ * Create internal agent routes.
+ * Mounted on /internal/agent — NOT on the public /api/ prefix.
+ * Production should additionally restrict via reverse proxy / NetworkPolicy.
+ */
+export function createInternalAgentRoutes(deps: InternalAgentRoutesDeps): Router {
+  const router = Router();
+
+  // All internal agent routes require S2S JWT authentication
+  router.use(deps.requireS2SAuth);
+
+  // --------------------------------------------------------------------------
+  // POST /internal/agent/usage-reports — Inbound usage report from loa-finn
+  // --------------------------------------------------------------------------
+
+  router.post('/usage-reports', async (req: Request, res: Response) => {
+    const s2sReq = req as S2SAuthenticatedRequest;
+    const jwsCompact = req.body?.jws;
+
+    if (!jwsCompact || typeof jwsCompact !== 'string') {
+      res.status(400).json({ error: 'INVALID_REQUEST', message: 'Missing jws field in request body' });
+      return;
+    }
+
+    try {
+      const result = await deps.usageReceiver.receive(s2sReq.s2sClaims, jwsCompact);
+      res.status(200).json(result);
+    } catch (err) {
+      if (err instanceof UsageReceiverError) {
+        res.status(err.statusCode).json({
+          error: err.statusCode < 500 ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR',
+          message: err.statusCode < 500 ? err.message : 'Internal error processing usage report',
+        });
+        return;
+      }
+      res.status(500).json({ error: 'INTERNAL_ERROR', message: 'An unexpected error occurred' });
     }
   });
 

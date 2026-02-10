@@ -50,6 +50,7 @@ export interface S2SJwtPayload {
   aud: string
   exp: number
   iat: number
+  jti?: string
   purpose: string
   report_id?: string
 }
@@ -101,6 +102,7 @@ export class S2SJwtValidator {
       aud: payload.aud as string,
       exp: payload.exp!,
       iat: payload.iat!,
+      jti: payload.jti,
       purpose: (payload as Record<string, unknown>).purpose as string,
       report_id: (payload as Record<string, unknown>).report_id as string | undefined,
     }

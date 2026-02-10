@@ -55,6 +55,22 @@ export {
   type S2SJwtPayload,
 } from './s2s-jwt-validator.js';
 
+// S2S Auth Middleware (Express middleware for loa-finn Bearer tokens)
+export {
+  createS2SAuthMiddleware,
+  type S2SAuthenticatedRequest,
+  type S2SAuthMiddlewareDeps,
+} from './s2s-auth-middleware.js';
+
+// Usage Receiver (inbound usage reports from loa-finn)
+export {
+  UsageReceiver,
+  UsageReceiverError,
+  type UsageReceiverDeps,
+  type UsageReceiverResult,
+  type UsageReport,
+} from './usage-receiver.js';
+
 // Types
 export { type AgentGatewayResult, type AgentErrorCode, type AgentErrorResponse } from './types.js';
 

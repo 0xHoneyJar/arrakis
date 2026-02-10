@@ -13,6 +13,15 @@ import { adminRouter as billingAdminRouter } from './admin.routes.js';
 import { docsRouter } from './docs/swagger.js';
 import { createVerifyIntegration } from './routes/verify.integration.js';
 import { createAuthRouter, addApiKeyVerifyRoute } from './routes/auth.routes.js';
+// Hounfour Integration (cycle-012): S2S loa-finn → arrakis usage report ingestion
+import { createInternalAgentRoutes } from './routes/agents.routes.js';
+import { S2SJwtValidator } from '@arrakis/adapters/agent/s2s-jwt-validator';
+import { UsageReceiver } from '@arrakis/adapters/agent/usage-receiver';
+import { createS2SAuthMiddleware } from '@arrakis/adapters/agent/s2s-auth-middleware';
+import { buildS2SJwtValidatorConfig, loadAgentGatewayConfig } from '@arrakis/adapters/agent/config';
+import { createRequire as createRequireHounfour } from 'module';
+const requireHounfour = createRequireHounfour(import.meta.url);
+const IoRedis = requireHounfour('ioredis');
 import {
   errorHandler,
   notFoundHandler,
@@ -490,6 +499,47 @@ function createApp(): Application {
   // These run on ECS which has VPC access to RDS.
   expressApp.use('/internal', internalRouter);
   logger.info('Internal routes mounted at /internal');
+
+  // ==========================================================================
+  // Internal Agent Routes (Hounfour Integration — cycle-012, Sprint 192)
+  // ==========================================================================
+  // S2S loa-finn → arrakis usage report ingestion.
+  // Only mounted when LOA_FINN_BASE_URL is configured (indicates loa-finn integration active).
+  // Production should additionally restrict /internal/agent via reverse proxy / NetworkPolicy.
+  const loaFinnBaseUrl = process.env.LOA_FINN_BASE_URL;
+  if (loaFinnBaseUrl && config.database.url && config.redis.url) {
+    try {
+      const agentConfig = loadAgentGatewayConfig();
+      const s2sValidatorConfig = buildS2SJwtValidatorConfig(agentConfig.s2sValidation);
+      const s2sValidator = new S2SJwtValidator(s2sValidatorConfig, logger);
+
+      // Create dedicated Redis connection for usage receiver (ioredis)
+      const usageRedis = new IoRedis(config.redis.url, {
+        maxRetriesPerRequest: 1,
+        commandTimeout: 500,
+        connectTimeout: 5_000,
+        lazyConnect: true,
+      });
+
+      const usageReceiver = new UsageReceiver(
+        { s2sValidator, db: drizzle(verifyPostgresClient!), redis: usageRedis, logger },
+        agentConfig.usageReceiver,
+      );
+
+      const s2sAuth = createS2SAuthMiddleware({ s2sValidator, logger });
+      const internalAgentRouter = createInternalAgentRoutes({
+        requireS2SAuth: s2sAuth,
+        usageReceiver,
+      });
+
+      expressApp.use('/internal/agent', internalAgentRouter);
+      logger.info('Internal agent routes mounted at /internal/agent');
+    } catch (err) {
+      logger.warn({ err }, 'Failed to initialize loa-finn integration — internal agent routes disabled');
+    }
+  } else {
+    logger.info('loa-finn integration not configured (LOA_FINN_BASE_URL unset) — internal agent routes disabled');
+  }
 
   // 404 handler
   expressApp.use(notFoundHandler);
