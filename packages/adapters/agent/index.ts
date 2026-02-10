@@ -131,6 +131,17 @@ export {
 // Tier Override Types (re-export from mapper)
 export { type TierOverrideProvider } from './tier-access-mapper.js';
 
+// Pool Mapping (tier-aware pool resolution — Sprint 3)
+export {
+  resolvePoolId,
+  ACCESS_LEVEL_POOLS,
+  POOL_IDS,
+  VALID_POOL_IDS,
+  ALIAS_TO_POOL,
+  type PoolId,
+  type PoolResolution,
+} from './pool-mapping.js';
+
 // Request Hash (single source of truth — used by JwtService and tests)
 export { computeReqHash } from './req-hash.js';
 

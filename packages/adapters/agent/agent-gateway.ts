@@ -30,6 +30,7 @@ import type { TierAccessMapper } from './tier-access-mapper.js';
 import type { StreamReconciliationJob } from './stream-reconciliation-worker.js';
 import { getCurrentMonth } from './budget-manager.js';
 import { BUDGET_WARNING_THRESHOLD } from './config.js';
+import { resolvePoolId } from './pool-mapping.js';
 
 // --------------------------------------------------------------------------
 // Types
@@ -142,15 +143,19 @@ export class AgentGateway implements IAgentGateway {
       );
     }
 
-    // 4. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
+    // 4. Pool resolution — tier-aware model→pool mapping (Sprint 3)
+    const { poolId, allowedPools } = resolvePoolId(request.modelAlias, context.accessLevel);
+
+    // 5. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
     // 3× estimated cost in micro-cents — loa-finn enforces this ceiling
     const maxCostMicroCents = estimatedCost * 3 * 100; // cents → micro-cents (×100)
     request = {
       ...request,
+      context: { ...context, poolId, allowedPools },
       metadata: { ...request.metadata, max_cost_micro_cents: maxCostMicroCents },
     };
 
-    // 5. Execute via loa-finn
+    // 6. Execute via loa-finn
     try {
       const response = await this.loaFinn.invoke(request);
 
@@ -254,14 +259,18 @@ export class AgentGateway implements IAgentGateway {
       );
     }
 
-    // 4. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
+    // 4. Pool resolution — tier-aware model→pool mapping (Sprint 3)
+    const { poolId, allowedPools } = resolvePoolId(request.modelAlias, context.accessLevel);
+
+    // 5. Set max-cost ceiling in metadata (S11-T5, SDD §4.5.1)
     const maxCostMicroCents = estimatedCost * 3 * 100; // cents → micro-cents (×100)
     request = {
       ...request,
+      context: { ...context, poolId, allowedPools },
       metadata: { ...request.metadata, max_cost_micro_cents: maxCostMicroCents },
     };
 
-    // 5. Stream from loa-finn with finalize-once semantics
+    // 6. Stream from loa-finn with finalize-once semantics
     //    Pass downstream signal for abort propagation (SDD §4.7)
     let finalized = false;
 

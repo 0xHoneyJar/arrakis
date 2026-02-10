@@ -106,7 +106,8 @@ export class JwtService {
    * Sign a JWT with all required claims from the agent request context.
    *
    * Claims include: tenant_id, nft_id, tier, tier_name, access_level,
-   * allowed_model_aliases, platform, channel_id, idempotency_key, req_hash.
+   * allowed_model_aliases, pool_id, allowed_pools, platform, channel_id,
+   * idempotency_key, req_hash.
    *
    * @param context - Agent request context
    * @param requestBody - Canonical request body for req_hash binding
@@ -125,6 +126,8 @@ export class JwtService {
       tier_name: TIER_NAMES[context.tier] ?? `Tier${context.tier}`,
       access_level: context.accessLevel,
       allowed_model_aliases: context.allowedModelAliases,
+      pool_id: context.poolId,
+      allowed_pools: context.allowedPools,
       platform: context.platform,
       channel_id: context.channelId,
       idempotency_key: context.idempotencyKey,

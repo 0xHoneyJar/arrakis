@@ -52,6 +52,10 @@ export interface AgentRequestContext {
   idempotencyKey: string;
   /** UUIDv4 generated once per invocation for end-to-end correlation */
   traceId: string;
+  /** Resolved pool ID for loa-finn routing (set by gateway before JWT signing) */
+  poolId?: string;
+  /** Pools authorized for this tier (set by gateway before JWT signing) */
+  allowedPools?: string[];
 }
 
 // --------------------------------------------------------------------------
