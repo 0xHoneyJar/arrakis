@@ -21,6 +21,7 @@ import type { Logger } from 'pino'
 import type { S2SJwtValidator, S2SJwtPayload } from './s2s-jwt-validator.js'
 import { microUsdToMicroCents, parseMicroUnit, MAX_MICRO_USD } from './budget-unit-bridge.js'
 import { validatePoolClaims, isAccessLevel } from './pool-mapping.js'
+import type { UsageReceiverConfig } from './config.js'
 import { agentUsageLog } from '../storage/agent-schema.js'
 
 // --------------------------------------------------------------------------
@@ -32,13 +33,6 @@ export interface UsageReceiverDeps {
   db: PostgresJsDatabase<any>
   redis: Redis
   logger: Logger
-}
-
-export interface UsageReceiverConfig {
-  /** Maximum cost per report in micro-USD (default: 100B = $100K) */
-  maxCostMicroUsd: bigint
-  /** Maximum report_id length (default: 256) */
-  maxReportIdLength: number
 }
 
 export interface UsageReport {
@@ -164,13 +158,15 @@ export class UsageReceiver {
       )
     }
 
-    // Step 5b: Pool claim cross-validation (F-5 defense-in-depth, F-16 type guard)
+    // Step 5b: Pool claim cross-validation (F-5 defense-in-depth, F-14 enforcement, F-16 type guard)
+    const enforcement = this.config.poolClaimEnforcement
     if (report.pool_id && report.access_level && report.allowed_pools) {
       if (!isAccessLevel(report.access_level)) {
-        // Unknown access_level — data quality issue, not security concern
+        // Unknown access_level — data quality issue, NOT rejected even in reject mode
         this.logger.warn(
           {
             event: 'pool-claim-unknown-access-level',
+            enforcement,
             reportId: report.report_id,
             accessLevel: report.access_level,
           },
@@ -182,20 +178,59 @@ export class UsageReceiver {
           report.allowed_pools,
           report.access_level,
         )
-        if (!claimResult.valid) {
+        if (claimResult.valid) {
+          this.logger.info(
+            {
+              event: 'pool-claim-valid',
+              enforcement,
+              valid: true,
+              reportId: report.report_id,
+              poolId: report.pool_id,
+              accessLevel: report.access_level,
+            },
+            'Pool claim validation passed',
+          )
+        } else {
+          if (enforcement === 'reject') {
+            this.logger.warn(
+              {
+                event: 'pool-claim-mismatch',
+                enforcement,
+                valid: false,
+                reason: claimResult.reason,
+                reportId: report.report_id,
+                poolId: report.pool_id,
+                accessLevel: report.access_level,
+                allowedPools: report.allowed_pools,
+              },
+              'Pool claim validation failed — rejecting report',
+            )
+            throw new UsageReceiverError(`Pool claim validation failed: ${claimResult.reason}`, 403)
+          }
           this.logger.warn(
             {
               event: 'pool-claim-mismatch',
+              enforcement,
+              valid: false,
+              reason: claimResult.reason,
               reportId: report.report_id,
               poolId: report.pool_id,
               accessLevel: report.access_level,
               allowedPools: report.allowed_pools,
-              reason: claimResult.reason,
             },
             'Pool claim validation failed — possible key compromise or config drift',
           )
         }
       }
+    } else {
+      this.logger.info(
+        {
+          event: 'pool-claim-skipped',
+          enforcement,
+          reportId: report.report_id,
+        },
+        'Pool claim validation skipped — missing pool_id, access_level, or allowed_pools',
+      )
     }
 
     // Convert micro-USD → micro-cents for arrakis storage

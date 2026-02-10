@@ -38,6 +38,14 @@ export const ACCESS_LEVEL_POOLS: Record<AccessLevel, { default: PoolId; allowed:
 // Alias → Pool direct mapping (everything except `native`)
 // --------------------------------------------------------------------------
 
+/**
+ * Direct alias→pool mapping. `architect` intentionally excluded — see ADR-006.
+ *
+ * @pattern capability-based-security — Pool IDs are unforgeable capability tokens
+ * (Dennis & Van Horn 1966). Tier routing acts as the capability distribution
+ * authority: each access level receives only the pool capabilities it is entitled
+ * to. See SDD §10.1, ADR-006.
+ */
 export const ALIAS_TO_POOL: Partial<Record<ModelAlias, PoolId>> = {
   cheap: 'cheap',
   'fast-code': 'fast-code',

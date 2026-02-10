@@ -56,6 +56,7 @@ function createLogger() {
 const DEFAULT_RECEIVER_CONFIG: UsageReceiverConfig = {
   maxCostMicroUsd: 100_000_000_000n,
   maxReportIdLength: 256,
+  poolClaimEnforcement: 'warn',
 }
 
 function createMockDb() {
@@ -91,7 +92,7 @@ afterAll(async () => {
 // Helper: create wired-up validator + receiver
 // --------------------------------------------------------------------------
 
-function createPipeline(dbOverrides?: any, redisOverrides?: any) {
+function createPipeline(dbOverrides?: any, redisOverrides?: any, configOverrides?: Partial<UsageReceiverConfig>) {
   const logger = createLogger()
   const db = dbOverrides ?? createMockDb()
   const redis = redisOverrides ?? createMockRedis()
@@ -110,9 +111,10 @@ function createPipeline(dbOverrides?: any, redisOverrides?: any) {
     REAL_CLOCK,
   )
 
+  const receiverConfig: UsageReceiverConfig = { ...DEFAULT_RECEIVER_CONFIG, ...configOverrides }
   const usageReceiver = new UsageReceiver(
     { s2sValidator, db: db as any, redis, logger },
-    DEFAULT_RECEIVER_CONFIG,
+    receiverConfig,
   )
 
   return { s2sValidator, usageReceiver, logger, db, redis }
@@ -598,5 +600,168 @@ describe('Pool claim trust boundary contract — consistent claims (AC-H2.6)', (
       (call: any[]) => call[0]?.event === 'pool-claim-mismatch',
     )
     expect(mismatchCalls).toHaveLength(0)
+  })
+})
+
+// ==========================================================================
+// 7. Pool claim enforcement mode cross-product (F-14, T2.5)
+// ==========================================================================
+
+describe('Pool claim enforcement mode — warn × claim states', () => {
+  it('#1 warn + valid claims → Accept, pool-claim-valid logged', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline()
+
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'cheap',
+      access_level: 'free',
+      allowed_pools: ['cheap'],
+    } as any)
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    expect(result.status).toBe('accepted')
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'pool-claim-valid', enforcement: 'warn', valid: true }),
+      expect.any(String),
+    )
+  })
+
+  it('#2 warn + mismatched claims → Accept, pool-claim-mismatch warning', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline()
+
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'architect',
+      access_level: 'free',
+      allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+    } as any)
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    expect(result.status).toBe('accepted')
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'pool-claim-mismatch', enforcement: 'warn', valid: false }),
+      expect.any(String),
+    )
+  })
+
+  it('#3 warn + unknown access_level → Accept, pool-claim-unknown-access-level warning', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline()
+
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'cheap',
+      access_level: 'platinum',
+      allowed_pools: ['cheap'],
+    } as any)
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    expect(result.status).toBe('accepted')
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'pool-claim-unknown-access-level', enforcement: 'warn' }),
+      expect.any(String),
+    )
+  })
+
+  it('#4 warn + missing claims → Accept, pool-claim-skipped', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline()
+
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'cheap',
+      // No access_level or allowed_pools
+    })
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    expect(result.status).toBe('accepted')
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'pool-claim-skipped', enforcement: 'warn' }),
+      expect.any(String),
+    )
+  })
+})
+
+describe('Pool claim enforcement mode — reject × claim states', () => {
+  it('#5 reject + valid claims → Accept, pool-claim-valid logged', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline(undefined, undefined, { poolClaimEnforcement: 'reject' })
+
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'architect',
+      access_level: 'enterprise',
+      allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+    } as any)
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    expect(result.status).toBe('accepted')
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'pool-claim-valid', enforcement: 'reject', valid: true }),
+      expect.any(String),
+    )
+  })
+
+  it('#6 reject + mismatched claims → Reject 403', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline(undefined, undefined, { poolClaimEnforcement: 'reject' })
+
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'architect',
+      access_level: 'free',
+      allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+    } as any)
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+
+    await expect(usageReceiver.receive(claims, jwsCompact)).rejects.toThrow(UsageReceiverError)
+    await expect(
+      // Re-create pipeline since previous threw
+      createPipeline(undefined, undefined, { poolClaimEnforcement: 'reject' }).usageReceiver
+        .receive(await createPipeline(undefined, undefined, { poolClaimEnforcement: 'reject' }).s2sValidator.validateJwt(s2sToken), jwsCompact),
+    ).rejects.toMatchObject({ statusCode: 403 })
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'pool-claim-mismatch', enforcement: 'reject', valid: false }),
+      expect.any(String),
+    )
+  })
+
+  it('#7 reject + unknown access_level → Accept (NOT 403), warning logged', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline(undefined, undefined, { poolClaimEnforcement: 'reject' })
+
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'cheap',
+      access_level: 'platinum',
+      allowed_pools: ['cheap'],
+    } as any)
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    expect(result.status).toBe('accepted')
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'pool-claim-unknown-access-level', enforcement: 'reject' }),
+      expect.any(String),
+    )
+  })
+
+  it('#8 reject + missing claims → Accept (backward-compat)', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline(undefined, undefined, { poolClaimEnforcement: 'reject' })
+
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'cheap',
+      // No access_level or allowed_pools
+    })
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    expect(result.status).toBe('accepted')
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'pool-claim-skipped', enforcement: 'reject' }),
+      expect.any(String),
+    )
   })
 })

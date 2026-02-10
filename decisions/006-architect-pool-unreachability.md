@@ -48,9 +48,17 @@ This asymmetry **IS the access control**:
 - Pool claim validation (`validatePoolClaims`) can still validate `architect` as a pool_id in JWT claims, since `VALID_POOL_IDS` includes all 5 pools
 - Future pool additions should follow this pattern: if a pool is tier-restricted, exclude it from `ALIAS_TO_POOL` and route through `native` or tier defaults
 
+## Pattern
+
+This ADR is an instance of the **Capability-Based Security** pattern (Dennis & Van Horn, 1966). Pool IDs are unforgeable capability tokens; tier-aware resolution is the capability distribution authority. The 5-pool vs 4-alias asymmetry is the attenuation mechanism — `architect` capabilities are only distributed to enterprise principals via `native` resolution, never via direct alias mapping.
+
+See SDD §10.1 for the full pattern mapping.
+
 ## References
 
 - @see Hounfour RFC #31 §3.1 Model Catalog — pool vocabulary definition
 - @see Hounfour RFC #31 §12 Agent Distribution via Arrakis — tier routing
 - @see `packages/adapters/agent/pool-mapping.ts` — implementation
 - @see ADR-005 Budget Unit Convention — companion decision in same system
+- @see Dennis & Van Horn (1966) — "Programming Semantics for Multiprogrammed Computations"
+- @see SDD §10.1 — Capability-Based Security Pattern

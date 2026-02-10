@@ -107,6 +107,7 @@ function createMockDeps(): UsageReceiverDeps & {
 const DEFAULT_CONFIG: UsageReceiverConfig = {
   maxCostMicroUsd: 100_000_000_000n, // 100B = $100K
   maxReportIdLength: 256,
+  poolClaimEnforcement: 'warn',
 };
 
 // --------------------------------------------------------------------------
@@ -529,6 +530,184 @@ describe('UsageReceiver', () => {
           accessLevel: 'free',
         }),
         expect.stringContaining('Pool claim validation failed'),
+      );
+    });
+  });
+
+  // ========================================================================
+  // Step 5b: Pool claim enforcement mode (F-14)
+  // ========================================================================
+
+  describe('Step 5b: pool claim enforcement mode (F-14)', () => {
+    it('warn mode + valid claims → accepted with pool-claim-valid log', async () => {
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'cheap',
+          access_level: 'free',
+          allowed_pools: ['cheap'],
+        }))),
+      );
+
+      const claims = makeJwtClaims();
+      const result = await receiver.receive(claims, 'valid.jws.compact');
+
+      expect(result.status).toBe('accepted');
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'pool-claim-valid',
+          enforcement: 'warn',
+          valid: true,
+        }),
+        'Pool claim validation passed',
+      );
+    });
+
+    it('warn mode + missing claims → accepted with pool-claim-skipped log', async () => {
+      // No pool_id, access_level, or allowed_pools in report
+      const claims = makeJwtClaims();
+      const result = await receiver.receive(claims, 'valid.jws.compact');
+
+      expect(result.status).toBe('accepted');
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'pool-claim-skipped',
+          enforcement: 'warn',
+        }),
+        expect.stringContaining('skipped'),
+      );
+    });
+
+    it('reject mode + mismatched claims → throws 403', async () => {
+      const rejectConfig: UsageReceiverConfig = { ...DEFAULT_CONFIG, poolClaimEnforcement: 'reject' };
+      const rejectReceiver = new UsageReceiver(deps, rejectConfig);
+
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'architect',
+          access_level: 'free',
+          allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+        }))),
+      );
+
+      const claims = makeJwtClaims();
+      await expect(rejectReceiver.receive(claims, 'valid.jws.compact')).rejects.toThrow(UsageReceiverError);
+      await expect(rejectReceiver.receive(claims, 'valid.jws.compact')).rejects.toMatchObject({
+        statusCode: 403,
+        message: expect.stringContaining('Pool claim validation failed'),
+      });
+    });
+
+    it('reject mode + valid claims → accepted', async () => {
+      const rejectConfig: UsageReceiverConfig = { ...DEFAULT_CONFIG, poolClaimEnforcement: 'reject' };
+      const rejectReceiver = new UsageReceiver(deps, rejectConfig);
+
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'cheap',
+          access_level: 'free',
+          allowed_pools: ['cheap'],
+        }))),
+      );
+
+      const claims = makeJwtClaims();
+      const result = await rejectReceiver.receive(claims, 'valid.jws.compact');
+      expect(result.status).toBe('accepted');
+    });
+
+    it('reject mode + unknown access_level → accepted (NOT 403)', async () => {
+      const rejectConfig: UsageReceiverConfig = { ...DEFAULT_CONFIG, poolClaimEnforcement: 'reject' };
+      const rejectReceiver = new UsageReceiver(deps, rejectConfig);
+
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'cheap',
+          access_level: 'platinum',
+          allowed_pools: ['cheap'],
+        }))),
+      );
+
+      const claims = makeJwtClaims();
+      const result = await rejectReceiver.receive(claims, 'valid.jws.compact');
+      expect(result.status).toBe('accepted');
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'pool-claim-unknown-access-level',
+          enforcement: 'reject',
+        }),
+        expect.stringContaining('Unknown access_level'),
+      );
+    });
+
+    it('reject mode + missing claims → accepted (backward-compat)', async () => {
+      const rejectConfig: UsageReceiverConfig = { ...DEFAULT_CONFIG, poolClaimEnforcement: 'reject' };
+      const rejectReceiver = new UsageReceiver(deps, rejectConfig);
+
+      const claims = makeJwtClaims();
+      const result = await rejectReceiver.receive(claims, 'valid.jws.compact');
+      expect(result.status).toBe('accepted');
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'pool-claim-skipped',
+          enforcement: 'reject',
+        }),
+        expect.stringContaining('skipped'),
+      );
+    });
+
+    it('all 4 event paths include enforcement field', async () => {
+      // This test verifies the schema compliance from T2.4
+      const rejectConfig: UsageReceiverConfig = { ...DEFAULT_CONFIG, poolClaimEnforcement: 'reject' };
+      const rejectReceiver = new UsageReceiver(deps, rejectConfig);
+
+      // Path 1: pool-claim-skipped (missing claims)
+      const claims1 = makeJwtClaims();
+      await rejectReceiver.receive(claims1, 'valid.jws.compact');
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'pool-claim-skipped', enforcement: 'reject' }),
+        expect.any(String),
+      );
+
+      // Path 2: pool-claim-valid
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'cheap', access_level: 'free', allowed_pools: ['cheap'],
+        }))),
+      );
+      deps.mockInsert.mockResolvedValue([{ id: 'uuid' }]);
+      const claims2 = makeJwtClaims();
+      await rejectReceiver.receive(claims2, 'valid.jws.compact');
+      expect(deps.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'pool-claim-valid', enforcement: 'reject', valid: true }),
+        expect.any(String),
+      );
+
+      // Path 3: pool-claim-unknown-access-level
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'cheap', access_level: 'diamond', allowed_pools: ['cheap'],
+        }))),
+      );
+      const claims3 = makeJwtClaims();
+      await rejectReceiver.receive(claims3, 'valid.jws.compact');
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'pool-claim-unknown-access-level', enforcement: 'reject' }),
+        expect.any(String),
+      );
+
+      // Path 4: pool-claim-mismatch (reject throws, so check the warn before throw)
+      deps.mockVerifyJws.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(makeUsageReport({
+          pool_id: 'architect', access_level: 'free',
+          allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+        }))),
+      );
+      const claims4 = makeJwtClaims();
+      try {
+        await rejectReceiver.receive(claims4, 'valid.jws.compact');
+      } catch { /* expected 403 */ }
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'pool-claim-mismatch', enforcement: 'reject', valid: false }),
+        expect.any(String),
       );
     });
   });

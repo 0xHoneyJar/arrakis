@@ -104,12 +104,17 @@ export interface S2SValidationConfig {
   clockToleranceSec: number;
 }
 
+/** Pool claim enforcement mode — @see Bridgebuilder F-14 */
+export type PoolClaimEnforcement = 'warn' | 'reject';
+
 /** Usage receiver configuration (inbound usage reports from loa-finn) */
 export interface UsageReceiverConfig {
   /** Maximum cost per report in micro-USD (safety cap, default: 100B = $100K) */
   maxCostMicroUsd: bigint;
   /** Maximum report_id length (default: 256) */
   maxReportIdLength: number;
+  /** Pool claim enforcement mode: 'warn' (default) or 'reject' — @see Bridgebuilder F-14 */
+  poolClaimEnforcement: PoolClaimEnforcement;
 }
 
 /** Full agent gateway configuration */
@@ -160,6 +165,8 @@ const ENV_VARS = {
   // Usage receiver
   USAGE_MAX_COST_MICRO_USD: 'USAGE_MAX_COST_MICRO_USD',
   USAGE_MAX_REPORT_ID_LENGTH: 'USAGE_MAX_REPORT_ID_LENGTH',
+  // Pool claim enforcement (F-14)
+  AGENT_POOL_CLAIM_ENFORCEMENT: 'AGENT_POOL_CLAIM_ENFORCEMENT',
 } as const;
 
 // --------------------------------------------------------------------------
@@ -188,6 +195,7 @@ const DEFAULTS = {
   // Usage receiver defaults
   usageMaxCostMicroUsd: 100_000_000_000n, // $100K (PRD cap)
   usageMaxReportIdLength: 256,
+  poolClaimEnforcement: 'warn' as PoolClaimEnforcement,
 };
 
 // --------------------------------------------------------------------------
@@ -205,6 +213,15 @@ function parseIntEnv(value: string | undefined, fallback: number): number {
   if (value == null || value.trim() === '') return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+const VALID_POOL_CLAIM_ENFORCEMENT = new Set<string>(['warn', 'reject']);
+
+function parsePoolClaimEnforcement(value: string | undefined): PoolClaimEnforcement {
+  if (value != null && VALID_POOL_CLAIM_ENFORCEMENT.has(value)) {
+    return value as PoolClaimEnforcement;
+  }
+  return DEFAULTS.poolClaimEnforcement;
 }
 
 // --------------------------------------------------------------------------
@@ -337,6 +354,7 @@ export function loadAgentGatewayConfig(
     usageReceiver: {
       maxCostMicroUsd: DEFAULTS.usageMaxCostMicroUsd,
       maxReportIdLength: parseIntEnv(env[ENV_VARS.USAGE_MAX_REPORT_ID_LENGTH], DEFAULTS.usageMaxReportIdLength),
+      poolClaimEnforcement: parsePoolClaimEnforcement(env[ENV_VARS.AGENT_POOL_CLAIM_ENFORCEMENT]),
       ...overrides?.usageReceiver,
     },
   };

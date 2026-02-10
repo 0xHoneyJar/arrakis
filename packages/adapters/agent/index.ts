@@ -36,6 +36,7 @@ export {
   type RateLimitConfig,
   type S2SValidationConfig,
   type UsageReceiverConfig,
+  type PoolClaimEnforcement,
 } from './config.js';
 
 // Budget Unit Bridge (micro-USD ↔ micro-cents)
@@ -201,4 +202,5 @@ export {
   type MetricUnit,
   type MetricDimensions,
   type AgentRequestLog,
+  type PoolClaimValidationLog,
 } from './observability.js';

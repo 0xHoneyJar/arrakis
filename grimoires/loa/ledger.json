@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "next_sprint_number": 197,
+  "next_sprint_number": 199,
   "active_cycle": "cycle-007",
   "cycles": [
     {
@@ -201,6 +201,19 @@
       "sprints": [
         {"global_id": 195, "local_label": "sprint-1", "status": "completed"},
         {"global_id": 196, "local_label": "sprint-2", "status": "completed"}
+      ]
+    },
+    {
+      "id": "cycle-014",
+      "label": "Bridgebuilder Round 2 — Protocol Versioning & Capability Architecture",
+      "status": "active",
+      "created": "2026-02-11T09:00:00Z",
+      "prd": "grimoires/loa/prd-hounfour-integration.md",
+      "sdd": "grimoires/loa/sdd-hounfour-integration.md",
+      "sprint_plan": "grimoires/loa/sprint-bridgebuilder-round2.md",
+      "sprints": [
+        {"global_id": 197, "local_label": "sprint-1", "status": "completed"},
+        {"global_id": 198, "local_label": "sprint-2", "status": "completed"}
       ]
     }
   ]
