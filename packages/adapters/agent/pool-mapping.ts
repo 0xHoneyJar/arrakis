@@ -7,6 +7,9 @@
  *
  * @see SDD §4.3 Pool Routing
  * @see ADR-005 Tier-Aware Native Resolution
+ * @see ADR-006 Architect Pool Unreachability
+ * @see Hounfour RFC #31 §3.1 Model Catalog — pool vocabulary definition
+ * @see Hounfour RFC #31 §12 Agent Distribution via Arrakis — tier routing
  */
 
 import type { AccessLevel, ModelAlias } from '@arrakis/core/ports';

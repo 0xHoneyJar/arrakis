@@ -199,8 +199,8 @@
       "sdd": "grimoires/loa/sdd-hounfour-integration.md",
       "sprint_plan": "grimoires/loa/sprint-bridgebuilder-hardening.md",
       "sprints": [
-        {"global_id": 195, "local_label": "sprint-1", "status": "pending"},
-        {"global_id": 196, "local_label": "sprint-2", "status": "pending"}
+        {"global_id": 195, "local_label": "sprint-1", "status": "completed"},
+        {"global_id": 196, "local_label": "sprint-2", "status": "completed"}
       ]
     }
   ]

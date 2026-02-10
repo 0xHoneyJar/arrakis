@@ -7,6 +7,7 @@
  *
  * @see SDD §4.2 JWT Service
  * @see Trust Boundary Document §3.2 JWT Claims
+ * @see Hounfour RFC #31 §9 Metering, Billing & Cost Attribution — pool claim inclusion rationale
  */
 
 import { SignJWT, importPKCS8, exportJWK, type JWK, type KeyLike } from 'jose';

@@ -519,3 +519,84 @@ describe('E2E Goal Validation — PRD Goals', () => {
     expect(redis._mockIncrby).toHaveBeenCalledTimes(1)
   })
 })
+
+// ==========================================================================
+// Pool claim consistency contract tests (AC-H2.5, AC-H2.6)
+// Bridgebuilder Hardening — cycle-013, Finding F-5
+// ==========================================================================
+
+describe('Pool claim trust boundary contract — inconsistent claims (AC-H2.5)', () => {
+  it('forged inconsistent claims trigger pool-claim-mismatch warning', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline()
+
+    // Create a report with inconsistent claims:
+    // access_level: "free" but pool_id: "architect" (free tier cannot use architect)
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'architect',
+      access_level: 'free',
+      allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+    } as any)
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    // Report is still accepted (warn-only, not blocking)
+    expect(result.status).toBe('accepted')
+
+    // But a structured warning was emitted
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'pool-claim-mismatch',
+        poolId: 'architect',
+        accessLevel: 'free',
+      }),
+      expect.stringContaining('Pool claim validation failed'),
+    )
+  })
+})
+
+describe('Pool claim trust boundary contract — consistent claims (AC-H2.6)', () => {
+  it('valid consistent claims pass validation silently', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline()
+
+    // Create a report with consistent claims:
+    // access_level: "enterprise" with pool_id: "architect" (enterprise can use architect)
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'architect',
+      access_level: 'enterprise',
+      allowed_pools: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'],
+    } as any)
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    // Report accepted
+    expect(result.status).toBe('accepted')
+
+    // No pool-claim-mismatch warning emitted
+    const mismatchCalls = (logger.warn as any).mock.calls.filter(
+      (call: any[]) => call[0]?.event === 'pool-claim-mismatch',
+    )
+    expect(mismatchCalls).toHaveLength(0)
+  })
+
+  it('report without pool claims skips validation silently', async () => {
+    const { s2sValidator, usageReceiver, logger } = createPipeline()
+
+    // Standard report without access_level/allowed_pools — backward compatible
+    const { s2sToken, jwsCompact } = await createSignedUsageReport(loaFinnKey, {
+      pool_id: 'cheap',
+    })
+
+    const claims = await s2sValidator.validateJwt(s2sToken)
+    const result = await usageReceiver.receive(claims, jwsCompact)
+
+    expect(result.status).toBe('accepted')
+
+    // No pool-claim-mismatch warning (validation skipped — missing access_level)
+    const mismatchCalls = (logger.warn as any).mock.calls.filter(
+      (call: any[]) => call[0]?.event === 'pool-claim-mismatch',
+    )
+    expect(mismatchCalls).toHaveLength(0)
+  })
+})
