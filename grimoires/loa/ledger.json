@@ -184,10 +184,10 @@
       "sdd": "grimoires/loa/sdd-hounfour-integration.md",
       "sprint_plan": "grimoires/loa/sprint-hounfour-integration.md",
       "sprints": [
-        {"global_id": 191, "local_label": "sprint-1", "status": "pending"},
-        {"global_id": 192, "local_label": "sprint-2", "status": "pending"},
-        {"global_id": 193, "local_label": "sprint-3", "status": "pending"},
-        {"global_id": 194, "local_label": "sprint-4", "status": "pending"}
+        {"global_id": 191, "local_label": "sprint-1", "status": "completed"},
+        {"global_id": 192, "local_label": "sprint-2", "status": "completed"},
+        {"global_id": 193, "local_label": "sprint-3", "status": "completed"},
+        {"global_id": 194, "local_label": "sprint-4", "status": "completed"}
       ]
     },
     {
