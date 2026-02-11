@@ -1,0 +1,13 @@
+{
+  "contract_version": "1.0.0",
+  "compatibility": [
+    {
+      "arrakis": ">=PR#52",
+      "loa_finn": ">=PR#53 (pending)",
+      "contract": "1.0.0",
+      "notes": "Initial contract — pool claims, ensemble, BYOK, streaming"
+    }
+  ],
+  "breaking_changes": [],
+  "deprecations": []
+}

@@ -24,6 +24,55 @@ const pkg = require('../package.json') as { version: string };
 export const CONTRACT_VERSION: string = pkg.version;
 
 // --------------------------------------------------------------------------
+// Compatibility Matrix
+// --------------------------------------------------------------------------
+
+export interface CompatibilityEntry {
+  arrakis: string;
+  loa_finn: string;
+  contract: string;
+  notes: string;
+}
+
+export interface CompatibilityMatrix {
+  contract_version: string;
+  compatibility: CompatibilityEntry[];
+  breaking_changes: string[];
+  deprecations: string[];
+}
+
+/** Compatibility matrix documenting which arrakis/loa-finn versions work together */
+const COMPATIBILITY: CompatibilityMatrix =
+  require('../compatibility.json') as CompatibilityMatrix;
+
+/** Get the compatibility matrix for programmatic use */
+export function getCompatibility(): CompatibilityMatrix {
+  return COMPATIBILITY;
+}
+
+/**
+ * Local-only contract version validation. Warns (does not fail) if the current
+ * CONTRACT_VERSION has no matching entry in compatibility.json.
+ *
+ * This is purely local validation — it does NOT attempt to fetch loa-finn's
+ * version at runtime (that would require a loa-finn API change, deferred).
+ */
+export function validateContractCompatibility(
+  log?: { warn: (obj: Record<string, unknown>, msg: string) => void },
+): boolean {
+  const hasEntry = COMPATIBILITY.compatibility.some(
+    (entry) => entry.contract === CONTRACT_VERSION,
+  );
+  if (!hasEntry && log) {
+    log.warn(
+      { contractVersion: CONTRACT_VERSION, availableEntries: COMPATIBILITY.compatibility.map((e) => e.contract) },
+      'CONTRACT_VERSION has no matching entry in compatibility.json — update compatibility matrix',
+    );
+  }
+  return hasEntry;
+}
+
+// --------------------------------------------------------------------------
 // Schema
 // --------------------------------------------------------------------------
 

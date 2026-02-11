@@ -247,6 +247,12 @@ export class BYOKProxyHandler {
    * 5. DNS resolve → private IP check
    * 6. Execute HTTP request (by resolved IP, no redirects)
    * 7. Return sanitized response
+   *
+   * @security V8 string immutability limitation: apiKey.toString('utf8') creates
+   * an immutable heap string that cannot be zeroed. We minimize the exposure window
+   * by: (a) deleting header references immediately after fetch completes,
+   * (b) zeroing the Buffer in a finally block. The string copy may persist until
+   * GC — this is inherent to V8 and cannot be fully mitigated in JS.
    */
   async handle(req: BYOKProxyRequest): Promise<BYOKProxyResponse> {
     const log = this.logger.child({
@@ -292,6 +298,7 @@ export class BYOKProxyHandler {
     };
 
     // Provider-specific auth header
+    const keyDecryptedAt = Date.now();
     if (req.provider === 'openai') {
       outHeaders['authorization'] = `Bearer ${apiKey.toString('utf8')}`;
     } else if (req.provider === 'anthropic') {
@@ -308,9 +315,6 @@ export class BYOKProxyHandler {
       }
     }
 
-    // Zero API key buffer after use
-    apiKey.fill(0);
-
     log.info({ resolvedIP, hostname: endpoint.hostname }, 'BYOK egress request');
 
     try {
@@ -321,6 +325,10 @@ export class BYOKProxyHandler {
         redirect: 'error', // AC-4.23: reject all redirects
         signal: AbortSignal.timeout(30_000),
       });
+
+      // Immediately minimize key exposure window after fetch completes
+      delete outHeaders['authorization'];
+      delete outHeaders['x-api-key'];
 
       // AC-4.13: Check response size
       const contentLength = response.headers.get('content-length');
@@ -354,6 +362,15 @@ export class BYOKProxyHandler {
 
       log.error({ err }, 'BYOK proxy upstream error');
       throw new BYOKProxyError('BYOK_UPSTREAM_ERROR', 'Provider request failed', 502);
+    } finally {
+      // Zero API key buffer regardless of success/failure
+      apiKey.fill(0);
+      // Remove any remaining header references to key material
+      delete outHeaders['authorization'];
+      delete outHeaders['x-api-key'];
+
+      const keyExposureMs = Date.now() - keyDecryptedAt;
+      log.info({ keyExposureMs }, 'BYOK key exposure window closed');
     }
   }
 
