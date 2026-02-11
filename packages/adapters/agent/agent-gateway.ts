@@ -30,7 +30,8 @@ import type { TierAccessMapper } from './tier-access-mapper.js';
 import type { StreamReconciliationJob } from './stream-reconciliation-worker.js';
 import { getCurrentMonth } from './budget-manager.js';
 import { BUDGET_WARNING_THRESHOLD } from './config.js';
-import { resolvePoolId, ALIAS_TO_POOL } from './pool-mapping.js';
+import { resolvePoolId, ALIAS_TO_POOL, POOL_PROVIDER_HINT } from './pool-mapping.js';
+import type { PoolId } from './pool-mapping.js';
 import { EnsembleMapper } from './ensemble-mapper.js';
 import type { EnsembleValidationResult } from './ensemble-mapper.js';
 import type { BYOKManager } from './byok-manager.js';
@@ -156,23 +157,19 @@ export class AgentGateway implements IAgentGateway {
 
     // 3c. BYOK check — between ensemble and budget (FR-4)
     //     Server-side eligibility: derive from BYOK key existence, NOT from client claims (AC-4.31)
+    //     Provider resolved via pool→provider hint mapping (BB3-1)
     let isByok = false;
     let byokProvider: string | undefined;
 
     if (this.byokEnabled && this.byokManager) {
-      // Default provider from model alias mapping (openai for cheap/fast-code, anthropic for reasoning/native)
-      const inferredProvider = poolId.startsWith('anthropic') ? 'anthropic' : 'openai';
-      const hasByok = await this.byokManager.hasBYOKKey(context.tenantId, inferredProvider);
+      const resolved = await this.resolveByokProvider(context.tenantId, poolId, log);
 
-      if (hasByok) {
+      if (resolved) {
         isByok = true;
-        byokProvider = inferredProvider;
+        byokProvider = resolved;
 
-        // AC-4.30: BYOK daily quota enforcement
+        // AC-4.30: BYOK daily quota enforcement (atomic INCR — BB3-2)
         await this.checkByokQuota(context.tenantId, log);
-
-        // AC-4.29: Increment BYOK request counter (observability)
-        await this.redis.incr(`agent:byok:count:${context.tenantId}:${this.currentDay()}`).catch(() => {});
 
         log.info({ provider: byokProvider }, 'BYOK key active — zero-cost accounting');
       }
@@ -253,7 +250,9 @@ export class AgentGateway implements IAgentGateway {
         traceId: context.traceId,
       });
 
-      this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log);
+      this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log, {
+        ensembleN: ensembleResult?.jwtClaims?.ensemble_n,
+      });
 
       return response;
     } catch (err) {
@@ -334,18 +333,18 @@ export class AgentGateway implements IAgentGateway {
     }
 
     // 3c. BYOK check — between ensemble and budget (FR-4)
+    //     Provider resolved via pool→provider hint mapping (BB3-1)
     let isByok = false;
     let byokProvider: string | undefined;
 
     if (this.byokEnabled && this.byokManager) {
-      const inferredProvider = poolId.startsWith('anthropic') ? 'anthropic' : 'openai';
-      const hasByok = await this.byokManager.hasBYOKKey(context.tenantId, inferredProvider);
+      const resolved = await this.resolveByokProvider(context.tenantId, poolId, log);
 
-      if (hasByok) {
+      if (resolved) {
         isByok = true;
-        byokProvider = inferredProvider;
+        byokProvider = resolved;
+        // AC-4.30: BYOK daily quota enforcement (atomic INCR — BB3-2)
         await this.checkByokQuota(context.tenantId, log);
-        await this.redis.incr(`agent:byok:count:${context.tenantId}:${this.currentDay()}`).catch(() => {});
         log.info({ provider: byokProvider }, 'BYOK key active — zero-cost accounting');
       }
     }
@@ -425,7 +424,9 @@ export class AgentGateway implements IAgentGateway {
           });
           finalized = true;
 
-          this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log);
+          this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log, {
+            ensembleN: ensembleResult?.jwtClaims?.ensemble_n,
+          });
         }
 
         yield event;
@@ -501,13 +502,31 @@ export class AgentGateway implements IAgentGateway {
    * - any overrun → emit agent_budget_drift_micro_cents metric via structured log
    * - actual > 2× estimate → warn log
    * - actual > 3× estimate → BUDGET_DRIFT_HIGH alarm (error log)
+   * - ensemble invariant: actual ≤ reserved (N × base estimate) (BB3-6)
    */
   private checkBudgetDrift(
     actualCostCents: number,
     estimatedCostCents: number,
     traceId: string,
     log: Logger,
+    opts?: { ensembleN?: number },
   ): void {
+    // BB3-6: Ensemble budget assertion — committed ≤ reserved invariant
+    // estimatedCostCents already includes the N× multiplier from ensemble-mapper.
+    // If actual exceeds reserved, it means loa-finn's max_cost ceiling was breached.
+    if (opts?.ensembleN && opts.ensembleN > 1 && actualCostCents > estimatedCostCents && estimatedCostCents > 0) {
+      log.error(
+        {
+          traceId,
+          actualCostCents,
+          reservedCostCents: estimatedCostCents,
+          ensembleN: opts.ensembleN,
+          alarm: 'ENSEMBLE_BUDGET_OVERRUN',
+        },
+        'ENSEMBLE_BUDGET_OVERRUN: actual cost exceeds N× reserved ceiling — investigate loa-finn max_cost enforcement',
+      );
+    }
+
     if (estimatedCostCents <= 0 || actualCostCents <= estimatedCostCents) return;
 
     const driftMicroCents = (actualCostCents - estimatedCostCents) * 100;
@@ -584,16 +603,59 @@ export class AgentGateway implements IAgentGateway {
   }
 
   /**
-   * Check BYOK daily quota per community (AC-4.30).
-   * Uses Redis counter with daily key. Fail-closed on Redis error.
+   * Resolve which BYOK provider to use for this community and pool.
+   *
+   * Strategy:
+   * 1. Use pool→provider hint (reasoning/architect → anthropic, cheap/fast-code/reviewer → openai)
+   * 2. Fall back to checking all known providers if hint has no key
+   * 3. Return undefined if no BYOK keys exist for any provider
+   *
+   * @see Bridgebuilder BB3-1 — fixes poolId.startsWith('anthropic') always being false
+   * @see POOL_PROVIDER_HINT in pool-mapping.ts
+   */
+  private async resolveByokProvider(
+    tenantId: string,
+    poolId: string,
+    log: Logger,
+  ): Promise<string | undefined> {
+    if (!this.byokManager) return undefined;
+
+    // Prefer the provider matching this pool's intent
+    const hint = POOL_PROVIDER_HINT[poolId as PoolId];
+    if (hint) {
+      const hasKey = await this.byokManager.hasBYOKKey(tenantId, hint);
+      if (hasKey) return hint;
+    }
+
+    // Fallback: check all known providers (skip the hint we already checked)
+    const providers = ['openai', 'anthropic'] as const;
+    for (const provider of providers) {
+      if (provider === hint) continue;
+      const hasKey = await this.byokManager.hasBYOKKey(tenantId, provider);
+      if (hasKey) return provider;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Check and increment BYOK daily quota per community (AC-4.30).
+   * Uses atomic Redis INCR for race-condition-free quota enforcement.
+   * Fail-closed on Redis error (IMP-010).
+   *
+   * @see Bridgebuilder BB3-2 — fixes GET-then-INCR race condition
    */
   private async checkByokQuota(communityId: string, log: Logger): Promise<void> {
     try {
       const key = `agent:byok:count:${communityId}:${this.currentDay()}`;
-      const countStr = await this.redis.get(key);
-      const count = countStr ? parseInt(countStr, 10) : 0;
+      const newCount = await this.redis.incr(key);
 
-      if (count >= this.byokDailyQuota) {
+      // Set 24h TTL on first increment (daily counter auto-expiry)
+      if (newCount === 1) {
+        await this.redis.expire(key, 86400);
+      }
+
+      if (newCount > this.byokDailyQuota) {
         throw new AgentGatewayError(
           'BYOK_QUOTA_EXCEEDED',
           'Daily BYOK request quota exceeded',

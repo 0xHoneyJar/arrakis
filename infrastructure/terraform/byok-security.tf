@@ -289,19 +289,37 @@ resource "aws_cloudwatch_metric_alarm" "byok_firewall_deny" {
   count = var.byok_enabled ? 1 : 0
 
   alarm_name          = "${local.name_prefix}-byok-firewall-deny"
-  alarm_description   = "BYOK Network Firewall denied egress traffic — potential SSRF attempt"
+  alarm_description   = "BYOK Network Firewall denied egress traffic across ALL AZs — potential SSRF attempt (BB3-3)"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
-  metric_name         = "DroppedPackets"
-  namespace           = "AWS/NetworkFirewall"
-  period              = 300
-  statistic           = "Sum"
   threshold           = 0
   treat_missing_data  = "notBreaching"
 
-  dimensions = {
-    FirewallName = aws_networkfirewall_firewall.byok[0].name
-    AvailabilityZone = var.availability_zones[0]
+  # Metric math: SUM DroppedPackets across all AZs (BB3-3)
+  # AWS Network Firewall emits metrics per-AZ, unlike ALB which aggregates.
+  # Using metric math ensures SSRF attempts from any AZ trigger the alarm.
+  dynamic "metric_query" {
+    for_each = var.availability_zones
+    content {
+      id = "az_${replace(metric_query.value, "-", "_")}"
+      metric {
+        metric_name = "DroppedPackets"
+        namespace   = "AWS/NetworkFirewall"
+        period      = 300
+        stat        = "Sum"
+        dimensions = {
+          FirewallName     = aws_networkfirewall_firewall.byok[0].name
+          AvailabilityZone = metric_query.value
+        }
+      }
+    }
+  }
+
+  metric_query {
+    id          = "total_drops"
+    expression  = join("+", [for az in var.availability_zones : "az_${replace(az, "-", "_")}"])
+    label       = "Total Dropped Packets Across AZs"
+    return_data = true
   }
 
   alarm_actions = var.sns_alarm_topic_arn != "" ? [var.sns_alarm_topic_arn] : []

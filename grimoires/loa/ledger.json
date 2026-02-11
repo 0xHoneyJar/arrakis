@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "next_sprint_number": 203,
-  "active_cycle": "cycle-015",
+  "next_sprint_number": 205,
+  "active_cycle": "cycle-016",
   "cycles": [
     {
       "id": "cycle-001",
@@ -229,6 +229,19 @@
         {"global_id": 200, "local_label": "sprint-2", "status": "completed"},
         {"global_id": 201, "local_label": "sprint-3", "status": "completed"},
         {"global_id": 202, "local_label": "sprint-4", "status": "completed"}
+      ]
+    },
+    {
+      "id": "cycle-016",
+      "label": "Bridgebuilder Round 3 — PR #52 Review Findings",
+      "status": "active",
+      "created": "2026-02-11T14:30:00Z",
+      "prd": "grimoires/loa/prd-hounfour-endgame.md",
+      "sdd": "grimoires/loa/sdd-hounfour-endgame.md",
+      "sprint_plan": "grimoires/loa/sprint-bridgebuilder-round3.md",
+      "sprints": [
+        {"global_id": 203, "local_label": "sprint-1", "status": "completed"},
+        {"global_id": 204, "local_label": "sprint-2", "status": "completed"}
       ]
     }
   ]

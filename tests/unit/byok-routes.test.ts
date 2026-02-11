@@ -198,6 +198,66 @@ describe('AC-4.1 + AC-4.18: full CRUD lifecycle', () => {
 });
 
 // --------------------------------------------------------------------------
+// BB3-5: BYOK feature gate
+// --------------------------------------------------------------------------
+
+describe('BB3-5: BYOK feature gate (byokEnabled=false)', () => {
+  it('returns 404 BYOK_DISABLED on all routes when byokEnabled is false', async () => {
+    const kms = createMockKMS();
+    const store = createMockStore();
+    const redis = createMockRedis();
+    const logger = createMockLogger();
+    const byokManager = new BYOKManager(kms, store, redis as any, logger as any);
+
+    const requireAdmin = (_req: any, _res: any, next: any) => {
+      _req.caller = { userId: 'admin-user-1' };
+      next();
+    };
+
+    const router = createBYOKRoutes({ byokManager, requireAdmin, byokEnabled: false });
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/admin', router);
+
+    // POST store
+    const storeRes = await request(app)
+      .post('/api/admin/communities/c1/byok/keys')
+      .send({ provider: 'openai', apiKey: 'sk-test12345678' });
+    expect(storeRes.status).toBe(404);
+    expect(storeRes.body.error).toBe('BYOK_DISABLED');
+
+    // GET list
+    const listRes = await request(app)
+      .get('/api/admin/communities/c1/byok/keys');
+    expect(listRes.status).toBe(404);
+    expect(listRes.body.error).toBe('BYOK_DISABLED');
+
+    // DELETE revoke
+    const revokeRes = await request(app)
+      .delete('/api/admin/communities/c1/byok/keys/00000000-0000-0000-0000-000000000000');
+    expect(revokeRes.status).toBe(404);
+    expect(revokeRes.body.error).toBe('BYOK_DISABLED');
+
+    // POST rotate
+    const rotateRes = await request(app)
+      .post('/api/admin/communities/c1/byok/keys/00000000-0000-0000-0000-000000000000/rotate')
+      .send({ apiKey: 'sk-new-key-12345678' });
+    expect(rotateRes.status).toBe(404);
+    expect(rotateRes.body.error).toBe('BYOK_DISABLED');
+  });
+
+  it('allows requests when byokEnabled is true (default)', async () => {
+    const { app } = createTestApp();
+
+    const storeRes = await request(app)
+      .post('/api/admin/communities/c1/byok/keys')
+      .send({ provider: 'openai', apiKey: 'sk-test12345678' });
+    expect(storeRes.status).toBe(201);
+  });
+});
+
+// --------------------------------------------------------------------------
 // Validation
 // --------------------------------------------------------------------------
 

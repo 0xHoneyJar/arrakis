@@ -51,8 +51,8 @@
           "minItems": 2
         },
         "byok": { "type": "boolean" },
-        "byok_provider": { "type": "string", "enum": ["openai", "anthropic", "google"] },
-        "byok_operation": { "type": "string", "enum": ["chat_completions", "messages", "generate"] }
+        "byok_provider": { "type": "string", "enum": ["openai", "anthropic"] },
+        "byok_operation": { "type": "string", "enum": ["chat_completions", "messages"] }
       },
       "additionalProperties": false
     },

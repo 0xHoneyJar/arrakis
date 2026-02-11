@@ -50,6 +50,8 @@ export interface BYOKRoutesDeps {
   byokManager: BYOKManager;
   /** Auth middleware — must verify platform admin or community owner */
   requireAdmin: (req: Request, res: Response, next: NextFunction) => void;
+  /** Whether BYOK feature is enabled (BYOK_ENABLED env var). Default: true for backward compat. */
+  byokEnabled?: boolean;
 }
 
 // --------------------------------------------------------------------------
@@ -91,6 +93,14 @@ export function createBYOKRoutes(deps: BYOKRoutesDeps): Router {
 
   // All routes require admin auth (AC-4.10)
   router.use(deps.requireAdmin);
+
+  // BYOK feature gate (BB3-5, AC-4.28): reject all requests when BYOK is disabled
+  if (deps.byokEnabled === false) {
+    router.use((_req: Request, res: Response) => {
+      res.status(404).json({ error: 'BYOK_DISABLED', message: 'BYOK feature is not enabled' });
+    });
+    return router;
+  }
 
   // --------------------------------------------------------------------------
   // POST /api/admin/communities/:id/byok/keys — Store a new key
