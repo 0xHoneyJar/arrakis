@@ -98,7 +98,6 @@ function isPrivateIPv4(ip: string): boolean {
 /** Parse IPv6 address to BigInt */
 function ipv6ToBigInt(ip: string): bigint {
   // Handle :: expansion
-  let halves: [string, string];
   if (ip.includes('::')) {
     const [left, right] = ip.split('::');
     const leftParts = left ? left.split(':') : [];
