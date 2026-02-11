@@ -1,38 +1,35 @@
 {
-  "verdict": "APPROVED",
-  "summary": "All six previously blocking dependency/acceptance-criteria gaps are addressed in a testable way, and the revisions do not introduce any new truly blocking problems.",
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "Three of the four prior blockers were addressed correctly (logging AC, test routing discriminator, and contract compatibility check), but the fallback budget change still violates the committed ≤ reserved integrity requirement as written.",
   "previous_issues_status": [
     {
-      "original_issue": "Compose depended on an unspecified/missing arrakis Dockerfile `e2e` target and on LOA_FINN_DIR being available, but neither prerequisite was captured",
+      "original_issue": "AC required “identical structured log output as before” after prepareInvocation refactor",
       "status": "fixed",
-      "notes": "Task 1.0 explicitly adds/verifies the Dockerfile `e2e` target with build/run/JWKS export ACs, and Task 1.1 now states LOA_FINN_DIR is an absolute path set by the runner plus includes `docker compose build` success criteria."
+      "notes": "AC-1.1.4 is now scoped to same events/levels and semantic fields while allowing ordering/timing differences, which is the right measurable target and avoids flakiness."
     },
     {
-      "original_issue": "Runner clones loa-finn at pinned SHA but compose builds from `${LOA_FINN_DIR}`; contract between script and compose was undefined/untestable",
-      "status": "fixed",
-      "notes": "Task 1.2 defines the runner as the single source of truth, exports LOA_FINN_DIR as an absolute path, and invokes compose after exporting it; Task 1.1 ACs validate compose config/build with LOA_FINN_DIR set."
+      "original_issue": "Fallback budget multiplier reduced without a mechanism to preserve committed ≤ reserved when fallback executes >1 attempt",
+      "status": "not_fixed",
+      "notes": "Task 1.3 changes fallback reservation to 2× and explicitly allows actual cost to exceed reservation (“absorbed by remaining community budget headroom”) and relies on max_cost/drift alarms. That is detection/mitigation, not invariant preservation. This directly contradicts the stated critical requirement (committed ≤ reserved)."
     },
     {
-      "original_issue": "NFR-1 timing (<5 min) was ambiguous and lacked a measurement boundary; could fail due to clone/build time",
+      "original_issue": "Compatibility matrix warning assumed arrakis can fetch loa-finn version at runtime",
       "status": "fixed",
-      "notes": "Task 1.4 clarifies warm-cache expectation (<3 min with SKIP_BUILD=1) and explicitly allows cold build to exceed; Task 1.2 adds timing summary output to make it measurable."
+      "notes": "Task 2.1 now makes the check local-only (CONTRACT_VERSION vs compatibility.json) and explicitly defers cross-service version negotiation. That resolves the implementability blocker."
     },
     {
-      "original_issue": "Staging validation required CloudWatch but IAM permissions/region/log group/metric discovery were unspecified, making ACs potentially unexecutable",
+      "original_issue": "Test fix proposed adding a distinguishing JWT claim; unclear who reads it and risks expanding auth surface",
       "status": "fixed",
-      "notes": "Task 2.1 now specifies `--region` behavior, hardcoded log group and metric namespace (tied to Terraform/EMF), minimal IAM actions, and requires actionable error output on permission failures; idle datapoints behavior is defined as WARN."
-    },
-    {
-      "original_issue": "Goal G-2 was 'Automate staging verification' but goal check only covered localhost; no planned staging execution/verification",
-      "status": "fixed",
-      "notes": "Task 2.3 adds Part B staging execution and SC-2b explicitly covers staging-tier behavior (PASS/WARN) and also defines the fallback behavior if staging is unavailable (clear FAIL + documented command)."
-    },
-    {
-      "original_issue": "Conflict: risk mitigation said auto-generate dev keypair if missing, but Task 2.1 AC said missing `--test-key` skips invoke check with warning",
-      "status": "fixed",
-      "notes": "Appendix C and Task 2.1 AC-2.5 are aligned to the skip-with-WARN behavior; auto-generation is removed."
+      "notes": "Task 1.2 routes deterministically using request body (ensemble.strategy) and updates stub signature to accept body. No JWT surface change; discriminator ownership is clear."
     }
   ],
-  "new_blocking_concerns": [],
+  "new_blocking_concerns": [
+    {
+      "location": "Sprint 1 / Task 1.3 (Strategy-Aware Ensemble Budget Multiplier) — Solution + AC-1.3.3",
+      "description": "The plan permits committing more budget than was reserved for fallback executions that require >2 attempts, breaking the committed ≤ reserved invariant.",
+      "why_blocking": "Budget accounting integrity is a stated critical requirement. Allowing commit > reserve can lead to negative/incorrect budget state, inconsistent enforcement across concurrent requests, and makes reservation semantics meaningless (rate/budget gating can be bypassed under fallback). Drift alarms and loa-finn max_cost do not prevent the invariant violation; they only observe/cap per-call cost.",
+      "fix": "Update Task 1.3 to include an explicit invariant-preserving mechanism and acceptance test. Any of these is acceptable:\n- (A) Keep fallback reservation at N× (status quo) and accept over-reserve.\n- (B) Implement incremental reservation/top-up before each additional fallback attempt (requires arrakis-visible step boundaries or a callback/hook from loa-finn; if not available, you can’t safely under-reserve).\n- (C) Cap fallback attempts at 2 at the arrakis layer if you insist on 2× reservation (but this changes behavior and must be explicitly accepted).\nThen rewrite AC-1.3.3 to: “In a simulated fallback requiring k attempts, arrakis increases reservation before attempt i executes (or reserves worst-case upfront) such that committed never exceeds reserved.”"
+    }
+  ],
   "iteration": 2
 }

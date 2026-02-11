@@ -1,42 +1,30 @@
 {
   "verdict": "CHANGES_REQUIRED",
-  "summary": "This plan is close, but it has a few missing/incorrect dependencies and untestable acceptance criteria that could prevent the sprint from completing its stated success criteria.",
+  "summary": "This plan is close, but a few tasks have acceptance criteria or dependency assumptions that will likely fail in implementation (logging equivalence, budget invariants for fallback, and contract compatibility checks that can’t be implemented reliably from arrakis alone).",
   "blocking_issues": [
     {
-      "location": "Sprint 1 / Task 1.1 (Docker Compose Topology Update)",
-      "issue": "Compose plan depends on an unspecified/possibly missing arrakis E2E Dockerfile target and on LOA_FINN_DIR being available, but neither prerequisite is captured as a task or precondition.",
-      "why_blocking": "If the repo doesn’t already contain the referenced Dockerfile + `e2e` build target, or if `LOA_FINN_DIR` isn’t set/available in CI, `docker compose build` will fail and Task 1.2/1.4 cannot complete (SC-1 blocked).",
-      "fix": "Add an explicit precondition or task: (a) verify/implement `Dockerfile` `e2e` target for arrakis-e2e, and (b) define how `LOA_FINN_DIR` is set (runner script writes a checkout to a known path and exports it; compose uses that path). Update Task 1.1 AC to include `docker compose build` succeeds using the runner-provided checkout path."
+      "location": "Sprint 1 / Task 1.1 (prepareInvocation refactor) — AC-1.1.4",
+      "issue": "Requires “identical structured log output as before” after a refactor that changes call boundaries and likely changes timing/order/fields (e.g., logger context, timestamps, span IDs, or message ordering).",
+      "why_blocking": "This is a common refactor failure mode: even if behavior is equivalent, log output will differ subtly and the team will either churn trying to match exact logs or ship with AC unmet. If any tests assert logs, they’ll become flaky.",
+      "fix": "Narrow AC to what can be verified: same log events/levels and same semantic fields (requestId, tenant, poolId, strategy, reserved/committed) while allowing ordering/timing differences. If you truly need exact equivalence, add a golden-log snapshot test harness now and define which fields are ignored (timestamps, durations, trace IDs)."
     },
     {
-      "location": "Sprint 1 / Task 1.2 (E2E Runner Script) ↔ Task 1.1 (Compose)",
-      "issue": "Task 1.2 says it clones loa-finn at a pinned SHA, but Task 1.1 says loa-finn builds from `${LOA_FINN_DIR}`; the dependency/contract between script and compose is not specified or testable.",
-      "why_blocking": "Even if both are implemented, the stack can fail at runtime because compose may not see the cloned directory (wrong working dir, relative path, env var not exported), causing build failures or building the wrong revision—making SC-1 unreliable.",
-      "fix": "Define a single source of truth: runner script sets `LOA_FINN_DIR` to the clone path and invokes compose with `--project-directory` (or exports env + uses absolute path). Add AC to Task 1.2: “Script sets LOA_FINN_DIR and `docker compose -f ... build loa-finn-e2e` uses the pinned SHA (e.g., label/arg printed in build logs).”"
+      "location": "Sprint 1 / Task 1.3 (fallback budget multiplier 1.2×) — AC-1.3.3 and rationale",
+      "issue": "Plan changes reservation from N× to 1.2× for fallback without specifying how the system preserves the committed ≤ reserved invariant when fallback actually executes >1 attempt (which is the whole point of fallback). The plan also references loa-finn max_cost as protection, but that does not enforce arrakis’s reservation invariant.",
+      "why_blocking": "If fallback triggers 2..N upstream calls, actual cost can exceed reserved, violating the stated critical requirement (budget accounting integrity). Drift detection “catching overruns” is not the same as preventing invariant violation; fail-closed semantics could start rejecting/rolling back incorrectly or allow negative budget.",
+      "fix": "Add an explicit mechanism and AC for invariant preservation: either (a) reserve worst-case N× (keep current) and accept over-reserve, or (b) implement incremental reservation/top-up before each additional fallback attempt (requires a hook/callback from loa-finn or a local state machine that reserves additional budget when a fallback step is taken), or (c) cap fallback to 1 attempt at arrakis layer (not typical). Update AC-1.3.3 to a testable statement (e.g., simulated fallback requiring 3 attempts never commits more than reserved; if additional attempts occur, reservation is increased before executing them)."
     },
     {
-      "location": "Sprint 1 / Task 1.4 (E2E Goal Validation)",
-      "issue": "Acceptance criteria references NFR-1 timing (<5 minutes) but there is no task-level mechanism to measure/enforce it, and it may be dominated by cloning/building loa-finn.",
-      "why_blocking": "SC-1 can fail due to timing even when functionality is correct; without a defined measurement boundary (cold vs warm cache) the team can’t reliably declare done.",
-      "fix": "Clarify timing scope in AC: e.g., “<5 minutes excluding initial image build (warm cache)”, or add a task/subtask to implement timing measurement in `run-e2e.sh` and define pass/fail threshold conditions (cold build allowed to exceed, warm must pass)."
+      "location": "Sprint 2 / Task 2.1 (compatibility matrix) — Step 4 + AC-2.1.4",
+      "issue": "“Warn when running against a loa-finn version not in the compatibility matrix” assumes arrakis can reliably obtain loa-finn version at runtime in E2E. The plan does not include any task to expose or fetch loa-finn version (e.g., /health, /version, response header), nor how the stub will provide it.",
+      "why_blocking": "Without a defined version discovery mechanism, this task can’t be completed as written; it will stall in implementation or devolve into a hardcoded value that doesn’t actually validate compatibility.",
+      "fix": "Add a concrete version source and wiring task: define where version comes from (HTTP response header like `x-loa-finn-version`, a `/healthz` payload field, or a contract field in responses). Update the stub to return it. Then implement the warning check against that value. If you can’t get a version, change AC to “warn when contract_version in vectors differs from compatibility.json” (purely local) and defer cross-service versioning to a later change in loa-finn."
     },
     {
-      "location": "Sprint 2 / Task 2.1 (Deployment Validation Script)",
-      "issue": "Staging tier requires CloudWatch queries but the plan doesn’t specify required IAM permissions, region selection, or how to locate log groups/metrics (names/filters), making ACs potentially unexecutable in real environments.",
-      "why_blocking": "Implementation can “work on one machine” but fail in staging due to missing permissions/region/log group discovery; then G-2 cannot be validated and Task 2.3 is insufficient because it only tests localhost.",
-      "fix": "Add explicit inputs and discovery rules: require/accept `--region` (or derive from AWS_PROFILE), specify log group/metric names or a deterministic lookup strategy, and document minimal IAM policy needed. Add an AC that the script prints a clear actionable error when permissions/log groups are missing (and whether that is FAIL vs WARN)."
-    },
-    {
-      "location": "Sprint 2 / Task 2.3 (Deployment Validation Goal Check) vs Goal G-2",
-      "issue": "G-2 is “Automate staging verification” but the only goal check runs against localhost; there is no planned execution/verification against staging.",
-      "why_blocking": "You can complete 2.1 and 2.3 and still not meet G-2 as stated; sprint could “finish” without proving the staging tier works, leaving success criteria effectively unmet.",
-      "fix": "Add a staging goal-check task (or expand 2.3) to run `validate-deployment.sh` against a staging URL with `--aws-profile` and define what constitutes pass when traffic is idle (ties to Risk Mitigation). Include SC-2b (staging tier runs and returns expected exit code/WARN behavior)."
-    },
-    {
-      "location": "Sprint 2 / Appendix C Risk Mitigations vs Task 2.1 ACs",
-      "issue": "Risk table says “Dev keypair auto-generated in script if missing,” but Task 2.1 AC-2.5 says missing `--test-key` skips invoke check with warning—these conflict.",
-      "why_blocking": "Conflicting requirements lead to rework and ambiguous “done”; the team may implement one behavior and fail review against the other.",
-      "fix": "Choose one behavior and align both places: either (a) require explicit `--test-key` and skip if missing (remove auto-generate mitigation), or (b) support `--test-key` optional with auto-generation to a temp file and run invoke check (update AC-2.5 accordingly)."
+      "location": "Sprint 1 / Task 1.2 (partial failure test fix) — Solution step 1",
+      "issue": "Proposes adding a distinguishing claim in the JWT (e.g., `ensemble_expect_partial`) but doesn’t specify whether arrakis or the stub is responsible for reading it, and risks changing the production auth/claims surface just to route a test stub.",
+      "why_blocking": "If the claim is added to real request JWTs, it can create unintended coupling or security review churn; if only the stub uses it, you still need to ensure the test harness actually injects it. Ambiguity here commonly causes the test to remain flaky/failing.",
+      "fix": "Make routing deterministic without new auth claims: route by request body fields already present in the contract (e.g., `ensemble.strategy === 'fallback'` plus a vector name field in the test payload), or add a test-only HTTP header in the stub harness (not forwarded in prod). Update AC to specify exactly what discriminator is used and where it is set."
     }
   ],
   "question": "",
