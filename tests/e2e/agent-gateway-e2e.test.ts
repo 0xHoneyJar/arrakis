@@ -2,23 +2,56 @@
  * Agent Gateway E2E Tests
  * Sprint 1, Task 1.3: End-to-end test scenarios
  *
- * Tests the full arrakis → loa-finn round-trip using the E2E stub.
- * Requires Docker Compose services (Redis + PostgreSQL) for full integration.
+ * Tests the full arrakis ↔ loa-finn round-trip.
  *
- * Run: SKIP_E2E=false npx vitest run tests/e2e/agent-gateway-e2e.test.ts
+ * Two modes:
+ *   - Stub mode (default):  In-process loa-finn stub, no Docker required.
+ *   - Docker mode:          Real containers via docker-compose, set E2E_MODE=docker.
  *
- * @see SDD §3.2.4 Test Scenarios
+ * Run stub mode:   SKIP_E2E=false npx vitest run tests/e2e/agent-gateway-e2e.test.ts
+ * Run Docker mode: E2E_MODE=docker SKIP_E2E=false npx vitest run tests/e2e/agent-gateway-e2e.test.ts
+ *
+ * @see SDD §2.1.3 Test Suite Modifications
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { LoaFinnE2EStub } from './loa-finn-e2e-stub.js';
-import { getVector, CONTRACT_VERSION } from './contracts/src/index.js';
+import { getVector, CONTRACT_VERSION, CONTRACT_SCHEMA } from './contracts/src/index.js';
+import Ajv2020 from 'ajv/dist/2020.js';
+import addFormats from 'ajv-formats';
 
 // --------------------------------------------------------------------------
 // Environment
 // --------------------------------------------------------------------------
 
 const SKIP_E2E = process.env['SKIP_E2E'] !== 'false';
+const isDockerMode = process.env['E2E_MODE'] === 'docker';
+const DOCKER_TIMEOUT = 15_000;
+
+// --------------------------------------------------------------------------
+// Schema Validation (AC-1.7)
+// --------------------------------------------------------------------------
+
+const ajv = new Ajv2020({ strict: false, allErrors: true });
+addFormats(ajv);
+const validateInvokeResponse = ajv.compile(CONTRACT_SCHEMA.schemas.invoke_response);
+const validateUsageReport = ajv.compile(CONTRACT_SCHEMA.schemas.usage_report);
+
+function assertInvokeResponseSchema(body: unknown): void {
+  const valid = validateInvokeResponse(body);
+  if (!valid) {
+    const errors = JSON.stringify(validateInvokeResponse.errors, null, 2);
+    throw new Error(`Invoke response schema validation failed:\n${errors}`);
+  }
+}
+
+function assertUsageReportSchema(report: unknown): void {
+  const valid = validateUsageReport(report);
+  if (!valid) {
+    const errors = JSON.stringify(validateUsageReport.errors, null, 2);
+    throw new Error(`Usage report schema validation failed:\n${errors}`);
+  }
+}
 
 // --------------------------------------------------------------------------
 // Test Suite
@@ -26,20 +59,34 @@ const SKIP_E2E = process.env['SKIP_E2E'] !== 'false';
 
 describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
   let stub: LoaFinnE2EStub;
+  let baseUrl: string;
 
   beforeAll(async () => {
-    stub = new LoaFinnE2EStub({
-      validateInboundJwt: false, // No arrakis JWKS in unit-style E2E
-    });
-    await stub.start();
-  });
+    if (isDockerMode) {
+      // Docker mode: containers already running via docker-compose
+      baseUrl = process.env['E2E_BASE_URL'] ?? 'http://localhost:8099';
+      console.log(`[E2E] Docker mode — targeting ${baseUrl}`);
+    } else {
+      // Stub mode: start in-process loa-finn stub
+      stub = new LoaFinnE2EStub({
+        validateInboundJwt: false,
+      });
+      await stub.start();
+      baseUrl = stub.getBaseUrl();
+      console.log(`[E2E] Stub mode — targeting ${baseUrl}`);
+    }
+  }, isDockerMode ? DOCKER_TIMEOUT : undefined);
 
   afterAll(async () => {
-    await stub.stop();
+    if (!isDockerMode && stub) {
+      await stub.stop();
+    }
   });
 
   beforeEach(() => {
-    stub.reset();
+    if (!isDockerMode && stub) {
+      stub.reset();
+    }
   });
 
   // --------------------------------------------------------------------------
@@ -49,7 +96,7 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
   describe('invoke_free_tier', () => {
     it('should complete invoke round-trip with 200', async () => {
       const vector = getVector('invoke_free_tier');
-      const response = await fetch(`${stub.getBaseUrl()}/v1/agents/invoke`, {
+      const response = await fetch(`${baseUrl}/v1/agents/invoke`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -65,11 +112,14 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
       expect(body).toHaveProperty('usage');
       expect(body.usage).toHaveProperty('prompt_tokens');
       expect(body.usage).toHaveProperty('completion_tokens');
-    });
+
+      // Schema validation (AC-1.7)
+      assertInvokeResponseSchema(body);
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
 
     it('should receive usage report matching vector (zero drift)', async () => {
       const vector = getVector('invoke_free_tier');
-      await fetch(`${stub.getBaseUrl()}/v1/agents/invoke`, {
+      await fetch(`${baseUrl}/v1/agents/invoke`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -78,16 +128,20 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
         body: JSON.stringify(vector.request.body),
       });
 
-      const reports = stub.getUsageReports();
-      expect(reports.length).toBe(1);
+      if (!isDockerMode) {
+        const reports = stub.getUsageReports();
+        expect(reports.length).toBe(1);
 
-      const report = reports[0];
-      expect(report.poolId).toBe(vector.usage_report_payload!.pool_id);
-      expect(report.inputTokens).toBe(vector.usage_report_payload!.input_tokens);
-      expect(report.outputTokens).toBe(vector.usage_report_payload!.output_tokens);
-      expect(report.costMicro).toBe(vector.usage_report_payload!.cost_micro);
-      expect(report.accountingMode).toBe('PLATFORM_BUDGET');
-    });
+        const report = reports[0];
+        expect(report.poolId).toBe(vector.usage_report_payload!.pool_id);
+        expect(report.inputTokens).toBe(vector.usage_report_payload!.input_tokens);
+        expect(report.outputTokens).toBe(vector.usage_report_payload!.output_tokens);
+        expect(report.costMicro).toBe(vector.usage_report_payload!.cost_micro);
+        expect(report.accountingMode).toBe('PLATFORM_BUDGET');
+      }
+      // In Docker mode, usage reports go through loa-finn→arrakis internal channel
+      // and aren't directly observable from the test client
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
   });
 
   // --------------------------------------------------------------------------
@@ -97,7 +151,7 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
   describe('invoke_pro_pool_routing', () => {
     it('should route to correct pool based on JWT claims', async () => {
       const vector = getVector('invoke_pro_pool_routing');
-      const response = await fetch(`${stub.getBaseUrl()}/v1/agents/invoke`, {
+      const response = await fetch(`${baseUrl}/v1/agents/invoke`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,10 +162,15 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
 
       expect(response.status).toBe(200);
 
-      const reports = stub.getUsageReports();
-      expect(reports.length).toBe(1);
-      expect(reports[0].poolId).toBe('fast-code');
-    });
+      const body = await response.json();
+      assertInvokeResponseSchema(body);
+
+      if (!isDockerMode) {
+        const reports = stub.getUsageReports();
+        expect(reports.length).toBe(1);
+        expect(reports[0].poolId).toBe('fast-code');
+      }
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
   });
 
   // --------------------------------------------------------------------------
@@ -121,7 +180,7 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
   describe('invoke_stream_sse', () => {
     it('should stream events in correct order: content* → usage → done', async () => {
       const vector = getVector('invoke_stream_sse');
-      const response = await fetch(`${stub.getBaseUrl()}/v1/agents/stream`, {
+      const response = await fetch(`${baseUrl}/v1/agents/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -146,7 +205,7 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
       expect(usageIdx).toBeGreaterThan(0);
       expect(doneIdx).toBe(types.length - 1);
       expect(usageIdx).toBeLessThan(doneIdx);
-    });
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
   });
 
   // --------------------------------------------------------------------------
@@ -200,7 +259,7 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
   describe('invoke_byok', () => {
     it('should use BYOK_NO_BUDGET accounting mode with zero platform cost', async () => {
       const vector = getVector('invoke_byok');
-      const response = await fetch(`${stub.getBaseUrl()}/v1/agents/invoke`, {
+      const response = await fetch(`${baseUrl}/v1/agents/invoke`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -211,12 +270,17 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
 
       expect(response.status).toBe(200);
 
-      const reports = stub.getUsageReports();
-      expect(reports.length).toBe(1);
-      expect(reports[0].accountingMode).toBe('BYOK_NO_BUDGET');
-      expect(reports[0].costMicro).toBe(0);
-      expect(reports[0].usageTokens).toBe(500);
-    });
+      const body = await response.json();
+      assertInvokeResponseSchema(body);
+
+      if (!isDockerMode) {
+        const reports = stub.getUsageReports();
+        expect(reports.length).toBe(1);
+        expect(reports[0].accountingMode).toBe('BYOK_NO_BUDGET');
+        expect(reports[0].costMicro).toBe(0);
+        expect(reports[0].usageTokens).toBe(500);
+      }
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
   });
 
   // --------------------------------------------------------------------------
@@ -226,7 +290,7 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
   describe('invoke_ensemble_best_of_n', () => {
     it('should process ensemble request with budget multiplier', async () => {
       const vector = getVector('invoke_ensemble_best_of_n');
-      const response = await fetch(`${stub.getBaseUrl()}/v1/agents/invoke`, {
+      const response = await fetch(`${baseUrl}/v1/agents/invoke`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -237,10 +301,15 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
 
       expect(response.status).toBe(200);
 
-      const reports = stub.getUsageReports();
-      expect(reports.length).toBe(1);
-      expect(reports[0].costMicro).toBe(2250);
-    });
+      const body = await response.json();
+      assertInvokeResponseSchema(body);
+
+      if (!isDockerMode) {
+        const reports = stub.getUsageReports();
+        expect(reports.length).toBe(1);
+        expect(reports[0].costMicro).toBe(2250);
+      }
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
   });
 
   // --------------------------------------------------------------------------
@@ -250,7 +319,7 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
   describe('invoke_ensemble_partial_failure', () => {
     it('should handle partial failure with committed ≤ reserved (drift = 0)', async () => {
       const vector = getVector('invoke_ensemble_partial_failure');
-      const response = await fetch(`${stub.getBaseUrl()}/v1/agents/invoke`, {
+      const response = await fetch(`${baseUrl}/v1/agents/invoke`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -266,17 +335,21 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
       expect(body.ensemble_succeeded).toBe(2);
       expect(body.ensemble_failed).toBe(1);
 
-      const reports = stub.getUsageReports();
-      expect(reports.length).toBe(1);
+      assertInvokeResponseSchema(body);
 
-      // Committed cost = sum of successful model costs (1500 micro)
-      expect(reports[0].costMicro).toBe(1500);
+      if (!isDockerMode) {
+        const reports = stub.getUsageReports();
+        expect(reports.length).toBe(1);
 
-      // Reserved was 3 × single model estimate. Committed ≤ reserved.
-      const estimatedPerModel = 2250; // from best_of_n vector cost_micro
-      const reserved = 3 * estimatedPerModel;
-      expect(reports[0].costMicro).toBeLessThanOrEqual(reserved);
-    });
+        // Committed cost = sum of successful model costs (1500 micro)
+        expect(reports[0].costMicro).toBe(1500);
+
+        // Reserved was 3 × single model estimate. Committed ≤ reserved.
+        const estimatedPerModel = 2250; // from best_of_n vector cost_micro
+        const reserved = 3 * estimatedPerModel;
+        expect(reports[0].costMicro).toBeLessThanOrEqual(reserved);
+      }
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
   });
 
   // --------------------------------------------------------------------------
@@ -285,16 +358,16 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
 
   describe('contract version', () => {
     it('should expose contract version via health endpoint', async () => {
-      const response = await fetch(`${stub.getBaseUrl()}/v1/health`);
+      const response = await fetch(`${baseUrl}/v1/health`);
       expect(response.status).toBe(200);
 
       const body = await response.json();
       expect(body.contract_version).toBe(CONTRACT_VERSION);
-    });
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
 
     it('should expose JWKS endpoint', async () => {
       const response = await fetch(
-        `${stub.getBaseUrl()}/.well-known/jwks.json`,
+        `${baseUrl}/.well-known/jwks.json`,
       );
       expect(response.status).toBe(200);
 
@@ -304,7 +377,7 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
       expect(body.keys[0].alg).toBe('ES256');
       expect(body.keys[0].kty).toBe('EC');
       expect(body.keys[0].crv).toBe('P-256');
-    });
+    }, isDockerMode ? DOCKER_TIMEOUT : undefined);
 
     it('should have pool_mapping_version in all test vector JWT claims', () => {
       for (const vector of [...getTestVectors()]) {
