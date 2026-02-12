@@ -38,6 +38,8 @@ import type { BYOKManager } from './byok-manager.js';
 import { computeEnsembleAccounting } from './ensemble-accounting.js';
 import type { ModelInvocationResult } from './ensemble-accounting.js';
 import type { AgentMetrics } from './agent-metrics.js';
+import { RequestLifecycle } from './request-lifecycle.js';
+import { TokenEstimator } from './token-estimator.js';
 
 // --------------------------------------------------------------------------
 // Types
@@ -81,6 +83,7 @@ export class AgentGateway implements IAgentGateway {
   private readonly byokManager?: BYOKManager;
   private readonly byokDailyQuota: number;
   private readonly metrics?: AgentMetrics;
+  private readonly tokenEstimator: TokenEstimator;
 
   constructor(deps: AgentGatewayDeps) {
     this.budget = deps.budgetManager;
@@ -95,6 +98,7 @@ export class AgentGateway implements IAgentGateway {
     this.byokManager = deps.byokManager;
     this.byokDailyQuota = deps.byokDailyQuota ?? 10_000;
     this.metrics = deps.metrics;
+    this.tokenEstimator = new TokenEstimator(deps.logger);
   }
 
   // --------------------------------------------------------------------------
@@ -104,6 +108,7 @@ export class AgentGateway implements IAgentGateway {
   async invoke(request: AgentInvokeRequest): Promise<AgentInvokeResponse> {
     const { context } = request;
     const log = this.logger.child({ traceId: context.traceId, communityId: context.tenantId });
+    const lifecycle = new RequestLifecycle(context.traceId, log);
 
     // 1. Validate model alias
     if (request.modelAlias && !context.allowedModelAliases.includes(request.modelAlias)) {
@@ -119,6 +124,7 @@ export class AgentGateway implements IAgentGateway {
     });
 
     if (!rateLimitResult.allowed) {
+      lifecycle.fail({ reason: 'RATE_LIMITED', dimension: rateLimitResult.dimension });
       throw new AgentGatewayError(
         'RATE_LIMITED',
         'Rate limit exceeded',
@@ -131,6 +137,9 @@ export class AgentGateway implements IAgentGateway {
         },
       );
     }
+
+    // Lifecycle: RECEIVED → VALIDATED (rate limit + model alias checks passed)
+    lifecycle.validate({ accessLevel: context.accessLevel });
 
     // 3. Pool resolution — tier-aware model→pool mapping (Sprint 3)
     //    Must run BEFORE budget estimation so cost uses resolved pool pricing (F-2)
@@ -150,11 +159,13 @@ export class AgentGateway implements IAgentGateway {
 
     if (request.ensemble) {
       if (!this.ensembleEnabled) {
+        lifecycle.fail({ reason: 'ENSEMBLE_DISABLED' });
         throw new AgentGatewayError('ENSEMBLE_DISABLED', 'Ensemble orchestration is not enabled', 400);
       }
 
       const validation = this.ensembleMapper.validate(request.ensemble, context.accessLevel);
       if (!validation.valid) {
+        lifecycle.fail({ reason: validation.code });
         throw new AgentGatewayError(validation.code, validation.message, validation.statusCode);
       }
 
@@ -198,7 +209,7 @@ export class AgentGateway implements IAgentGateway {
     //    Budget multiplier applied for ensemble strategies (platform models only)
     const baseCostCents = isByok ? 0 : this.budget.estimateCost({
       modelAlias: poolId,
-      estimatedInputTokens: this.estimateInputTokens(request),
+      estimatedInputTokens: this.tokenEstimator.estimate(request.messages, { modelAlias: poolId }),
       // 1000: Conservative sync estimate. Median Claude response is ~500 tokens;
       // 1000 covers p90 without over-reserving budget. See SDD §4.3.
       estimatedOutputTokens: 1000,
@@ -215,12 +226,17 @@ export class AgentGateway implements IAgentGateway {
     });
 
     if (reserveResult.status === 'BUDGET_EXCEEDED') {
+      lifecycle.fail({ reason: 'BUDGET_EXCEEDED' });
       throw new AgentGatewayError('BUDGET_EXCEEDED', 'Community budget exhausted', 402);
     }
 
     if (reserveResult.status !== 'RESERVED' && reserveResult.status !== 'ALREADY_RESERVED') {
+      lifecycle.fail({ reason: 'BUDGET_ERROR' });
       throw new AgentGatewayError('BUDGET_ERROR', 'Budget reservation failed', 500);
     }
+
+    // Lifecycle: VALIDATED → RESERVED
+    lifecycle.reserve({ poolId, estimatedCostCents, isByok });
 
     // Log idempotent hit (S10-T4: IMP-001)
     if (reserveResult.status === 'ALREADY_RESERVED') {
@@ -251,6 +267,9 @@ export class AgentGateway implements IAgentGateway {
       },
     };
 
+    // Lifecycle: RESERVED → EXECUTING
+    lifecycle.execute({ poolId });
+
     // 6. Execute via loa-finn
     try {
       const response = await this.loaFinn.invoke(request);
@@ -267,6 +286,9 @@ export class AgentGateway implements IAgentGateway {
         modelAlias: request.modelAlias,
         traceId: context.traceId,
       });
+
+      // Lifecycle: EXECUTING → FINALIZED
+      lifecycle.finalize({ actualCostCents });
 
       // 6c. Budget drift detection uses platform cost only (BB6 AC-1.11)
       this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log, {
@@ -317,6 +339,11 @@ export class AgentGateway implements IAgentGateway {
 
       return response;
     } catch (err) {
+      // Lifecycle: → FAILED (only if not already terminal)
+      if (!lifecycle.isTerminal()) {
+        lifecycle.fail({ reason: err instanceof Error ? err.message : 'unknown' });
+      }
+
       // On non-retryable failure: cancel reservation immediately
       // On retryable failure: reservation expires via TTL (Flatline IMP-001)
       if (err instanceof Error && isNonRetryable(err)) {
@@ -340,9 +367,11 @@ export class AgentGateway implements IAgentGateway {
   ): AsyncGenerator<AgentStreamEvent> {
     const { context } = request;
     const log = this.logger.child({ traceId: context.traceId, communityId: context.tenantId });
+    const lifecycle = new RequestLifecycle(context.traceId, log);
 
     // 1. Validate model alias
     if (request.modelAlias && !context.allowedModelAliases.includes(request.modelAlias)) {
+      lifecycle.fail({ reason: 'MODEL_NOT_ALLOWED' });
       throw new AgentGatewayError('MODEL_NOT_ALLOWED', `Model '${request.modelAlias}' is not available for your tier`, 403);
     }
 
@@ -355,6 +384,7 @@ export class AgentGateway implements IAgentGateway {
     });
 
     if (!rateLimitResult.allowed) {
+      lifecycle.fail({ reason: 'RATE_LIMITED', dimension: rateLimitResult.dimension });
       throw new AgentGatewayError('RATE_LIMITED', 'Rate limit exceeded', 429, {
         dimension: rateLimitResult.dimension,
         retryAfterMs: rateLimitResult.retryAfterMs,
@@ -362,6 +392,9 @@ export class AgentGateway implements IAgentGateway {
         remaining: rateLimitResult.remaining,
       });
     }
+
+    // Lifecycle: RECEIVED → VALIDATED
+    lifecycle.validate({ accessLevel: context.accessLevel });
 
     // 3. Pool resolution — tier-aware model→pool mapping (Sprint 3)
     //    Must run BEFORE budget estimation so cost uses resolved pool pricing (F-2)
@@ -381,11 +414,13 @@ export class AgentGateway implements IAgentGateway {
 
     if (request.ensemble) {
       if (!this.ensembleEnabled) {
+        lifecycle.fail({ reason: 'ENSEMBLE_DISABLED' });
         throw new AgentGatewayError('ENSEMBLE_DISABLED', 'Ensemble orchestration is not enabled', 400);
       }
 
       const validation = this.ensembleMapper.validate(request.ensemble, context.accessLevel);
       if (!validation.valid) {
+        lifecycle.fail({ reason: validation.code });
         throw new AgentGatewayError(validation.code, validation.message, validation.statusCode);
       }
 
@@ -423,7 +458,7 @@ export class AgentGateway implements IAgentGateway {
     //    Budget multiplier applied for ensemble strategies (platform models only)
     const baseCostCents = isByok ? 0 : this.budget.estimateCost({
       modelAlias: poolId,
-      estimatedInputTokens: this.estimateInputTokens(request),
+      estimatedInputTokens: this.tokenEstimator.estimate(request.messages, { modelAlias: poolId }),
       // 2000: Stream requests tend to produce longer responses (multi-turn, tool use).
       // 2x sync estimate balances budget accuracy vs over-reservation. See SDD §4.3.
       estimatedOutputTokens: 2000,
@@ -440,12 +475,17 @@ export class AgentGateway implements IAgentGateway {
     });
 
     if (reserveResult.status === 'BUDGET_EXCEEDED') {
+      lifecycle.fail({ reason: 'BUDGET_EXCEEDED' });
       throw new AgentGatewayError('BUDGET_EXCEEDED', 'Community budget exhausted', 402);
     }
 
     if (reserveResult.status !== 'RESERVED' && reserveResult.status !== 'ALREADY_RESERVED') {
+      lifecycle.fail({ reason: 'BUDGET_ERROR' });
       throw new AgentGatewayError('BUDGET_ERROR', 'Budget reservation failed', 500);
     }
+
+    // Lifecycle: VALIDATED → RESERVED
+    lifecycle.reserve({ poolId, estimatedCostCents, isByok });
 
     // Log idempotent hit (S10-T4: IMP-001)
     if (reserveResult.status === 'ALREADY_RESERVED') {
@@ -473,6 +513,9 @@ export class AgentGateway implements IAgentGateway {
       },
     };
 
+    // Lifecycle: RESERVED → EXECUTING
+    lifecycle.execute({ poolId });
+
     // 6. Stream from loa-finn with finalize-once semantics
     //    Pass downstream signal for abort propagation (SDD §4.7)
     let finalized = false;
@@ -493,6 +536,9 @@ export class AgentGateway implements IAgentGateway {
           });
           finalized = true;
 
+          // Lifecycle: EXECUTING → FINALIZED
+          lifecycle.finalize({ actualCostCents });
+
           this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log, {
             ensembleN: ensembleResult?.jwtClaims?.ensemble_n,
           });
@@ -501,6 +547,11 @@ export class AgentGateway implements IAgentGateway {
         yield event;
       }
     } finally {
+      // Lifecycle: → FAILED if not already terminal (abort/error path)
+      if (!lifecycle.isTerminal()) {
+        lifecycle.fail({ reason: finalized ? 'POST_FINALIZE_ERROR' : 'STREAM_NOT_FINALIZED' });
+      }
+
       // Reconciliation in finally block ensures budget accounting even on abort (S10-T2)
       if (!finalized) {
         await this.scheduleReconciliation(context, log);
@@ -631,12 +682,6 @@ export class AgentGateway implements IAgentGateway {
         'Budget drift detected: actual cost exceeds 2× estimate',
       );
     }
-  }
-
-  private estimateInputTokens(request: AgentInvokeRequest): number {
-    // Rough estimate: ~4 chars per token
-    const totalChars = request.messages.reduce((sum, m) => sum + m.content.length, 0);
-    return Math.ceil(totalChars / 4);
   }
 
   private async scheduleReconciliation(
