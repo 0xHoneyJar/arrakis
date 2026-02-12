@@ -215,6 +215,13 @@ export {
 // Agent Metrics (EMF — CloudWatch)
 export { AgentMetrics, type RequestMetrics, type BudgetMetrics, type CircuitBreakerMetrics, type PoolClaimMetrics } from './agent-metrics.js';
 
+// Capability Audit Log (cycle-019 Sprint 4 — observability)
+export {
+  CapabilityAuditLogger,
+  type CapabilityAuditEvent,
+  type CapabilityEventType,
+} from './capability-audit.js';
+
 // Ensemble Accounting (cycle-019 BB6 Finding #6 — per-model cost attribution)
 export {
   computeEnsembleAccounting,
