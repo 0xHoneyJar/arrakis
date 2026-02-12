@@ -204,3 +204,15 @@ export {
   type AgentRequestLog,
   type PoolClaimValidationLog,
 } from './observability.js';
+
+// Agent Metrics (EMF — CloudWatch)
+export { AgentMetrics, type RequestMetrics, type BudgetMetrics, type CircuitBreakerMetrics, type PoolClaimMetrics } from './agent-metrics.js';
+
+// Ensemble Accounting (cycle-019 BB6 Finding #6 — per-model cost attribution)
+export {
+  computeEnsembleAccounting,
+  computeHybridMultiplier,
+  type ModelInvocationResult,
+  type EnsembleAccountingResult,
+  type AccountingMode,
+} from './ensemble-accounting.js';

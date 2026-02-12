@@ -35,6 +35,9 @@ import type { PoolId } from './pool-mapping.js';
 import { EnsembleMapper } from './ensemble-mapper.js';
 import type { EnsembleValidationResult } from './ensemble-mapper.js';
 import type { BYOKManager } from './byok-manager.js';
+import { computeEnsembleAccounting } from './ensemble-accounting.js';
+import type { ModelInvocationResult } from './ensemble-accounting.js';
+import type { AgentMetrics } from './agent-metrics.js';
 
 // --------------------------------------------------------------------------
 // Types
@@ -56,6 +59,8 @@ export interface AgentGatewayDeps {
   byokManager?: BYOKManager;
   /** BYOK daily request quota per community (default: 10_000) */
   byokDailyQuota?: number;
+  /** Agent metrics emitter for per-model EMF metrics (cycle-019) */
+  metrics?: AgentMetrics;
 }
 
 // --------------------------------------------------------------------------
@@ -75,6 +80,7 @@ export class AgentGateway implements IAgentGateway {
   private readonly byokEnabled: boolean;
   private readonly byokManager?: BYOKManager;
   private readonly byokDailyQuota: number;
+  private readonly metrics?: AgentMetrics;
 
   constructor(deps: AgentGatewayDeps) {
     this.budget = deps.budgetManager;
@@ -88,6 +94,7 @@ export class AgentGateway implements IAgentGateway {
     this.byokEnabled = deps.byokEnabled ?? false;
     this.byokManager = deps.byokManager;
     this.byokDailyQuota = deps.byokDailyQuota ?? 10_000;
+    this.metrics = deps.metrics;
   }
 
   // --------------------------------------------------------------------------
@@ -175,9 +182,20 @@ export class AgentGateway implements IAgentGateway {
       }
     }
 
+    // 3d. Hybrid BYOK/platform multiplier (cycle-019 BB6 Finding #6)
+    //     For ensemble requests, only PLATFORM_BUDGET models count toward reservation.
+    //     BYOK models are zero-cost and don't need budget reservation.
+    if (ensembleResult && isByok && ensembleResult.request.n) {
+      // If primary pool is BYOK, reduce multiplier by 1 (this model is free)
+      budgetMultiplier = this.ensembleMapper.computeHybridMultiplier(
+        ensembleResult.request.n,
+        1, // Current model is BYOK; other models assumed platform
+      );
+    }
+
     // 4. Estimate cost and reserve budget (using resolved poolId, not raw alias)
     //    BYOK_NO_BUDGET: reserve $0 when using community's own key (AC-4.7)
-    //    Budget multiplier applied for ensemble strategies (N × base cost)
+    //    Budget multiplier applied for ensemble strategies (platform models only)
     const baseCostCents = isByok ? 0 : this.budget.estimateCost({
       modelAlias: poolId,
       estimatedInputTokens: this.estimateInputTokens(request),
@@ -237,7 +255,7 @@ export class AgentGateway implements IAgentGateway {
     try {
       const response = await this.loaFinn.invoke(request);
 
-      // 6. Finalize budget with actual cost + drift detection
+      // 6b. Finalize budget with actual cost + drift detection
       // AC-4.7 + AC-4.8: BYOK uses $0 cost (community pays provider directly)
       const actualCostCents = isByok ? 0 : Math.round(response.usage.costUsd * 100);
       await this.budget.finalize({
@@ -250,9 +268,52 @@ export class AgentGateway implements IAgentGateway {
         traceId: context.traceId,
       });
 
+      // 6c. Budget drift detection uses platform cost only (BB6 AC-1.11)
       this.checkBudgetDrift(actualCostCents, estimatedCostCents, context.traceId, log, {
         ensembleN: ensembleResult?.jwtClaims?.ensemble_n,
       });
+
+      // 6d. Per-model ensemble accounting (cycle-019 BB6 Finding #6)
+      if (ensembleResult) {
+        const costMicro = actualCostCents * 100; // cents → micro-USD
+        const reservedMicro = estimatedCostCents * 100;
+        const accountingMode = isByok ? 'BYOK_NO_BUDGET' as const : 'PLATFORM_BUDGET' as const;
+        const provider = (byokProvider ?? POOL_PROVIDER_HINT[poolId as PoolId] ?? 'openai') as 'openai' | 'anthropic';
+
+        // Build per-model result for the primary invocation
+        const modelResult: ModelInvocationResult = {
+          model_id: poolId,
+          provider,
+          succeeded: true,
+          input_tokens: response.usage.promptTokens,
+          output_tokens: response.usage.completionTokens,
+          cost_micro: isByok ? 0 : costMicro,
+          accounting_mode: accountingMode,
+          latency_ms: 0, // Would need request timing; placeholder for now
+        };
+
+        const ensembleAccounting = computeEnsembleAccounting(
+          ensembleResult.request.strategy!,
+          [modelResult],
+          reservedMicro,
+        );
+
+        // Emit per-model EMF metrics (AC-1.22, AC-1.23)
+        if (this.metrics) {
+          await this.metrics.emitPerModelCost({
+            modelId: poolId,
+            provider,
+            accountingMode,
+            costMicro: modelResult.cost_micro,
+          });
+          await this.metrics.emitEnsembleSavings({
+            strategy: ensembleResult.request.strategy!,
+            savingsMicro: ensembleAccounting.savings_micro,
+          });
+        }
+
+        return { ...response, ensemble_accounting: ensembleAccounting };
+      }
 
       return response;
     } catch (err) {
@@ -349,9 +410,17 @@ export class AgentGateway implements IAgentGateway {
       }
     }
 
+    // 3d. Hybrid BYOK/platform multiplier (cycle-019 BB6 Finding #6)
+    if (ensembleResult && isByok && ensembleResult.request.n) {
+      budgetMultiplier = this.ensembleMapper.computeHybridMultiplier(
+        ensembleResult.request.n,
+        1,
+      );
+    }
+
     // 4. Reserve budget (using resolved poolId, not raw alias)
     //    BYOK_NO_BUDGET: reserve $0 when using community's own key (AC-4.7)
-    //    Budget multiplier applied for ensemble strategies (N × base cost)
+    //    Budget multiplier applied for ensemble strategies (platform models only)
     const baseCostCents = isByok ? 0 : this.budget.estimateCost({
       modelAlias: poolId,
       estimatedInputTokens: this.estimateInputTokens(request),

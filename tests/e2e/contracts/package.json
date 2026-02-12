@@ -1,6 +1,6 @@
 {
   "name": "@arrakis/loa-finn-contract",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Contract artifacts for arrakis ↔ loa-finn integration: JSON Schema + test vectors",
   "type": "module",
   "main": "dist/index.js",

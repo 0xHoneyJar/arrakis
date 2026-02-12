@@ -10,6 +10,7 @@
  */
 
 import type { AccessLevel } from '@arrakis/core/ports';
+import type { ModelInvocationResult } from './ensemble-accounting.js';
 
 // --------------------------------------------------------------------------
 // Types
@@ -147,5 +148,36 @@ export class EnsembleMapper {
     return results
       .filter((r) => r.succeeded)
       .reduce((sum, r) => sum + r.costCents, 0);
+  }
+
+  /**
+   * Compute per-model partial cost with breakdown by accounting mode.
+   * Returns platform-only committed cost (for budget finalization) plus full breakdown.
+   *
+   * @see cycle-019 BB6 Finding #6 — per-model ensemble accounting
+   */
+  computePartialCostWithBreakdown(
+    results: ReadonlyArray<ModelInvocationResult>,
+  ): { platformCostMicro: number; totalCostMicro: number; breakdown: ModelInvocationResult[] } {
+    const succeeded = results.filter((r) => r.succeeded);
+    const platformCostMicro = succeeded
+      .filter((r) => r.accounting_mode === 'PLATFORM_BUDGET')
+      .reduce((sum, r) => sum + r.cost_micro, 0);
+    const totalCostMicro = succeeded.reduce((sum, r) => sum + r.cost_micro, 0);
+
+    return { platformCostMicro, totalCostMicro, breakdown: [...results] };
+  }
+
+  /**
+   * Compute budget multiplier for hybrid BYOK/platform ensembles.
+   * Only PLATFORM_BUDGET models count toward the reservation.
+   *
+   * @param totalN - Total number of models in ensemble
+   * @param byokModelCount - Number of models using BYOK keys
+   * @returns Multiplier for budget reservation (platform models only)
+   */
+  computeHybridMultiplier(totalN: number, byokModelCount: number): number {
+    const platformCount = totalN - byokModelCount;
+    return Math.max(platformCount, 0);
   }
 }
