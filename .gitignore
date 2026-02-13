@@ -267,5 +267,8 @@ app/ecosystem.config.js
 # Next.js build output and artifacts (moved repos / stale builds)
 **/.next/
 
+# Next.js auto-generated TypeScript declarations
+**/next-env.d.ts
+
 # Vercel local state
 **/.vercel/
