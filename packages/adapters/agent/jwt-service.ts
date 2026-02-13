@@ -14,9 +14,8 @@ import { SignJWT, importPKCS8, exportJWK, type JWK, type KeyLike } from 'jose';
 import { v4 as uuidv4 } from 'uuid';
 import { createPublicKey, type KeyObject } from 'node:crypto';
 import type { AgentRequestContext } from '@arrakis/core/ports';
-import { computeReqHash } from './req-hash.js';
+import { computeReqHash, CONTRACT_VERSION } from '@0xhoneyjar/loa-hounfour';
 import { REAL_CLOCK, type Clock } from './clock.js';
-import { CONTRACT_VERSION } from './contract-version.js';
 
 // --------------------------------------------------------------------------
 // Tier Name Mapping

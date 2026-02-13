@@ -3,18 +3,18 @@
 //! Sprint S-4: Twilight Gateway Core
 //! Manages multiple Discord shards per process per SDD §5.1.3
 
+use crate::error::GatewayError;
 use crate::events::serialize::serialize_event;
 use crate::metrics::GatewayMetrics;
 use crate::nats::NatsPublisher;
 use crate::shard::state::{ShardHealth, ShardState};
 
-use anyhow::Result;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
-use twilight_gateway::{Config, Intents, Shard, ShardId};
-use twilight_model::gateway::event::Event;
+use twilight_gateway::{Config, EventTypeFlags, Intents, Shard, StreamExt as _};
+use twilight_model::gateway::{ShardId, event::Event};
 
 /// Number of shards per gateway process (pool)
 pub const SHARDS_PER_POOL: u64 = 25;
@@ -46,7 +46,7 @@ impl ShardPool {
         intents: Intents,
         nats: Option<Arc<NatsPublisher>>,
         metrics: Arc<GatewayMetrics>,
-    ) -> Result<Self> {
+    ) -> Result<Self, GatewayError> {
         let start_shard = pool_id * SHARDS_PER_POOL;
         let end_shard = ((pool_id + 1) * SHARDS_PER_POOL).min(total_shards);
 
@@ -62,12 +62,18 @@ impl ShardPool {
 
         let state = ShardState::new(pool_id, shard_ids.iter().copied(), total_shards);
 
+        // BB60-19: Safe u64 → u32 cast at Twilight API boundary
+        let total_shards_u32 = u32::try_from(total_shards)
+            .map_err(|_| GatewayError::ShardIdOverflow { value: total_shards })?;
+
         let mut shards = Vec::with_capacity(shard_ids.len());
 
         for shard_id in shard_ids {
-            let config = Config::builder(token.clone(), intents).build();
+            let shard_id_u32 = u32::try_from(shard_id)
+                .map_err(|_| GatewayError::ShardIdOverflow { value: shard_id })?;
+            let config = Config::new(token.clone(), intents);
 
-            let shard = Shard::with_config(ShardId::new(shard_id, total_shards), config);
+            let shard = Shard::with_config(ShardId::new(shard_id_u32, total_shards_u32), config);
 
             shards.push(shard);
         }
@@ -97,11 +103,11 @@ impl ShardPool {
     /// Run all shards in the pool
     ///
     /// This spawns a task for each shard and waits for all to complete.
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<(), GatewayError> {
         let mut handles = Vec::with_capacity(self.shards.len());
 
         for shard in self.shards {
-            let shard_id = shard.id().number();
+            let shard_id: u64 = shard.id().number().into();
             let nats = self.nats.clone();
             let state = self.state.clone();
             let metrics = Arc::clone(&self.metrics);
@@ -144,27 +150,55 @@ async fn run_shard(
     nats: Option<Arc<NatsPublisher>>,
     state: ShardState,
     metrics: Arc<GatewayMetrics>,
-) -> Result<()> {
-    let shard_id = shard.id().number();
+) -> Result<(), GatewayError> {
+    let shard_id: u64 = shard.id().number().into();
     let pool_id = state.pool_id();
 
     state.set_health(shard_id, ShardHealth::Connecting);
 
     info!(shard_id, pool_id, "Shard starting");
 
-    loop {
-        let event = match shard.next_event().await {
-            Ok(event) => event,
-            Err(source) => {
-                warn!(shard_id, error = %source, "Error receiving event");
-                metrics.record_error(shard_id);
+    // Circuit breaker: mark shard dead after N consecutive errors without success
+    const MAX_CONSECUTIVE_ERRORS: u32 = 10;
+    let mut consecutive_errors: u32 = 0;
 
-                if source.is_fatal() {
+    while let Some(item) = shard.next_event(EventTypeFlags::all()).await {
+        let event = match item {
+            Ok(event) => {
+                consecutive_errors = 0;
+                event
+            }
+            Err(source) => {
+                consecutive_errors += 1;
+                warn!(shard_id, error = %source, consecutive = consecutive_errors, "Error receiving event");
+
+                // Immediate fatal: reconnect failure
+                if matches!(source.kind(), twilight_gateway::error::ReceiveMessageErrorType::Reconnect) {
+                    let err = GatewayError::ShardReconnectFailed {
+                        shard_id,
+                        source: Box::new(source),
+                    };
+                    metrics.record_error(shard_id, err.error_type_label());
                     state.set_health(shard_id, ShardHealth::Dead);
-                    error!(shard_id, "Fatal gateway error");
-                    return Err(source.into());
+                    error!(shard_id, "Fatal gateway error (reconnect failed)");
+                    return Err(err);
                 }
 
+                // Circuit breaker: too many consecutive errors
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                    let err = GatewayError::ShardCircuitBroken {
+                        shard_id,
+                        count: consecutive_errors,
+                        max: MAX_CONSECUTIVE_ERRORS,
+                    };
+                    metrics.record_error(shard_id, err.error_type_label());
+                    state.set_health(shard_id, ShardHealth::Dead);
+                    error!(shard_id, consecutive = consecutive_errors, "Shard dead: consecutive error threshold exceeded");
+                    return Err(err);
+                }
+
+                // Non-fatal transient error
+                metrics.record_error(shard_id, "receive_error");
                 state.set_health(shard_id, ShardHealth::Disconnected);
                 continue;
             }
@@ -196,14 +230,16 @@ async fn run_shard(
                 metrics.record_heartbeat(shard_id);
             }
             Event::GuildCreate(guild) => {
-                // Increment guild count on join
+                // NOTE: Guild count is approximate (non-atomic read-modify-write).
+                // Suitable for metrics/observability only, not authorization decisions.
                 let current = state.total_guilds();
                 state.set_guilds(shard_id, current + 1);
-                debug!(shard_id, guild_id = %guild.id, "Guild joined");
+                debug!(shard_id, guild_id = %guild.id(), "Guild joined");
             }
             Event::GuildDelete(guild) => {
-                // Decrement guild count on leave
-                if !guild.unavailable {
+                // Decrement guild count on leave (unavailable is Option<bool> in 0.17)
+                // Same approximate-count caveat as GuildCreate above.
+                if guild.unavailable != Some(true) {
                     let current = state.total_guilds();
                     if current > 0 {
                         state.set_guilds(shard_id, current - 1);
@@ -233,6 +269,10 @@ async fn run_shard(
             }
         }
     }
+
+    // Stream ended — shard closed
+    info!(shard_id, "Shard event stream ended");
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,0 +1,14 @@
+{
+  "event_id": "00000000-0000-4000-8000-000000000006",
+  "event_type": "interaction.create",
+  "shard_id": 0,
+  "timestamp": 1700000000000,
+  "guild_id": "123456789012345678",
+  "channel_id": "333333333333333333",
+  "user_id": "987654321098765432",
+  "data": {
+    "interaction_id": "444444444444444444",
+    "interaction_type": "ApplicationCommand",
+    "interaction_token": "aW50ZXJhY3Rpb25fdG9rZW5fZXhhbXBsZQ"
+  }
+}
