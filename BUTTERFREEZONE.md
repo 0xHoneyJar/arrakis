@@ -1,4 +1,6 @@
-# Arrakis — Agent Entry Point
+# Arrakis — BUTTERFREEZONE
+
+<!-- AGENT-CONTEXT: name=arrakis, type=overview, purpose=Multi-tenant engagement intelligence for Web3 communities, key_files=[themes/sietch/src/api/server.ts, packages/core/ports/index.ts, packages/adapters/agent/agent-gateway.ts, packages/adapters/storage/drizzle-storage-adapter.ts], interfaces=[IChainProvider, IStorageProvider, IAgentGateway, ISynthesisEngine, IWizardEngine], dependencies=[discord.js, grammy, drizzle-orm, ioredis, bullmq, viem], trust_level=low, model_hints=[fast,summary] -->
 
 > SHA: 39be5b7 | Generated: 2026-02-13
 

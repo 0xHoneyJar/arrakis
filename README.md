@@ -194,7 +194,7 @@ npm run dev
 
 | Document | Audience | Description |
 |----------|----------|-------------|
-| [AGENTREADME.md](AGENTREADME.md) | AI agents | Machine-readable project overview with source citations |
+| [BUTTERFREEZONE.md](BUTTERFREEZONE.md) | AI agents | Machine-readable project overview with source citations |
 | [INSTALLATION.md](INSTALLATION.md) | Developers | Detailed setup and deployment guide |
 | [CHANGELOG.md](CHANGELOG.md) | Everyone | Version history and release notes |
 
