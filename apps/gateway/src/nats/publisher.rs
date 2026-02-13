@@ -229,4 +229,102 @@ mod tests {
         assert_eq!(streams::EVENTS, "EVENTS");
         assert_eq!(streams::ELIGIBILITY, "ELIGIBILITY");
     }
+
+    /// Validates that Rust hardcoded constants match the language-neutral
+    /// nats-routing.json. If this fails, Rust routing has drifted from
+    /// the shared contract consumed by TypeScript workers.
+    mod routing_conformance {
+        use super::*;
+
+        const ROUTING_JSON: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/shared/nats-schemas/nats-routing.json"
+        );
+
+        #[test]
+        fn rust_stream_names_match_routing_json() {
+            let content = std::fs::read_to_string(ROUTING_JSON)
+                .expect("Failed to read nats-routing.json");
+            let routing: serde_json::Value = serde_json::from_str(&content)
+                .expect("Failed to parse nats-routing.json");
+
+            let json_streams = routing["streams"].as_object()
+                .expect("streams should be object");
+
+            assert_eq!(
+                streams::COMMANDS,
+                json_streams["COMMANDS"]["name"].as_str().unwrap(),
+                "COMMANDS stream name mismatch"
+            );
+            assert_eq!(
+                streams::EVENTS,
+                json_streams["EVENTS"]["name"].as_str().unwrap(),
+                "EVENTS stream name mismatch"
+            );
+            assert_eq!(
+                streams::ELIGIBILITY,
+                json_streams["ELIGIBILITY"]["name"].as_str().unwrap(),
+                "ELIGIBILITY stream name mismatch"
+            );
+        }
+
+        #[test]
+        fn rust_subject_prefixes_match_routing_json() {
+            let content = std::fs::read_to_string(ROUTING_JSON)
+                .expect("Failed to read nats-routing.json");
+            let routing: serde_json::Value = serde_json::from_str(&content)
+                .expect("Failed to parse nats-routing.json");
+
+            let json_subjects = routing["subjects"].as_object()
+                .expect("subjects should be object");
+
+            assert_eq!(
+                subjects::COMMANDS,
+                json_subjects["commands"]["prefix"].as_str().unwrap(),
+                "commands prefix mismatch"
+            );
+            assert_eq!(
+                subjects::GUILD_EVENTS,
+                json_subjects["guild_events"]["prefix"].as_str().unwrap(),
+                "guild_events prefix mismatch"
+            );
+            assert_eq!(
+                subjects::MEMBER_EVENTS,
+                json_subjects["member_events"]["prefix"].as_str().unwrap(),
+                "member_events prefix mismatch"
+            );
+            assert_eq!(
+                subjects::INTERACTION,
+                json_subjects["commands"]["interaction"].as_str().unwrap(),
+                "interaction subject mismatch"
+            );
+        }
+
+        #[test]
+        fn rust_route_event_matches_routing_json_mapping() {
+            let content = std::fs::read_to_string(ROUTING_JSON)
+                .expect("Failed to read nats-routing.json");
+            let routing: serde_json::Value = serde_json::from_str(&content)
+                .expect("Failed to parse nats-routing.json");
+
+            let mapping = routing["event_type_to_subject"].as_object()
+                .expect("event_type_to_subject should be object");
+
+            // We need a NatsPublisher to call route_event, but it requires
+            // a real NATS connection. Instead, verify the mapping constants
+            // are consistent with the subject module definitions.
+            for (event_type, expected_subject) in mapping {
+                let expected = expected_subject.as_str().unwrap();
+                // Verify the expected subject starts with a known prefix
+                let valid = expected.starts_with(subjects::COMMANDS)
+                    || expected.starts_with(subjects::GUILD_EVENTS)
+                    || expected.starts_with(subjects::MEMBER_EVENTS);
+                assert!(
+                    valid,
+                    "event_type '{}' maps to subject '{}' which doesn't match any Rust prefix",
+                    event_type, expected
+                );
+            }
+        }
+    }
 }

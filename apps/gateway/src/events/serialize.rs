@@ -2,13 +2,13 @@
 //!
 //! Converts Twilight events to JSON payloads for NATS publishing.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 use twilight_model::gateway::event::Event;
 use uuid::Uuid;
 
 /// Generic gateway event payload
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayEvent {
     pub event_id: String,
     pub event_type: String,
@@ -161,5 +161,94 @@ mod tests {
     fn test_serialize_returns_none_for_heartbeat() {
         let event = Event::GatewayHeartbeatAck;
         assert!(serialize_event(&event, 0).is_none());
+    }
+
+    /// Fixture conformance: Rust must be able to round-trip deserialize
+    /// every committed JSON fixture. If this fails, the Rust GatewayEvent
+    /// struct has drifted from the wire format contract.
+    ///
+    /// The same fixtures are validated by the TypeScript Zod schemas in
+    /// packages/shared/nats-schemas/src/__tests__/fixture-conformance.test.ts
+    mod fixture_conformance {
+        use super::*;
+
+        const FIXTURES_DIR: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/shared/nats-schemas/fixtures"
+        );
+
+        fn load_fixture(name: &str) -> serde_json::Value {
+            let path = format!("{}/{}.json", FIXTURES_DIR, name);
+            let content = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("Failed to read fixture {}: {}", path, e));
+            serde_json::from_str(&content)
+                .unwrap_or_else(|e| panic!("Failed to parse fixture {}: {}", path, e))
+        }
+
+        fn deserialize_fixture(name: &str) -> GatewayEvent {
+            let value = load_fixture(name);
+            serde_json::from_value::<GatewayEvent>(value)
+                .unwrap_or_else(|e| panic!("Fixture {} failed GatewayEvent deserialization: {}", name, e))
+        }
+
+        #[test]
+        fn guild_join_fixture_deserializes() {
+            let event = deserialize_fixture("guild-join");
+            assert_eq!(event.event_type, "guild.join");
+            assert!(event.guild_id.is_some());
+        }
+
+        #[test]
+        fn guild_leave_fixture_deserializes() {
+            let event = deserialize_fixture("guild-leave");
+            assert_eq!(event.event_type, "guild.leave");
+        }
+
+        #[test]
+        fn member_join_fixture_deserializes() {
+            let event = deserialize_fixture("member-join");
+            assert_eq!(event.event_type, "member.join");
+            assert!(event.user_id.is_some());
+        }
+
+        #[test]
+        fn member_leave_fixture_deserializes() {
+            let event = deserialize_fixture("member-leave");
+            assert_eq!(event.event_type, "member.leave");
+        }
+
+        #[test]
+        fn member_update_fixture_deserializes() {
+            let event = deserialize_fixture("member-update");
+            assert_eq!(event.event_type, "member.update");
+        }
+
+        #[test]
+        fn interaction_create_fixture_deserializes() {
+            let event = deserialize_fixture("interaction-create");
+            assert_eq!(event.event_type, "interaction.create");
+            // BB60-20 regression guard: field must be interaction_token, not token
+            let data = event.data.as_object().expect("data should be object");
+            assert!(data.contains_key("interaction_token"), "BB60-20: must use interaction_token");
+            assert!(!data.contains_key("token"), "BB60-20: must NOT have bare 'token' field");
+        }
+
+        #[test]
+        fn all_fixtures_round_trip_through_serde() {
+            let fixtures = [
+                "guild-join", "guild-leave",
+                "member-join", "member-leave", "member-update",
+                "interaction-create",
+            ];
+            for name in fixtures {
+                let event = deserialize_fixture(name);
+                // Re-serialize and verify it produces valid JSON
+                let json = serde_json::to_string(&event)
+                    .unwrap_or_else(|e| panic!("Re-serialization of {} failed: {}", name, e));
+                // Deserialize again to prove round-trip
+                let _: GatewayEvent = serde_json::from_str(&json)
+                    .unwrap_or_else(|e| panic!("Round-trip of {} failed: {}", name, e));
+            }
+        }
     }
 }

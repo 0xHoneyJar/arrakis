@@ -27,6 +27,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@arrakis/nats-schemas": "file:../../packages/shared/nats-schemas",
     "@arrakis/sandbox": "file:../../packages/sandbox",
     "@discordjs/rest": "^2.6.0",
     "amqplib": "^0.10.4",

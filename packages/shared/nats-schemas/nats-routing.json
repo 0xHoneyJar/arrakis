@@ -1,0 +1,47 @@
+{
+  "$comment": "Language-neutral NATS routing constants. Both Rust (CI test) and TypeScript (import) consume this file. Do NOT edit without updating both sides.",
+  "streams": {
+    "COMMANDS": {
+      "name": "COMMANDS",
+      "subjects": ["commands.>"],
+      "description": "Slash command interactions"
+    },
+    "EVENTS": {
+      "name": "EVENTS",
+      "subjects": ["events.>"],
+      "description": "Guild and member lifecycle events"
+    },
+    "ELIGIBILITY": {
+      "name": "ELIGIBILITY",
+      "subjects": ["eligibility.>"],
+      "description": "Token eligibility checks"
+    }
+  },
+  "subjects": {
+    "commands": {
+      "prefix": "commands",
+      "interaction": "commands.interaction"
+    },
+    "guild_events": {
+      "prefix": "events.guild",
+      "join": "events.guild.join",
+      "leave": "events.guild.leave",
+      "update": "events.guild.update"
+    },
+    "member_events": {
+      "prefix": "events.member",
+      "join": "events.member.join",
+      "leave": "events.member.leave",
+      "update": "events.member.update"
+    }
+  },
+  "event_type_to_subject": {
+    "interaction.create": "commands.interaction",
+    "guild.join": "events.guild.join",
+    "guild.leave": "events.guild.leave",
+    "guild.update": "events.guild.update",
+    "member.join": "events.member.join",
+    "member.leave": "events.member.leave",
+    "member.update": "events.member.update"
+  }
+}

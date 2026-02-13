@@ -19,29 +19,16 @@ import {
 } from '../handlers/index.js';
 
 // --------------------------------------------------------------------------
-// Types
+// Types — imported from shared NATS schema contract
 // --------------------------------------------------------------------------
 
-/**
- * Interaction payload from Gateway (per SDD §5.1.4)
- */
-export interface InteractionPayload {
-  event_id: string;
-  event_type: string;
-  shard_id: number;
-  timestamp: number;
-  guild_id: string | null;
-  channel_id: string | null;
-  user_id: string | null;
-  data: {
-    interaction_id: string;
-    interaction_type: string;
-    interaction_token: string;
-    command_name?: string;
-    subcommand?: string;
-    options?: Record<string, unknown>;
-  };
-}
+import {
+  InteractionPayloadSchema,
+  type InteractionPayload,
+  NATS_ROUTING,
+} from '@arrakis/nats-schemas';
+
+export type { InteractionPayload };
 
 /**
  * Convert NATS InteractionPayload to legacy DiscordEventPayload
@@ -91,8 +78,19 @@ export class CommandNatsConsumer extends BaseNatsConsumer<InteractionPayload> {
     payload: InteractionPayload,
     _msg: JsMsg
   ): Promise<ProcessResult> {
-    const { event_id, guild_id, user_id, data } = payload;
-    const { interaction_id, token, command_name } = data;
+    // Validate at the NATS trust boundary — reject malformed payloads early
+    const parsed = InteractionPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      this.log.error(
+        { issues: parsed.error.issues },
+        'Invalid InteractionPayload from NATS'
+      );
+      return { success: false, retryable: false, error: new Error('Invalid InteractionPayload') };
+    }
+
+    const safePayload = parsed.data;
+    const { event_id, guild_id, user_id, data } = safePayload;
+    const { interaction_id, interaction_token, command_name } = data;
 
     this.log.info(
       {
@@ -105,7 +103,7 @@ export class CommandNatsConsumer extends BaseNatsConsumer<InteractionPayload> {
     );
 
     // Convert to legacy payload format for existing handlers
-    const legacyPayload = toDiscordEventPayload(payload);
+    const legacyPayload = toDiscordEventPayload(safePayload);
 
     // Step 1: Route to handler (handlers manage their own defer/response flow)
     const handler = command_name
@@ -138,9 +136,9 @@ export class CommandNatsConsumer extends BaseNatsConsumer<InteractionPayload> {
       );
 
       // Try to send error followup if we have a token
-      if (token) {
+      if (interaction_token) {
         try {
-          await this.discordRest.sendFollowup(token, {
+          await this.discordRest.sendFollowup(interaction_token, {
             content: 'An error occurred while processing your request.',
             flags: 64, // Ephemeral
           });
@@ -174,11 +172,12 @@ export function createCommandNatsConsumer(
   handlerRegistry: Map<string, HandlerFn>,
   logger: Logger
 ): CommandNatsConsumer {
+  const commandsStream = NATS_ROUTING.streams['COMMANDS'];
   return new CommandNatsConsumer(
     {
-      streamName: 'COMMANDS',
+      streamName: commandsStream.name,
       consumerName: 'command-worker',
-      filterSubjects: ['commands.>'],
+      filterSubjects: commandsStream.subjects,
       maxAckPending: 50,
       ackWait: 30_000,
       maxDeliver: 3,
