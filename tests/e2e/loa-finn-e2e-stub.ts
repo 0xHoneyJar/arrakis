@@ -78,6 +78,8 @@ export interface UsageReport {
   }>;
   /** Aggregate ensemble accounting (contract v1.1.0) */
   ensembleAccounting?: Record<string, unknown>;
+  /** Signed JWS token for S2S verification tests */
+  signedJws?: string;
 }
 
 // --------------------------------------------------------------------------
@@ -551,8 +553,8 @@ export class LoaFinnE2EStub {
       ensembleAccounting: vectorPayload.ensemble_accounting as Record<string, unknown> | undefined,
     };
 
-    // Sign as JWS (for S2S verification)
-    await new SignJWT(report as unknown as Record<string, unknown>)
+    // Sign as JWS (for S2S verification) and store both forms
+    const signedJws = await new SignJWT(report as unknown as Record<string, unknown>)
       .setProtectedHeader({ alg: 'ES256', kid: this.keyId, typ: 'JWT' })
       .setIssuer('loa-finn')
       .setAudience('arrakis')
@@ -560,7 +562,7 @@ export class LoaFinnE2EStub {
       .setExpirationTime('5m')
       .sign(this.privateKey);
 
-    this.usageReports.push(report);
+    this.usageReports.push({ ...report, signedJws });
   }
 
   // --------------------------------------------------------------------------

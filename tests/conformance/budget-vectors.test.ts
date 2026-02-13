@@ -194,15 +194,21 @@ let batchVectors: BatchVectors | null = null;
 
 try {
   streamingVectors = loadVectorFile<StreamingVectors>('vectors/budget/streaming-cancel.json');
-} catch { /* File may not exist or have different structure */ }
+} catch (e: unknown) {
+  if (e instanceof Error && 'code' in e && (e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+}
 
 try {
   priceChangeVectors = loadVectorFile<PriceChangeVectors>('vectors/budget/price-change-boundary.json');
-} catch { /* File may not exist or have different structure */ }
+} catch (e: unknown) {
+  if (e instanceof Error && 'code' in e && (e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+}
 
 try {
   batchVectors = loadVectorFile<BatchVectors>('vectors/budget/multi-model-batch.json');
-} catch { /* File may not exist or have different structure */ }
+} catch (e: unknown) {
+  if (e instanceof Error && 'code' in e && (e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+}
 
 // --------------------------------------------------------------------------
 // Test Suite

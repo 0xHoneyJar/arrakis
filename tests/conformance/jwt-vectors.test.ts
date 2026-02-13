@@ -16,6 +16,7 @@ import { JwksTestServer } from './jwks-test-server.js';
 import { S2SJwtValidator, type S2SJwtValidatorConfig } from '../../packages/adapters/agent/s2s-jwt-validator.js';
 import type { Clock } from '../../packages/adapters/agent/clock.js';
 import { computeReqHash } from '@0xhoneyjar/loa-hounfour';
+import { generateKeyPair, SignJWT } from 'jose';
 
 // --------------------------------------------------------------------------
 // Vector Types
@@ -277,17 +278,16 @@ describe('JWT Conformance', () => {
         expect(k1CachedResult.iss).toBe('https://auth.honeyjar.xyz');
 
         // Step 5: Unknown K3 should REJECT (kid-miss triggers refetch → blocked → fails)
-        // We need a K3 key to sign with, but it won't be in the JWKS
-        const tempServer = new JwksTestServer();
-        await tempServer.start();
-        await tempServer.addKey('unknown-kid');
-        const k3Token = await tempServer.signJwtWithClaims('unknown-kid', {
+        // Generate a foreign key directly — no server needed
+        const { privateKey: foreignKey } = await generateKeyPair('ES256');
+        const k3Token = await new SignJWT({
           ...k1Claims,
           jti: 'timeout-test-k3',
           iat: Math.floor(currentTime / 1000),
           exp: Math.floor(currentTime / 1000) + 300,
-        });
-        await tempServer.stop();
+        })
+          .setProtectedHeader({ alg: 'ES256', kid: 'unknown-kid', typ: 'JWT' })
+          .sign(foreignKey);
 
         await expect(validator.validateJwt(k3Token)).rejects.toThrow();
       } finally {
