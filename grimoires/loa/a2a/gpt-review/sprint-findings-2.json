@@ -1,21 +1,36 @@
 {
   "verdict": "APPROVED",
-  "summary": "All previously blocking issues are addressed: the plan now explicitly scopes Arrakis vs. loa-finn enforcement with a tracked cross-repo dependency, and the integration tests are made feasible via an existing JWKS/key + injectable logger seam; the validatePoolClaims contract/ACs are now consistent and canonicalized.",
+  "summary": "All previously blocking dependency/acceptance-criteria issues were addressed in a measurable, hermetic-friendly way without introducing new blocking problems.",
   "previous_issues_status": [
     {
-      "original_issue": "F-5 trust-boundary enforcement scope: sprint claimed trust-boundary fix but had no loa-finn deliverable/dependency, leaving confused-deputy gap",
+      "original_issue": "Sprint 1 / Task 1.1 acceptance criteria referenced specific PR/commit state and wasn’t mechanically verifiable on “current main”.",
       "status": "fixed",
-      "notes": "The plan now clearly states Arrakis is detection-only (warn-only) and adds a Blocking Dependencies section plus an explicit Sprint 2 task (2.6) to file a loa-finn enforcement issue, and SDD language (2.2) that loa-finn MUST re-validate and SHOULD reject. This resolves the scope/handshake problem without pretending the vulnerability is fully closed in Arrakis alone."
+      "notes": "Now the criteria require `.reality-meta.json` to record the runtime `git rev-parse HEAD` SHA and verify it’s contained in `main`, removing the brittle PR/cycle assertions while keeping the run target testable."
     },
     {
-      "original_issue": "Integration tests were untestable: no specified way to sign a forged-but-verifiable JWT and no deterministic log assertion seam",
+      "original_issue": "Sprint 1 / Tasks 1.2–1.4 token budget requirements lacked a single authoritative measurement definition, risking non-converging validation loops.",
       "status": "fixed",
-      "notes": "Task 2.4 now anchors on existing test infrastructure: JWKS test server + deterministic key generation/signing helpers, and a createPipeline/logger helper with spyable warn/info. AC-H2.5/2.6 assertions are on structured log events rather than free-text, removing flakiness and making the test path reachable past JWS verification."
+      "notes": "Task 1.4 explicitly makes `ground-truth-gen.sh --mode validate` the single authority for token counts and requires it to emit per-file and total counts with exit code 0, making the acceptance criteria measurable and convergent."
     },
     {
-      "original_issue": "validatePoolClaims contract inconsistency (boolean vs {valid, reason}) and underspecified ordering/representation rules for allowed_pools",
+      "original_issue": "Sprint 3 / Task 3.2 contiguity invariant was likely wrong/unachievable (end_sha == start_sha across cycles) and could cause overlap/gaps issues.",
       "status": "fixed",
-      "notes": "AC-H1.3/H1.4 now match the `{ valid: boolean; reason?: string }` return type, and the canonicalization rule is explicitly defined (sorted + deduped set comparison; order-independent membership). This makes implementation/test expectations unambiguous and stable across systems."
+      "notes": "Boundaries are now defined as `base_sha` (exclusive) and `head_sha` (inclusive) with explicit `git log base..head` semantics, plus an explicit ‘no commit appears in two cycles’ verification. Contiguity is reframed as `head_sha` == next `base_sha` with clarified inclusion rules."
+    },
+    {
+      "original_issue": "Sprint 3 / Task 3.1 and 3.4 conflict: preserve tagged sections verbatim vs require every git tag to have a section.",
+      "status": "fixed",
+      "notes": "Task 3.1 now records missing tags as “to be generated,” and Task 3.4 allows generating new sections for missing tags while preserving existing tagged sections verbatim, resolving the conflict."
+    },
+    {
+      "original_issue": "Sprint 4 / Task 4.3 hermetic RTFM task hard-required an HTTP endpoint for tier eligibility, which may not exist, making the task infeasible.",
+      "status": "fixed",
+      "notes": "The task is now capability-agnostic: it selects a concept that actually appears in ground truth and asks for the interface type (HTTP/CLI/Discord/internal function) with invocation details and citations, which is feasible even if no HTTP endpoint exists."
+    },
+    {
+      "original_issue": "Sprint 2 / Task 2.3 conditional INSTALLATION.md requirements lacked a concrete discovery step/single source of truth, risking aspirational or incomplete conditionals.",
+      "status": "fixed",
+      "notes": "Task 2.3 now includes an explicit Step 1 ‘Conditional Discovery’ using reality files + repo scan, and requires an applicability checklist with file-path evidence, making the conditional sections testable and reducing missed-condition risk."
     }
   ],
   "new_blocking_concerns": [],
