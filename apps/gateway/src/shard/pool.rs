@@ -152,16 +152,32 @@ async fn run_shard(
 
     info!(shard_id, pool_id, "Shard starting");
 
+    // Circuit breaker: mark shard dead after N consecutive errors without success
+    const MAX_CONSECUTIVE_ERRORS: u32 = 10;
+    let mut consecutive_errors: u32 = 0;
+
     while let Some(item) = shard.next_event(EventTypeFlags::all()).await {
         let event = match item {
-            Ok(event) => event,
+            Ok(event) => {
+                consecutive_errors = 0;
+                event
+            }
             Err(source) => {
-                warn!(shard_id, error = %source, "Error receiving event");
+                consecutive_errors += 1;
+                warn!(shard_id, error = %source, consecutive = consecutive_errors, "Error receiving event");
                 metrics.record_error(shard_id);
 
+                // Immediate fatal: reconnect failure
                 if matches!(source.kind(), twilight_gateway::error::ReceiveMessageErrorType::Reconnect) {
                     state.set_health(shard_id, ShardHealth::Dead);
                     error!(shard_id, "Fatal gateway error (reconnect failed)");
+                    return Err(source.into());
+                }
+
+                // Circuit breaker: too many consecutive errors
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                    state.set_health(shard_id, ShardHealth::Dead);
+                    error!(shard_id, consecutive = consecutive_errors, "Shard dead: consecutive error threshold exceeded");
                     return Err(source.into());
                 }
 
@@ -196,13 +212,15 @@ async fn run_shard(
                 metrics.record_heartbeat(shard_id);
             }
             Event::GuildCreate(guild) => {
-                // Increment guild count on join
+                // NOTE: Guild count is approximate (non-atomic read-modify-write).
+                // Suitable for metrics/observability only, not authorization decisions.
                 let current = state.total_guilds();
                 state.set_guilds(shard_id, current + 1);
                 debug!(shard_id, guild_id = %guild.id(), "Guild joined");
             }
             Event::GuildDelete(guild) => {
                 // Decrement guild count on leave (unavailable is Option<bool> in 0.17)
+                // Same approximate-count caveat as GuildCreate above.
                 if guild.unavailable != Some(true) {
                     let current = state.total_guilds();
                     if current > 0 {

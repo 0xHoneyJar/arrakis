@@ -14,6 +14,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NATS_URL: nats://127.0.0.1:4222
+      REDIS_URL: redis://127.0.0.1:6379
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +42,25 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Start NATS with JetStream
+        run: |
+          docker run -d --name nats \
+            -p 4222:4222 -p 8222:8222 \
+            nats:2 -js -m 8222
+
+      - name: Verify service connectivity
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8222/jsz > /dev/null 2>&1; then
+              echo "NATS JetStream ready"
+              break
+            fi
+            echo "Waiting for NATS JetStream... ($i/30)"
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8222/jsz || (echo "NATS JetStream not available" && exit 1)
+          redis-cli -h 127.0.0.1 ping || (echo "Redis not available" && exit 1)
 
       - name: Run E2E tests
         run: ./tests/e2e/scripts/run-e2e.sh

@@ -3,6 +3,7 @@
 //! Converts Twilight events to JSON payloads for NATS publishing.
 
 use serde::Serialize;
+use tracing::warn;
 use twilight_model::gateway::event::Event;
 use uuid::Uuid;
 
@@ -48,7 +49,10 @@ pub fn serialize_event(event: &Event, shard_id: u64) -> Option<GatewayEvent> {
         Event::GuildCreate(guild) => {
             // GuildCreate is an enum in twilight-model 0.17; extract data via serde
             let guild_data = serde_json::to_value(guild.as_ref())
-                .unwrap_or(serde_json::Value::Null);
+                .unwrap_or_else(|e| {
+                    warn!(shard_id, error = %e, "Failed to serialize GuildCreate data");
+                    serde_json::Value::Null
+                });
             Some(GatewayEvent {
                 event_id: Uuid::new_v4().to_string(),
                 event_type: "guild.join".to_string(),
@@ -114,8 +118,10 @@ pub fn serialize_event(event: &Event, shard_id: u64) -> Option<GatewayEvent> {
         }),
 
         Event::InteractionCreate(interaction) => {
-            // Interactions have their own dedicated serialization
-            // For now, serialize as generic event
+            // Interactions are serialized as generic events.
+            // The interaction_token is Discord's response token (15-min TTL),
+            // needed by the command handler to reply. NATS is internal-only,
+            // but explicit naming prevents accidental external logging.
             Some(GatewayEvent {
                 event_id: Uuid::new_v4().to_string(),
                 event_type: "interaction.create".to_string(),
@@ -127,7 +133,7 @@ pub fn serialize_event(event: &Event, shard_id: u64) -> Option<GatewayEvent> {
                 data: serde_json::json!({
                     "interaction_id": interaction.id.to_string(),
                     "interaction_type": format!("{:?}", interaction.kind),
-                    "token": interaction.token,
+                    "interaction_token": interaction.token,
                 }),
             })
         }
