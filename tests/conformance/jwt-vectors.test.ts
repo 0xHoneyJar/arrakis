@@ -112,15 +112,22 @@ describe('JWT Conformance', () => {
         await server.addKey(kid);
       }
 
-      // Build claims — use vector claims directly, set iat/exp if missing
+      // Build claims — use vector claims, override iat/exp for "valid" vectors
+      // since vector timestamps are reference values (2024), not live values
       const now = Math.floor(Date.now() / 1000);
       const claims: Record<string, unknown> = {
         ...vector.claims,
       };
 
-      // Only set iat/exp if vector doesn't provide them
-      if (claims.iat === undefined) claims.iat = now;
-      if (claims.exp === undefined) claims.exp = now + 300;
+      // For valid vectors, always set fresh timestamps so they don't expire.
+      // For invalid vectors (jwt-expired, jwt-wrong-aud, etc.), preserve
+      // the vector's timestamps to test the intended failure mode.
+      if (vector.expected === 'valid' || claims.iat === undefined) {
+        claims.iat = now;
+      }
+      if (vector.expected === 'valid' || claims.exp === undefined) {
+        claims.exp = now + 300;
+      }
 
       // Sign with the test key
       const token = await server.signJwtWithClaims(kid, claims);
@@ -148,8 +155,12 @@ describe('JWT Conformance', () => {
   // --------------------------------------------------------------------------
 
   describe('req_hash consistency', () => {
+    // Filter to vectors with real SHA-256 hashes (not placeholders like "abc123...")
+    const EMPTY_BODY_HASH = 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
     const vectorsWithHash = jwtVectors.vectors.filter(
-      (v) => v.claims.req_hash,
+      (v) => v.claims.req_hash && (
+        v.claims.req_hash === EMPTY_BODY_HASH || v.claims.req_body_bytes_base64
+      ),
     );
 
     it.each(vectorsWithHash)(
@@ -210,14 +221,19 @@ describe('JWT Conformance', () => {
         const k2Result = await validator.validateJwt(k2Token);
         expect(k2Result.iss).toBe('https://auth.honeyjar.xyz');
 
-        // Step 5: Remove K1 from JWKS
+        // Step 5: Save K1 private key, then remove from JWKS
+        const k1Entry = rotationServer.getKeyEntry('key-v1')!;
+        const k1PrivateKey = k1Entry.privateKey;
         rotationServer.removeKey('key-v1');
 
         // Step 6: K1 token should REJECT (K1 no longer in JWKS)
-        const k1Token2 = await rotationServer.signJwtWithClaims('key-v1', {
+        // Sign directly with saved key since server no longer has it
+        const k1Token2 = await new SignJWT({
           ...k1Claims,
           jti: 'rotation-test-k1-after-removal',
-        });
+        })
+          .setProtectedHeader({ alg: 'ES256', kid: 'key-v1', typ: 'JWT' })
+          .sign(k1PrivateKey);
         await expect(validator.validateJwt(k1Token2)).rejects.toThrow();
       } finally {
         await rotationServer.stop();

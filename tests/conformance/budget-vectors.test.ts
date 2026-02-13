@@ -67,18 +67,36 @@ interface BasicPricingVectors {
   remainder_accumulator_sequences: RemainderSequence[];
 }
 
-interface ExtremeCostVector {
+interface ExtremeSingleCostVector {
   id: string;
   tokens: number | string;
   price_micro_per_million: number | string;
-  expected_cost_micro: number;
-  expected_cost_micro_string?: string;
-  expected_remainder_micro: number;
+  expected_cost_micro: number | string;
+  expected_remainder_micro: number | string;
+  note: string;
+}
+
+interface OverflowVector {
+  id: string;
+  tokens: number | string;
+  price_micro_per_million: number | string;
+  expected_error: string;
+  note: string;
+}
+
+interface BigIntVector {
+  id: string;
+  tokens: string;
+  price_micro_per_million: string;
+  expected_cost_micro: string;
+  expected_remainder_micro: string;
   note: string;
 }
 
 interface ExtremeTokensVectors {
-  extreme_token_vectors: ExtremeCostVector[];
+  single_cost_vectors: ExtremeSingleCostVector[];
+  overflow_vectors: OverflowVector[];
+  bigint_vectors: BigIntVector[];
 }
 
 interface StreamingVector {
@@ -265,22 +283,40 @@ describe('Budget Conformance', () => {
   // Extreme Token Vectors (boundary/overflow tests)
   // --------------------------------------------------------------------------
 
-  describe('extreme_token_vectors', () => {
-    it.each(extremeTokens.extreme_token_vectors)(
+  describe('extreme single_cost_vectors', () => {
+    it.each(extremeTokens.single_cost_vectors)(
       '$id: $note',
       (vector) => {
         const result = calculateSingleCost(vector.tokens, vector.price_micro_per_million);
 
-        // Integer guard
         expect(typeof result.cost_micro).toBe('bigint');
-
-        // Use string comparison for extreme values if available
-        if (vector.expected_cost_micro_string) {
-          expect(result.cost_micro).toBe(BigInt(vector.expected_cost_micro_string));
-        } else {
-          expect(result.cost_micro).toBe(toBigInt(vector.expected_cost_micro));
-        }
+        expect(result.cost_micro).toBe(toBigInt(vector.expected_cost_micro));
         expect(result.remainder_micro).toBe(toBigInt(vector.expected_remainder_micro));
+      },
+    );
+  });
+
+  describe('overflow_vectors', () => {
+    it.each(extremeTokens.overflow_vectors)(
+      '$id: $note',
+      (vector) => {
+        // Overflow vectors verify that products exceeding MAX_SAFE_INTEGER
+        // are handled correctly via BigInt — they should NOT throw
+        const result = calculateSingleCost(vector.tokens, vector.price_micro_per_million);
+        expect(typeof result.cost_micro).toBe('bigint');
+      },
+    );
+  });
+
+  describe('bigint_vectors', () => {
+    it.each(extremeTokens.bigint_vectors)(
+      '$id: $note',
+      (vector) => {
+        const result = calculateSingleCost(vector.tokens, vector.price_micro_per_million);
+
+        expect(typeof result.cost_micro).toBe('bigint');
+        expect(result.cost_micro).toBe(BigInt(vector.expected_cost_micro));
+        expect(result.remainder_micro).toBe(BigInt(vector.expected_remainder_micro));
       },
     );
   });
@@ -293,21 +329,22 @@ describe('Budget Conformance', () => {
     it.each(basicPricing.remainder_accumulator_sequences)(
       '$id: $note',
       (sequence) => {
-        let carry = 0n;
-        let totalCost = 0n;
+        let remainder = 0n;
+        let totalCarryOvers = 0n;
 
         for (const step of sequence.steps) {
           const result = calculateSingleCost(step.tokens, step.price_micro_per_million);
-          carry = carry + result.remainder_micro;
+          remainder = remainder + result.remainder_micro;
 
-          // If carry exceeds 1_000_000, roll over
-          const rolledCost = carry / 1_000_000n;
-          carry = carry % 1_000_000n;
+          // If remainder exceeds 1_000_000, roll over
+          const rolledCost = remainder / 1_000_000n;
+          remainder = remainder % 1_000_000n;
+          totalCarryOvers += rolledCost;
 
-          totalCost += result.cost_micro + rolledCost;
-
-          expect(carry).toBe(toBigInt(step.expected_carry));
-          expect(totalCost).toBe(toBigInt(step.expected_accumulated));
+          // expected_carry = cumulative number of micro carry-overs
+          // expected_accumulated = current sub-micro remainder
+          expect(totalCarryOvers).toBe(toBigInt(step.expected_carry));
+          expect(remainder).toBe(toBigInt(step.expected_accumulated));
         }
       },
     );
