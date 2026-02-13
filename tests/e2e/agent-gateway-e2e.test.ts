@@ -12,7 +12,12 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { LoaFinnE2EStub } from './loa-finn-e2e-stub.js';
-import { getVector, CONTRACT_VERSION, validateContractCompatibility } from '../../packages/contracts/src/index.js';
+import {
+  getVector,
+  getTestVectors,
+  CONTRACT_VERSION,
+  validateContractCompatibility,
+} from './vectors/index.js';
 
 // --------------------------------------------------------------------------
 // Environment
@@ -414,18 +419,4 @@ function parseSSEEvents(
   return events;
 }
 
-/** Get all test vectors for iteration */
-function getTestVectors() {
-  const names = [
-    'invoke_free_tier',
-    'invoke_pro_pool_routing',
-    'invoke_stream_sse',
-    'invoke_rate_limited',
-    'invoke_budget_exceeded',
-    'stream_abort_reconciliation',
-    'invoke_byok',
-    'invoke_ensemble_best_of_n',
-    'invoke_ensemble_partial_failure',
-  ];
-  return names.map((n) => getVector(n));
-}
+// getTestVectors() is now imported from ./vectors/index.js
