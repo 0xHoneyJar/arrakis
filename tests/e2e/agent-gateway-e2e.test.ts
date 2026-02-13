@@ -12,7 +12,9 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { LoaFinnE2EStub } from './loa-finn-e2e-stub.js';
-import { getVector, CONTRACT_VERSION, validateContractCompatibility } from '../../packages/contracts/src/index.js';
+import { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfour';
+// TODO(sprint-3): Migrate getVector to hounfour test vectors or local fixture
+// import { getVector } from '../../packages/contracts/src/index.js';
 
 // --------------------------------------------------------------------------
 // Environment
@@ -332,21 +334,21 @@ describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
       expect(peerVersion).toBe(CONTRACT_VERSION);
 
       // Validate compatibility succeeds
-      const compat = validateContractCompatibility(CONTRACT_VERSION, peerVersion!);
+      const compat = validateCompatibility(CONTRACT_VERSION, peerVersion!);
       expect(compat.compatible).toBe(true);
       expect(compat.status).toBe('supported');
     });
 
     // AC-2.23: Version mismatch — explicit error, not silent fallthrough
     it('should detect version mismatch with incompatible major version', () => {
-      const result = validateContractCompatibility('1.1.0', '2.0.0');
+      const result = validateCompatibility('1.1.0', '2.0.0');
       expect(result.compatible).toBe(false);
       expect(result.status).toBe('unsupported');
       expect(result.reason).toContain('Major version mismatch');
     });
 
     it('should allow minor version differences within same major', () => {
-      const result = validateContractCompatibility('1.0.0', '1.1.0');
+      const result = validateCompatibility('1.0.0', '1.1.0');
       expect(result.compatible).toBe(true);
       expect(result.contract_version).toBe('1.1.0'); // newer of the two
     });

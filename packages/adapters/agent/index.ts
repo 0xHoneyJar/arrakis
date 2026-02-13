@@ -153,8 +153,8 @@ export {
   type PoolClaimValidation,
 } from './pool-mapping.js';
 
-// Request Hash (single source of truth — used by JwtService and tests)
-export { computeReqHash } from './req-hash.js';
+// Request Hash (hounfour canonical source — used by JwtService and tests)
+export { computeReqHash, verifyReqHash } from '@0xhoneyjar/loa-hounfour';
 
 // Agent Gateway Facade
 export { AgentGateway, AgentGatewayError, type AgentGatewayDeps } from './agent-gateway.js';
@@ -246,8 +246,8 @@ export {
   type LifecycleEvent,
 } from './request-lifecycle.js';
 
-// Contract Version + Compatibility (cycle-019 BB6 Finding #2)
-export { CONTRACT_VERSION, validateContractCompatibility } from './contract-version.js';
+// Contract Version + Compatibility (hounfour canonical source)
+export { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfour';
 
 // Contract Version Mismatch Error (cycle-019 AC-2.21)
 export { ContractVersionMismatchError } from './loa-finn-client.js';

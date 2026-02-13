@@ -54,13 +54,9 @@
       "import": "./dist/agent/budget-manager.js",
       "types": "./dist/agent/budget-manager.d.ts"
     },
-    "./agent/idempotency": {
-      "import": "./dist/agent/idempotency.js",
-      "types": "./dist/agent/idempotency.d.ts"
-    },
-    "./agent/req-hash": {
-      "import": "./dist/agent/req-hash.js",
-      "types": "./dist/agent/req-hash.d.ts"
+    "./agent/idempotency-state": {
+      "import": "./dist/agent/idempotency-state.js",
+      "types": "./dist/agent/idempotency-state.d.ts"
     }
   },
   "files": [
@@ -77,7 +73,6 @@
   "dependencies": {
     "@0xhoneyjar/loa-hounfour": "github:0xHoneyJar/loa-hounfour#v1.1.0",
     "@arrakis/core": "file:../core",
-    "@arrakis/loa-finn-contract": "file:../contracts",
     "drizzle-orm": "^0.33.0",
     "ioredis": "^5.9.2",
     "jose": "^5.10.0",
