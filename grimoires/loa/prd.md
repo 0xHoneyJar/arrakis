@@ -1,1266 +1,282 @@
-# Product Requirements Document: Gaib Discord IaC - Full Sietch Theme + Backup System
+# PRD: The Spice Must Flow — Production Readiness & Protocol Unification
 
-**Version**: 2.0.0
-**Date**: January 29, 2026
-**Status**: Active
-**Cycle**: cycle-007
-**Codename**: Sandworm Command
-
-> **Extension**: This PRD has been extended to include the Gaib Backup & Snapshot System (Phases 3-8).
+**Version:** 1.1.0
+**Cycle:** 023
+**Date:** 2026-02-13
+**Status:** Draft
+**References:** [Issue #54](https://github.com/0xHoneyJar/arrakis/issues/54) · [RFC #31](https://github.com/0xHoneyJar/loa-finn/issues/31) · [loa-hounfour](https://github.com/0xHoneyJar/loa-hounfour)
 
 ---
 
-## 1. Executive Summary
+## 1. Problem Statement
 
-### 1.1 Product Overview
+Arrakis is at 95-96% completion on the Hounfour multi-model architecture (RFC #31), but three categories of work prevent production deployment:
 
-**Gaib** is a Discord Infrastructure-as-Code (IaC) CLI that enables programmatic Discord server provisioning using a Terraform-inspired workflow. Combined with the **Sietch v3.0 theme**, Gaib provides a complete solution for deploying token-gated Discord communities.
+1. **Protocol drift risk.** Arrakis maintains its own `@arrakis/loa-finn-contract` package with hand-written JSON Schema fixtures. loa-finn already consumes from `@0xhoneyjar/loa-hounfour` (the canonical shared protocol package). The two have structural divergences — integer tiers vs string tiers, different default pool mappings, separate req-hash implementations. Any further drift means interop failure at runtime.
 
-This cycle focuses on:
-1. Completing the Sietch v3.0 theme with full 9-tier BGT structure
-2. Validating Gaib CLI end-to-end functionality
-3. Enabling test community deployments via `gaib server apply`
+2. **Gateway is dead code.** The Rust Discord gateway (`apps/gateway/`) has 34 compilation errors from version skew (`twilight-gateway` 0.17 vs `twilight-model` 0.15, `async-nats` 0.46 API changes, `metrics` macro syntax). It has no CI pipeline and cannot be built or deployed.
 
-### 1.2 Vision
+3. **CI coverage gap.** The 38-file agent adapter layer (`packages/adapters/agent/`), 7 unit tests, 1 integration test, and 9-scenario E2E suite have no CI workflow. The `pr-validation.yml` only covers `themes/sietch/`. Production changes to the agent gateway subsystem are untested in CI.
 
-**"Vercel for Discord"** - Developers use Gaib to access IaC tools for deploying Discord servers. Teams define their server structure in YAML, version control it, and deploy with a single command.
-
-### 1.3 Problem Statement
-
-**Current State**:
-- Gaib CLI is ~90% implemented with Terraform-like workflow
-- Sietch theme exists but only has 6 roles (needs 9 BGT tiers + special roles)
-- Theme channel structure doesn't match Sietch v3.0 PRD
-- No end-to-end validation of the complete workflow
-- Manual Discord setup is error-prone (see `DISCORD-SETUP-GUIDE.md`)
-
-**Desired State**:
-- Complete Sietch v3.0 theme matching PRD specification
-- Validated Gaib CLI that can provision a test Discord server
-- Reproducible, version-controlled Discord server configuration
-- Unblock teammates to work on websites while test communities deploy
-
-### 1.4 Success Metrics
-
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Theme Completeness | 100% | All 9 tiers + special roles + channel structure |
-| CLI E2E Test | Pass | `gaib server apply` creates test server successfully |
-| State Management | Working | State persists across operations |
-| Diff Accuracy | 100% | `gaib server diff` shows accurate changes |
-| Documentation | Complete | Theme README with usage instructions |
+> Sources: Gap analysis of `packages/adapters/agent/`, `tests/e2e/`, `apps/gateway/`, `.github/workflows/`, confirmed against issue #54 and RFC #31 coverage maps.
 
 ---
 
-## 2. Core Requirements
+## 2. Goals & Success Metrics
 
-### 2.1 Sietch v3.0 Theme - Roles
-
-#### 2.1.1 BGT Tier Roles (9 Tiers)
-
-| Role | Color | Hex Code | BGT Threshold | Position |
-|------|-------|----------|---------------|----------|
-| `@Naib` | Gold | `#FFD700` | Top 7 by rank | 100 |
-| `@Fedaykin` | Blue | `#4169E1` | Top 8-69 by rank | 95 |
-| `@Usul` | Purple | `#9B59B6` | 1111+ BGT | 90 |
-| `@Sayyadina` | Indigo | `#6610F2` | 888+ BGT | 85 |
-| `@Mushtamal` | Teal | `#20C997` | 690+ BGT | 80 |
-| `@Sihaya` | Green | `#28A745` | 420+ BGT | 75 |
-| `@Qanat` | Cyan | `#17A2B8` | 222+ BGT | 70 |
-| `@Ichwan` | Orange | `#FD7E14` | 69+ BGT | 65 |
-| `@Hajra` | Sand | `#C2B280` | 6.9+ BGT | 60 |
-
-#### 2.1.2 Special Roles
-
-| Role | Color | Hex Code | Criteria | Position |
-|------|-------|----------|----------|----------|
-| `@Former Naib` | Silver | `#C0C0C0` | Previously held Naib seat | 55 |
-| `@Taqwa` | Sand | `#C2B280` | Waitlist registration | 50 |
-| `@Water Sharer` | Aqua | `#00D4FF` | Badge holder (can share) | 45 |
-| `@Engaged` | Green | `#28A745` | 5+ badges earned | 40 |
-| `@Veteran` | Purple | `#9B59B6` | 90+ days tenure | 35 |
-
-#### 2.1.3 Bot Role
-
-| Role | Color | Hex Code | Position |
-|------|-------|----------|----------|
-| `@Shai-Hulud` | Gold | `#FFD700` | 99 (below Naib, above all others) |
-
-### 2.2 Sietch v3.0 Theme - Channel Structure
-
-#### 2.2.1 Category: STILLSUIT (Public Info)
-
-| Channel | Type | Purpose | Read | Write |
-|---------|------|---------|------|-------|
-| `#water-discipline` | Text | Welcome, rules | Everyone | Naib only |
-| `#announcements` | Announcement | Weekly digest | Everyone | Naib, Bot |
-
-#### 2.2.2 Category: CAVE ENTRANCE (Tier 0: 6.9+ BGT)
-
-| Channel | Type | Purpose | Read | Write |
-|---------|------|---------|------|-------|
-| `#cave-entrance` | Text | Entry discussion | Hajra+ | Ichwan+ |
-| `cave-voices` | Voice | Voice chat | Hajra+ (count only) | Ichwan+ |
-
-#### 2.2.3 Category: THE DEPTHS (Tier 2: 222+ BGT)
-
-| Channel | Type | Purpose | Read | Write |
-|---------|------|---------|------|-------|
-| `#the-depths` | Text | Deeper discussions | Qanat+ | Sihaya+ |
-| `depth-voices` | Voice | Voice chat | Qanat+ (count only) | Mushtamal+ |
-
-#### 2.2.4 Category: INNER SANCTUM (Tier 3: 888+ BGT)
-
-| Channel | Type | Purpose | Read | Write |
-|---------|------|---------|------|-------|
-| `#inner-sanctum` | Text | Elite discussions | Sayyadina+ | Sayyadina+ |
-| `sanctum-voices` | Voice | Voice chat | Sayyadina+ (listen only) | Usul+ |
-
-#### 2.2.5 Category: FEDAYKIN COMMONS (Top 69)
-
-| Channel | Type | Purpose | Permissions |
-|---------|------|---------|-------------|
-| `#general` | Text | Main discussion | Fedaykin+ full |
-| `#spice` | Text | Alpha/trading | Fedaykin+ full |
-| `#water-shares` | Text | Proposals | Fedaykin+ full |
-| `#introductions` | Text | Member intros | Fedaykin+ full |
-| `#census` | Text | Live leaderboard | Fedaykin+ read, Bot write |
-| `#the-door` | Text | Join/leave notices | Fedaykin+ read, Bot write |
-| `fedaykin-voices` | Voice | Main voice | Fedaykin+ full |
-
-#### 2.2.6 Category: NAIB COUNCIL (Top 7 Only)
-
-| Channel | Type | Purpose | Permissions |
-|---------|------|---------|-------------|
-| `#council-rock` | Text | Private Naib discussion | Naib only |
-| `council-chamber` | Voice | Private Naib voice | Naib only |
-
-#### 2.2.7 Category: NAIB ARCHIVES
-
-| Channel | Type | Purpose | Permissions |
-|---------|------|---------|-------------|
-| `#naib-archives` | Text | Historical discussions | Naib + Former Naib |
-
-#### 2.2.8 Category: BADGE CHANNELS
-
-| Channel | Type | Purpose | Permissions |
-|---------|------|---------|-------------|
-| `#the-oasis` | Text | Water Sharer exclusive | @Water Sharer only |
-| `#deep-desert` | Text | Engaged exclusive | @Engaged only |
-| `#stillsuit-lounge` | Text | Veteran exclusive | @Veteran only |
-
-#### 2.2.9 Category: SUPPORT
-
-| Channel | Type | Purpose | Permissions |
-|---------|------|---------|-------------|
-| `#support` | Text | Help/troubleshooting | Fedaykin+ |
-| `#bot-commands` | Text | Bot interaction | Fedaykin+ |
-
-### 2.3 Gaib CLI Validation
-
-#### 2.3.1 Commands to Validate
-
-| Command | Expected Behavior |
-|---------|-------------------|
-| `gaib server init --theme sietch` | Creates discord-server.yaml with Sietch theme |
-| `gaib server plan` | Shows planned changes without applying |
-| `gaib server diff` | Shows detailed diff between config and Discord |
-| `gaib server apply` | Creates roles and channels on Discord |
-| `gaib server apply --auto-approve` | Applies without confirmation |
-| `gaib server destroy` | Removes managed resources |
-| `gaib server state ls` | Lists resources in state |
-| `gaib server workspace ls` | Lists workspaces |
-
-#### 2.3.2 State Management
-
-- State persists between operations
-- State locking prevents concurrent modifications
-- Import existing resources: `gaib server import role.naib <discord-id>`
-
-#### 2.3.3 Theme Loading
-
-- `gaib server theme ls` - Lists available themes
-- `gaib server theme info sietch` - Shows Sietch theme details
-- Theme variables interpolate correctly
+| ID | Goal | Metric | Priority |
+|----|------|--------|----------|
+| G-1 | Adopt loa-hounfour as single source of truth for protocol contracts | Zero remaining imports of `@arrakis/loa-finn-contract`; all schema validation uses loa-hounfour exports | P0 |
+| G-2 | Gateway compiles and passes tests | `cargo check` exits 0; `cargo test` exits 0; Dockerfile builds successfully | P0 |
+| G-3 | Agent subsystem has CI coverage | PR validation workflow runs unit + integration tests on `packages/**` changes | P1 |
+| G-4 | E2E tests run in CI | E2E suite passes in Docker Compose with `SKIP_E2E=false` | P2 |
+| G-5 | Clean up dead code and credential risks | `sites/web/` removed or properly scaffolded; no `.env.local` tracked | P1 |
 
 ---
 
-## 3. Theme Variable System
+## 3. Users & Stakeholders
 
-### 3.1 Sietch Theme Variables
-
-```yaml
-variables:
-  community_name:
-    type: string
-    default: "Sietch"
-    description: Name of your community
-
-  # BGT Tier Colors
-  color_naib:
-    type: color
-    default: "#FFD700"
-  color_fedaykin:
-    type: color
-    default: "#4169E1"
-  color_usul:
-    type: color
-    default: "#9B59B6"
-  color_sayyadina:
-    type: color
-    default: "#6610F2"
-  color_mushtamal:
-    type: color
-    default: "#20C997"
-  color_sihaya:
-    type: color
-    default: "#28A745"
-  color_qanat:
-    type: color
-    default: "#17A2B8"
-  color_ichwan:
-    type: color
-    default: "#FD7E14"
-  color_hajra:
-    type: color
-    default: "#C2B280"
-
-  # Special Role Colors
-  color_former_naib:
-    type: color
-    default: "#C0C0C0"
-  color_taqwa:
-    type: color
-    default: "#C2B280"
-  color_water_sharer:
-    type: color
-    default: "#00D4FF"
-  color_engaged:
-    type: color
-    default: "#28A745"
-  color_veteran:
-    type: color
-    default: "#9B59B6"
-
-  # Feature Flags
-  enable_voice:
-    type: boolean
-    default: true
-  enable_badge_channels:
-    type: boolean
-    default: true
-```
-
-### 3.2 Variable Interpolation
-
-Variables are referenced with `${variable_name}` syntax:
-```yaml
-roles:
-  - name: Naib
-    color: "${color_naib}"
-```
+| Persona | Needs |
+|---------|-------|
+| **Platform team (us)** | Confidence that agent gateway works end-to-end with loa-finn before production rollout |
+| **loa-finn** | Arrakis speaks the same protocol contract version — schemas, hashes, and version negotiation must agree |
+| **Community operators** | Reliable Discord/Telegram bot that doesn't drop events (gateway must compile and deploy) |
 
 ---
 
-## 4. File Structure
+## 4. Functional Requirements
 
-### 4.1 Theme Directory
+### 4.1 Protocol Unification (loa-hounfour Adoption)
 
-```
-themes/sietch/
-├── theme.yaml           # Theme manifest
-├── roles.yaml           # Role definitions (9 tiers + special)
-├── channels.yaml        # Channel structure
-├── server.yaml          # Server-level settings (optional)
-└── README.md            # Theme documentation
-```
+**Ref:** Issue #54, BridgeBuilder comment on incremental migration
 
-### 4.2 Generated Config
+#### 4.1.1 Install loa-hounfour
 
-Running `gaib server init --theme sietch` produces:
-
-```
-./discord-server.yaml    # Merged config ready for apply
-./.gaib/
-├── workspaces/
-│   └── default/
-│       └── state.json   # Terraform-like state
-└── config.yaml          # Gaib configuration
-```
-
----
-
-## 5. Dependencies
-
-### 5.1 External Dependencies
-
-| Dependency | Purpose | Status |
-|------------|---------|--------|
-| Discord Bot Token | API authentication | Required |
-| Discord Guild ID | Target server | Required |
-| Node.js 18+ | Runtime | Required |
-| pnpm | Package manager | Required |
-
-### 5.2 Internal Dependencies
-
-| Component | Path | Status |
-|-----------|------|--------|
-| Gaib CLI | `packages/cli/` | ~90% complete |
-| ApplyEngine | `packages/cli/src/commands/server/iac/ApplyEngine.ts` | Implemented |
-| DiffEngine | `packages/cli/src/commands/server/iac/DiffEngine.ts` | Implemented |
-| ConfigParser | `packages/cli/src/commands/server/iac/ConfigParser.ts` | Implemented |
-| ThemeLoader | `packages/cli/src/commands/server/themes/ThemeLoader.ts` | Implemented |
-| StateWriter | `packages/cli/src/commands/server/iac/StateWriter.ts` | Implemented |
-
----
-
-## 6. Out of Scope
-
-- Full Sietch bot functionality (tier sync, badges, etc.)
-- NOWPayments crypto integration
-- Admin dashboard
-- AWS deployment (handled separately)
-- Marketing website
-
----
-
-## 6.5 Wallet Verification Integration (Sprint 172)
-
-### 6.5.1 Overview
-
-Enable the in-house EIP-191 wallet verification system for user onboarding in the testing Discord server. This replaces Collab.Land with a native solution built in sprints 78-79, 81.
-
-### 6.5.2 Problem Statement
-
-**Current State**:
-- In-house wallet verification system exists (`packages/verification/`)
-- Discord `/verify` command uses in-house system ✅
-- Telegram verification still routes to Collab.Land URLs ⚠️
-- Environment configuration not documented for testing setup
-- Onboarding flow doesn't integrate with wallet verification
-
-**Desired State**:
-- Testing server can use in-house wallet verification
-- Environment properly documented for verification setup
-- Telegram verification uses in-house system (not Collab.Land)
-- Onboarding flow includes wallet verification step
-
-### 6.5.3 Requirements
-
-#### R1: Environment Configuration
-- Document `VERIFY_BASE_URL` in `.env.example`
-- Document PostgreSQL requirements for session storage
-- Add verification section to theme README
-
-#### R2: Replace Collab.Land URLs
-- Update `IdentityService.ts` to use in-house verification URL
-- Update Telegram verification commands to use in-house flow
-- Remove Collab.Land dependency from verification flow
-
-#### R3: Onboarding Integration (Optional)
-- Add wallet verification status to onboarding flow
-- Show verification status in profile embeds
-
-### 6.5.4 Success Metrics
-
-| Metric | Target |
-|--------|--------|
-| Discord /verify works | 100% |
-| Telegram /verify works (no Collab.Land) | 100% |
-| Environment documented | Complete |
-
----
-
-## 6.6 Comprehensive Tier Testing Suite (Sprint 173)
-
-### 6.6.1 Overview
-
-Create a complete test suite for the Sietch theme's BGT tier system to ensure all threshold crossings, role assignments, and tier transitions work correctly.
-
-### 6.6.2 Problem Statement
-
-**Current State**:
-- Only `BadgeService.test.ts` exists (1 test file)
-- No tests for core tier functionality (TierService, RoleManager, EligibilityService)
-- 80% coverage threshold configured but not enforced
-- Critical business logic untested
-
-**Desired State**:
-- Comprehensive test coverage for all tier services
-- All 9 BGT tiers tested at threshold boundaries
-- Role assignment/removal fully tested with mocked Discord API
-- Eligibility and waitlist logic tested
-- Mocking patterns established for future tests
-
-### 6.6.3 Test Coverage Requirements
-
-#### Core Services to Test
-
-| Service | File | Priority |
-|---------|------|----------|
-| TierService | `src/services/TierService.ts` | P0 - Critical |
-| RoleManager | `src/services/roleManager.ts` | P0 - Critical |
-| EligibilityService | `src/services/eligibility.ts` | P1 - High |
-| ThresholdService | `src/services/threshold.ts` | P1 - High |
-
-#### Tier Threshold Test Cases
-
-| Tier | Threshold | Test Cases |
-|------|-----------|------------|
-| Hajra | 6.9 BGT | Below (6.8), Exact (6.9), Above (7.0) |
-| Ichwan | 69 BGT | Below (68.9), Exact (69), Above (70) |
-| Qanat | 222 BGT | Below (221.9), Exact (222), Above (223) |
-| Sihaya | 420 BGT | Below (419.9), Exact (420), Above (421) |
-| Mushtamal | 690 BGT | Below (689.9), Exact (690), Above (691) |
-| Sayyadina | 888 BGT | Below (887.9), Exact (888), Above (889) |
-| Usul | 1111 BGT | Below (1110.9), Exact (1111), Above (1112) |
-| Fedaykin | Rank 8-69 | Rank 8, Rank 69, Rank 70 (ineligible) |
-| Naib | Rank 1-7 | Rank 1, Rank 7, Rank 8 (demotes to Fedaykin) |
-
-#### Scenario Test Cases
-
-1. **Tier Promotion**: User crosses threshold upward
-2. **Tier Demotion**: User crosses threshold downward (e.g., redeems BGT)
-3. **Rank Override**: High-ranked user with low BGT gets rank-based tier
-4. **Role Assignment**: Discord roles assigned on promotion
-5. **Role Removal**: Discord roles removed on demotion
-6. **Waitlist Entry**: Position 70-100 users tracking threshold
-7. **Waitlist Promotion**: Waitlist user reaches position 69
-
-### 6.6.4 Success Metrics
-
-| Metric | Target |
-|--------|--------|
-| TierService test coverage | 90% |
-| RoleManager test coverage | 85% |
-| EligibilityService test coverage | 85% |
-| All tier boundaries tested | 100% |
-| CI tests passing | Required |
-
----
-
-## 7. Risks & Mitigations
-
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| Discord rate limits | Medium | Medium | RateLimiter already implemented |
-| Permission conflicts | Medium | High | Test on sandbox server first |
-| State corruption | Low | High | State backup before operations |
-| Theme variable edge cases | Low | Medium | Comprehensive test coverage |
-
----
-
-## 8. Testing Strategy
-
-### 8.1 Unit Tests
-
-- Theme loading and variable interpolation
-- Config parsing and validation
-- Diff calculation accuracy
-
-### 8.2 Integration Tests
-
-- Create test Discord server (sandbox)
-- Apply Sietch theme
-- Verify all 9 roles created correctly
-- Verify channel structure matches spec
-- Verify permissions are correct
-- Destroy and verify cleanup
-
-### 8.3 E2E Workflow Test
+Add `@0xhoneyjar/loa-hounfour` as a dependency of `packages/adapters/`, pinned to an immutable commit SHA for reproducibility:
 
 ```bash
-# 1. Initialize
-gaib server init --theme sietch --guild $TEST_GUILD_ID
-
-# 2. Preview changes
-gaib server plan
-
-# 3. Apply
-gaib server apply --auto-approve
-
-# 4. Verify state
-gaib server state ls
-
-# 5. Make change and diff
-# Edit discord-server.yaml
-gaib server diff
-
-# 6. Apply change
-gaib server apply
-
-# 7. Cleanup
-gaib server destroy --auto-approve
+pnpm add "github:0xHoneyJar/loa-hounfour#v1.1.0"
 ```
+
+The package commits `dist/` to the repo, so no build step is needed on install. When `@0xhoneyjar` npm scope auth is configured, switch to `"@0xhoneyjar/loa-hounfour": "^1.1.0"`.
+
+**Node engine requirement:** loa-hounfour requires Node >= 22. Arrakis's worker already requires >= 20. Enforce Node 22 in CI via `actions/setup-node` and add `"engines": { "node": ">=22" }` to the root `package.json`. Enable `engine-strict=true` in `.npmrc`.
+
+(src: `packages/adapters/package.json`, `package.json`, `.npmrc`)
+
+#### 4.1.2 Reconcile Schema Divergences
+
+Before replacing imports, reconcile structural differences:
+
+| Divergence | Arrakis Current | loa-hounfour | Resolution |
+|-----------|----------------|--------------|------------|
+| Tier representation | Integer 1-9 (`tests/e2e/contracts/schema/loa-finn-contract.json:24`) | String enum `'free' \| 'pro' \| 'enterprise'` (`TierSchema`) | Adopt loa-hounfour's `Tier` type. Map integer tiers to canonical strings at the Arrakis external boundary only (Discord role → `Tier`). See §4.1.2.1 for canonicalization rule. |
+| Enterprise default pool | `'architect'` (`packages/adapters/agent/pool-mapping.ts:110`) | `'reviewer'` (`TIER_DEFAULT_POOL`) | Adopt loa-hounfour's `TIER_DEFAULT_POOL`. Update `pool-mapping.ts` to use imported constant. |
+| Model alias source | Hardcoded `MODEL_ALIAS_VALUES` (`packages/core/ports/agent-gateway.ts:22`) | `POOL_IDS` from loa-hounfour | Replace hardcoded values with `POOL_IDS` import. Resolves `TODO(hounfour)`. |
+
+##### 4.1.2.1 Tier Canonicalization Rule
+
+**Contract rule:** The payload passed to `computeReqHash()` and `deriveIdempotencyKey()` MUST use loa-hounfour's canonical `Tier` string representation. Integer-to-string mapping occurs exclusively at the Arrakis external boundary (Discord role → canonical Tier) and NEVER inside the hashed message.
+
+**Canonical mapping:**
+
+| Discord Role Tier (integer) | loa-hounfour `Tier` (string) |
+|----------------------------|------------------------------|
+| 1–3 | `'free'` |
+| 4–6 | `'pro'` |
+| 7–9 | `'enterprise'` |
+
+The mapping function `canonicalizeTier(roleTier: number): Tier` is implemented once in `packages/adapters/agent/tier-mapping.ts` and imported wherever Discord role tiers enter the system. All downstream code (pool mapping, request hashing, idempotency) operates exclusively on canonical `Tier` strings.
+
+**Verification:** Add a test that constructs a request with a known Discord role tier, canonicalizes it, computes the req-hash, and asserts the hash matches the golden vector from loa-hounfour for the same canonical payload. This proves Arrakis and loa-finn produce identical hashes for equivalent requests.
+
+#### 4.1.3 Migrate Imports (Incremental)
+
+Per the BridgeBuilder migration strategy, migrate in three phases:
+
+**Phase 1 — Transformation validation:** Import loa-hounfour schemas alongside existing fixtures. Validate that legacy payloads can be transformed into canonical loa-hounfour payloads via the tier canonicalization rule (§4.1.2.1), then validate the transformed payload against loa-hounfour schemas only. This tests the *transformation + canonical validation* path, not naive dual-schema acceptance of identical bytes. Run loa-hounfour's 90 golden test vectors in CI as the acceptance gate for Phase 2.
+
+**Phase 2 — Replace imports:** Swap each local import for its loa-hounfour equivalent:
+
+| Local Module | loa-hounfour Replacement |
+|-------------|------------------------|
+| `packages/contracts/src/index.ts` (JwtClaimsSchema) | `import { JwtClaimsSchema } from '@0xhoneyjar/loa-hounfour'` |
+| `packages/adapters/agent/contract-version.ts` (CONTRACT_VERSION, validateCompatibility) | `import { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfour'` |
+| `packages/adapters/agent/req-hash.ts` (computeReqHash) | `import { computeReqHash, verifyReqHash } from '@0xhoneyjar/loa-hounfour'` |
+| `packages/adapters/agent/idempotency.ts` (deriveIdempotencyKey) | `import { deriveIdempotencyKey } from '@0xhoneyjar/loa-hounfour'` |
+| `packages/adapters/agent/pool-mapping.ts` (POOL_IDS, TIER_POOL_ACCESS) | `import { POOL_IDS, TIER_POOL_ACCESS, TIER_DEFAULT_POOL, isValidPoolId, tierHasAccess } from '@0xhoneyjar/loa-hounfour'` |
+| `tests/e2e/agent-gateway-e2e.test.ts` (getVector, CONTRACT_VERSION) | `import { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfour'` |
+
+**Phase 3 — Remove local packages:** Delete `packages/contracts/` and `tests/e2e/contracts/` once all imports are migrated and tests pass.
+
+#### 4.1.4 Run Golden Test Vectors
+
+loa-hounfour ships 90 golden test vectors. After migration, run them against Arrakis's implementation to verify cross-system conformance.
+
+### 4.2 Gateway Resurrection
+
+**Ref:** Pre-existing compilation errors in `apps/gateway/`
+
+**Error budget closure:** Before starting, capture `cargo check 2>&1` output and enumerate all 34 errors into a tracking checklist. Each error must be linked to a commit that resolves it. The Docker build must use `--locked` and the same feature flags as CI to prevent "compiles locally but not in container" divergence.
+
+Fix all 34 compilation errors across 4 categories:
+
+#### 4.2.1 Twilight Version Alignment
+
+Upgrade `twilight-model` and `twilight-http` from 0.15 to 0.17 to match `twilight-gateway` 0.17. Fix all breaking API changes:
+
+| Change | Files Affected | Fix |
+|--------|---------------|-----|
+| `Config::builder()` removed | `shard/pool.rs:68` | Use `Config::new(token, intents)` |
+| `ShardId::new()` takes `(u32, u32)` | `shard/pool.rs:70` | Cast pool/shard IDs to `u32` at twilight boundary |
+| `shard.id().number()` returns `u32` | `shard/pool.rs:104,148` | Cast to `u64` via `.into()` for internal methods |
+| `GuildCreate.id` is now method | `events/serialize.rs:53` | Change `guild.id` to `guild.id()` |
+| `GuildCreate` fields removed | `events/serialize.rs:57-59` | Serialize full payload via `serde_json::to_value()` |
+| `ReceiveMessageError` API changed | `shard/pool.rs:162` | Adapt error handling to 0.17 API |
+
+(src: `apps/gateway/Cargo.toml`, `apps/gateway/src/shard/pool.rs`, `apps/gateway/src/events/serialize.rs`)
+
+#### 4.2.2 Metrics Macro Syntax
+
+Upgrade `metrics` to 0.24 and `metrics-exporter-prometheus` to 0.18. Update all macro invocations in `apps/gateway/src/metrics/mod.rs` to use the 0.24 label syntax.
+
+(src: `apps/gateway/src/metrics/mod.rs` — 9 macro sites at lines 99, 109, 115, 124, 133, 143, 157, 166, 173)
+
+#### 4.2.3 async-nats PublishAckFuture
+
+Fix `apps/gateway/src/nats/publisher.rs:98-99` to await the `PublishAckFuture` before accessing `.stream` and `.sequence`.
+
+#### 4.2.4 Module Visibility
+
+Change `mod serialize;` to `pub mod serialize;` in `apps/gateway/src/events/mod.rs:5`.
+
+#### 4.2.5 Dockerfile Update
+
+Update `apps/gateway/Dockerfile:6` from `rust:1.75-alpine` to `rust:1.85-alpine` (or latest stable).
+
+### 4.3 CI/CD Hardening
+
+**CI execution contracts (apply to all workflows below):**
+
+1. All TypeScript workflows run `pnpm -w install --frozen-lockfile` at repo root (single lockfile, deterministic).
+2. All Rust workflows use `--locked` flag (Cargo.lock must be committed and match).
+3. Required service containers for integration tests: NATS/JetStream (`nats:latest` with `-js` flag).
+4. Caching: pnpm store (`actions/cache` on `~/.local/share/pnpm/store`), Cargo registry + target (`actions/cache` on `~/.cargo/registry` + `apps/gateway/target`).
+5. Explicit timeouts per workflow (see NFR-3 scope below).
+
+#### 4.3.1 Agent Subsystem CI
+
+Add a workflow that triggers on `packages/**`, `tests/unit/**`, `tests/integration/**` changes and runs:
+- TypeScript type checking (`tsc --noEmit`)
+- Unit tests (`vitest run` on `tests/unit/`)
+- Integration tests (`vitest run` on `tests/integration/`) with NATS service container
+
+(src: `.github/workflows/pr-validation.yml` — extend or create new workflow)
+
+#### 4.3.2 Gateway CI
+
+Add a workflow that triggers on `apps/gateway/**` changes and runs:
+- `cargo check --locked`
+- `cargo test --locked`
+- `cargo clippy --locked -- -D warnings`
+- Docker build verification (`docker build apps/gateway/`)
+
+(src: `.github/workflows/` — new `gateway-ci.yml`)
+
+#### 4.3.3 E2E CI (Stretch)
+
+Add a workflow that runs the E2E suite via `docker-compose.e2e.yml`. Requires the existing `loa-finn-e2e-stub.ts` mock server (19k lines, already in-tree). This may be deferred if the Docker Compose setup is complex. **NFR-3 (< 10 min) does NOT apply to this P2 workflow** — E2E with Docker Compose may exceed 10 minutes and that is acceptable.
+
+### 4.4 Housekeeping
+
+#### 4.4.1 Remove `sites/web/`
+
+The `sites/web/` directory contains only `next-env.d.ts`, `.env.local`, and `.vercel/project.json` — no source code. Remove it and add `sites/web/` to `.gitignore`.
+
+(src: `sites/web/`)
+
+#### 4.4.2 Deduplicate Contract Packages
+
+After loa-hounfour migration (4.1.3 Phase 3), remove both:
+- `packages/contracts/`
+- `tests/e2e/contracts/`
+
+Update `packages/adapters/package.json` to remove the `"@arrakis/loa-finn-contract": "file:../contracts"` dependency.
+
+### 4.5 Security Acceptance Criteria
+
+Protocol unification (§4.1) touches JWT claims, hashing, idempotency, and compatibility negotiation — exactly the surfaces that can accidentally drop tenant scoping or accept cross-tenant replay. The following P0 acceptance criteria apply:
+
+1. **JWT validation:** The `JwtClaimsSchema` used in agent adapters MUST be imported from loa-hounfour and validated on every inbound request. No request may bypass schema validation.
+
+2. **Tenant-scoped integrity:** `computeReqHash()` and `deriveIdempotencyKey()` inputs MUST include the tenant identifier (`sub` claim from JWT). This ensures that identical request bodies from different tenants produce different hashes and idempotency keys.
+
+3. **Cross-tenant isolation test:** Add at least one integration test asserting that two requests with identical bodies but different tenant identifiers produce different req-hashes and different idempotency keys. This prevents cross-tenant replay.
+
+4. **mTLS assumption:** Document in the SDD how mTLS is configured between services in production and how it is simulated in local Docker Compose / CI (even if IaC is out of scope). At minimum, state whether mTLS is enforced at the load balancer, sidecar, or application layer.
 
 ---
 
-## 9. Acceptance Criteria
+## 5. Technical & Non-Functional Requirements
 
-### 9.1 Theme Completeness
-
-- [ ] All 9 BGT tier roles defined in `roles.yaml`
-- [ ] All 5 special roles defined in `roles.yaml`
-- [ ] Bot role (Shai-Hulud) defined
-- [ ] All 8 categories defined in `channels.yaml`
-- [ ] All 20+ channels defined with correct permissions
-- [ ] Theme variables for all colors
-- [ ] Feature flags for voice and badge channels
-- [ ] `theme.yaml` manifest references all files
-- [ ] README.md with usage instructions
-
-### 9.2 Gaib CLI Validation
-
-- [ ] `gaib server init --theme sietch` works
-- [ ] `gaib server plan` shows accurate preview
-- [ ] `gaib server diff` shows detailed changes
-- [ ] `gaib server apply` creates resources on Discord
-- [ ] State persists correctly
-- [ ] `gaib server destroy` cleans up resources
-
-### 9.3 Documentation
-
-- [ ] Theme README with setup instructions
-- [ ] Variable reference table
-- [ ] Permission matrix documentation
+| ID | Requirement | Rationale |
+|----|-------------|-----------|
+| NFR-1 | loa-hounfour `computeReqHash()` output must be byte-identical to loa-finn's for identical inputs | Integrity verification at the protocol boundary |
+| NFR-2 | Gateway must compile on Rust 1.85+ stable | Current Dockerfile pins 1.75 which is 14 months old |
+| NFR-3 | P0/P1 CI workflows (agent subsystem, gateway) must complete in < 10 minutes | Developer feedback loop. Excludes P2 E2E workflow (§4.3.3) which may exceed this SLA. |
+| NFR-4 | No secrets or `.env.local` files committed to repository | Security baseline |
 
 ---
 
-## 10. Timeline
+## 6. Scope & Prioritization
 
-| Phase | Tasks | Estimated Duration |
-|-------|-------|-------------------|
-| Theme Implementation | Create full roles.yaml, channels.yaml | Sprint 1 |
-| CLI Validation | Test all commands end-to-end | Sprint 2 |
-| Documentation | README, variable reference | Sprint 2 |
-| Integration Testing | Full E2E on test server | Sprint 2 |
+### In Scope (This Cycle)
 
----
+| Priority | Workstream | Sections |
+|----------|-----------|----------|
+| P0 | Protocol Unification | 4.1.1 — 4.1.4 |
+| P0 | Gateway Resurrection | 4.2.1 — 4.2.5 |
+| P1 | Agent CI + Gateway CI | 4.3.1, 4.3.2 |
+| P1 | Housekeeping | 4.4.1, 4.4.2 |
 
-## 11. References
+### Stretch (If Time Permits)
 
-| Document | Path |
-|----------|------|
-| Discord Setup Guide | `grimoires/pub/docs/DISCORD-SETUP-GUIDE.md` |
-| Original Sietch PRD | `feature/loa-mount:loa-grimoire/prd.md` |
-| Gaib CLI Index | `packages/cli/src/commands/server/index.ts` |
-| Current Theme | `themes/sietch/` |
+| Priority | Item | Section |
+|----------|------|---------|
+| P2 | E2E CI integration | 4.3.3 |
 
----
+### Out of Scope
 
-## 12. Appendix: Role Hierarchy Diagram
-
-```
-┌─────────────────────────────────────┐
-│ Server Owner                         │
-├─────────────────────────────────────┤
-│ @Naib (Top 7)              #FFD700  │
-│ @Shai-Hulud (Bot)          #FFD700  │
-│ @Fedaykin (Top 8-69)       #4169E1  │
-│ @Usul (1111+ BGT)          #9B59B6  │
-│ @Sayyadina (888+ BGT)      #6610F2  │
-│ @Mushtamal (690+ BGT)      #20C997  │
-│ @Sihaya (420+ BGT)         #28A745  │
-│ @Qanat (222+ BGT)          #17A2B8  │
-│ @Ichwan (69+ BGT)          #FD7E14  │
-│ @Hajra (6.9+ BGT)          #C2B280  │
-├─────────────────────────────────────┤
-│ @Former Naib               #C0C0C0  │
-│ @Taqwa (Waitlist)          #C2B280  │
-│ @Water Sharer              #00D4FF  │
-│ @Engaged                   #28A745  │
-│ @Veteran                   #9B59B6  │
-├─────────────────────────────────────┤
-│ @everyone                            │
-└─────────────────────────────────────┘
-```
-
----
-
-## 6.7 Backup/Restore E2E Validation (Sprint 174)
-
-### 6.7.1 Overview
-
-Validate the complete backup and restore process by performing a controlled teardown of the testing Discord server, then restoring it to full functionality.
-
-### 6.7.2 Problem Statement
-
-**Current State**:
-- Teardown command creates checkpoints before destruction (Sprint 149) ✅
-- Checkpoint system captures Sietch application configuration
-- Export command captures Discord server structure
-- No E2E validation that the full backup/restore cycle works
-
-**Critical Finding**: The checkpoint system captures **application configuration** (tier thresholds, feature gates, role mappings), but NOT Discord server structure (channels, roles, categories). Complete recovery requires:
-1. `gaib server export` → Discord structure backup (YAML)
-2. `gaib server teardown` → Auto-creates Sietch config checkpoint
-3. `gaib apply` → Restores Discord structure
-4. `gaib restore exec` → Restores Sietch configuration
-
-**Desired State**:
-- E2E test confirms full server recovery from teardown
-- Documentation updated with complete backup/restore procedure
-- Confidence in disaster recovery capability
-
-### 6.7.3 Two-Layer Backup Architecture
-
-| Layer | Tool | Captures | Storage |
-|-------|------|----------|---------|
-| Discord Structure | `gaib server export` | Roles, channels, categories, permissions | YAML file |
-| Sietch Config | Teardown checkpoint | Tier thresholds, feature gates, role mappings | Database |
-
-### 6.7.4 Test Procedure
-
-**Phase 1: Pre-Teardown Backup**
-```bash
-# Export Discord structure
-gaib server export --guild {GUILD_ID} -o testing-server-backup.yaml
-
-# Preview teardown
-gaib server teardown --guild {GUILD_ID} --confirm-teardown --dry-run
-```
-
-**Phase 2: Execute Teardown**
-```bash
-# Teardown (auto-creates checkpoint)
-gaib server teardown --guild {GUILD_ID} --confirm-teardown
-# Save checkpoint ID from output
-```
-
-**Phase 3: Verify Destruction**
-- Discord server should have no channels/roles except @everyone
-
-**Phase 4: Restore Discord Structure**
-```bash
-gaib apply testing-server-backup.yaml --guild {GUILD_ID}
-```
-
-**Phase 5: Restore Sietch Configuration**
-```bash
-gaib restore list --guild {GUILD_ID}
-gaib restore preview --checkpoint {CHECKPOINT_ID}
-gaib restore exec --checkpoint {CHECKPOINT_ID}
-```
-
-**Phase 6: Verify Full Restoration**
-- [ ] All channels restored
-- [ ] All roles restored with correct permissions
-- [ ] Tier role assignments working
-- [ ] Bot commands responding
-- [ ] Feature gates active
-
-### 6.7.5 Success Metrics
-
-| Metric | Target |
-|--------|--------|
-| Export captures all structure | 100% roles, channels, categories |
-| Checkpoint captures all config | Thresholds, gates, mappings |
-| Restore matches original | Functionally identical |
-| Bot functionality restored | All commands work |
-
-### 6.7.6 Requirements
-
-| Item | Source |
+| Item | Reason |
 |------|--------|
-| Guild ID | `DISCORD_GUILD_ID` env var |
-| Discord Bot Token | `DISCORD_TOKEN` env var |
-| Sietch API running | For checkpoint/restore |
+| Worker event handler stubs (guild join/leave, member join/leave, eligibility) | Separate feature work, not blocking production |
+| sietch TypeScript type debt (20+ files with TODO headers) | Existing debt, not new to this cycle |
+| Infrastructure as Code (Terraform/CDK) | Separate cycle — deploy workflows work via ECS API |
+| loa-finn pool claim enforcement (loa-finn #53) | loa-finn repo scope, not Arrakis |
 
 ---
 
-**Document Owner**: Sietch Infrastructure Team
-**Review Cadence**: On theme or CLI changes
+## 7. Risks & Dependencies
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| loa-hounfour tier type change breaks E2E tests | P0 | Run dual validation (Phase 1) before removing old schemas |
+| twilight 0.17 has more breaking changes than documented | P0 | Fix incrementally, compile after each change category |
+| loa-hounfour Node >= 22 requirement conflicts with Arrakis | P1 | Check `engines` in root `package.json`; likely already >= 20 |
+| E2E CI requires loa-finn mock server | P2 | Use existing `loa-finn-e2e-stub.ts` (19k lines); may not need external dep |
+| `sites/web/` removal might break Vercel project linking | Low | Confirm with stakeholder before deleting |
 
 ---
 
-# PART 2: Gaib Backup & Snapshot System
+## 8. Dependencies
 
-## 13. Backup System Overview
-
-### 13.1 Vision
-
-Comprehensive backup and snapshot system for Gaib-deployed Discord servers with tiered service levels. Users can restore their Discord server configuration to any point in time, roll back theme deployments, and maintain audit history of all changes.
-
-**"Time Machine for Discord Infrastructure"** - Every deployment is recoverable.
-
-### 13.2 Problem Statement
-
-**Current State**:
-- Gaib CLI manages Discord server state but has no backup capability
-- State files can be corrupted or lost with no recovery path
-- No audit trail of theme deployments over time
-- Users cannot roll back to previous server configurations
-- No differentiated service levels for backup frequency/retention
-
-**Desired State**:
-- Automatic daily backups for all Gaib-managed servers (Free tier)
-- Hourly backups with 90-day retention (Premium tier)
-- Full snapshot capability with manifest, state, config export
-- Theme registry tracking all deployments with rollback capability
-- Cross-region replication for disaster recovery (Premium)
-
-### 13.3 Success Metrics
-
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Backup Creation | <5s | Time to create state backup |
-| Restore Accuracy | 100% | State matches backup exactly |
-| Snapshot Size | <1MB avg | Compressed snapshot size |
-| Recovery Time | <30s | Full restore from snapshot |
-| Tier Coverage | 100% | All features per tier work |
+| Dependency | Source | Status |
+|-----------|--------|--------|
+| `@0xhoneyjar/loa-hounfour` v1.1.0 | GitHub | Published, 91 tests passing |
+| `twilight-model` 0.17 | crates.io | Available |
+| `twilight-http` 0.17 | crates.io | Available |
+| `metrics` 0.24 | crates.io | Available |
 
 ---
 
-## 14. Backup System Requirements
-
-### 14.1 State Backup (Core)
-
-#### Commands
-```bash
-gaib server backup create [--message "..."]     # Create backup
-gaib server backup list [--limit 20]            # List backups
-gaib server backup restore <backup-id> [--dry-run]  # Restore
-gaib server backup delete <backup-id>           # Delete backup
-```
-
-#### Backup Object Structure
-```typescript
-interface BackupMetadata {
-  id: string;                    // UUID
-  serverId: string;              // Discord Guild ID
-  workspace: string;             // Gaib workspace name
-  timestamp: string;             // ISO 8601
-  serial: number;                // State serial at backup time
-  lineage: string;               // State lineage ID
-  message?: string;              // User description
-  tier: "free" | "premium";      // Service tier
-  size: number;                  // Compressed size in bytes
-  checksum: string;              // SHA-256 of compressed state
-}
-```
-
-#### Backup Storage
-```
-s3://gaib-backups-{account_id}/
-├── state/{server_id}/{workspace}/
-│   └── backup.{timestamp}.json.gz
-```
-
-### 14.2 Config Export (Enhanced)
-
-Enhance existing `gaib server export` to support backup integration:
-
-```bash
-gaib server export --backup                     # Export + create backup
-gaib server export -o ./config.yaml            # Export to file
-```
-
-#### Export Storage
-```
-s3://gaib-backups-{account_id}/
-├── exports/{server_id}/
-│   ├── config.{timestamp}.yaml
-│   └── config.latest.yaml                      # Symlink to latest
-```
-
-### 14.3 Full Snapshots
-
-Complete server state bundles for point-in-time recovery:
-
-#### Commands
-```bash
-gaib server snapshot create [--message "..."]   # Create snapshot
-gaib server snapshot list                       # List snapshots
-gaib server snapshot restore <id> [--dry-run] [--apply]
-gaib server snapshot download <id> -o ./backup/
-gaib server snapshot compare <id1> <id2>        # Diff two snapshots
-```
-
-#### Snapshot Bundle Structure
-```
-s3://gaib-backups-{account_id}/
-├── snapshots/{server_id}/{snapshot_id}/
-│   ├── manifest.json           # Snapshot metadata
-│   ├── state.json.gz           # Compressed Gaib state
-│   ├── config.yaml.gz          # Compressed config export
-│   └── theme-registry.json.gz  # Theme deployment history
-```
-
-#### Manifest Schema
-```typescript
-interface SnapshotManifest {
-  id: string;
-  version: "1.0";
-  serverId: string;
-  workspace: string;
-  timestamp: string;
-  serial: number;
-  lineage: string;
-  message?: string;
-  tier: "free" | "premium";
-
-  files: {
-    state: { path: string; checksum: string; size: number };
-    config: { path: string; checksum: string; size: number };
-    themeRegistry: { path: string; checksum: string; size: number };
-  };
-
-  discord: {
-    roleCount: number;
-    channelCount: number;
-    categoryCount: number;
-  };
-
-  theme?: {
-    name: string;
-    version: string;
-  };
-}
-```
-
-### 14.4 Theme Registry
-
-Track all theme deployments with rollback capability:
-
-#### Commands
-```bash
-gaib server theme registry                      # Show current + last 5
-gaib server theme history [--limit]             # Full deployment history
-gaib server theme rollback [--steps 1]          # Rollback N deployments
-gaib server theme rollback --to <deployment-id> # Rollback to specific
-```
-
-#### Registry Storage
-```
-s3://gaib-backups-{account_id}/
-├── themes/{server_id}/
-│   ├── registry.json           # Current theme state
-│   └── audit/{timestamp}.json  # Deployment audit entries
-```
-
-#### Registry Schema
-```typescript
-interface ThemeRegistry {
-  serverId: string;
-  currentTheme: {
-    name: string;
-    version: string;
-    deployedAt: string;
-    deploymentId: string;
-  } | null;
-
-  history: ThemeDeployment[];
-}
-
-interface ThemeDeployment {
-  id: string;                   // UUID
-  timestamp: string;            // ISO 8601
-  themeName: string;
-  themeVersion: string;
-  serial: number;               // State serial after deployment
-  action: "apply" | "rollback" | "destroy";
-  snapshotId?: string;          // Associated snapshot
-  message?: string;
-}
-```
-
----
-
-## 15. Service Tiers
-
-### 15.1 Tier Comparison
-
-| Feature | Free Tier | Premium Tier |
-|---------|-----------|--------------|
-| Backup Frequency | Daily (03:00 UTC) | Hourly |
-| On-demand Backups | 1/day | Unlimited |
-| Retention | 7 days | 90 days |
-| Cross-Region Replication | No | Yes (us-west-2) |
-| Full Snapshots | Manual only | Weekly auto |
-| Theme History | Last 5 | Unlimited |
-| Storage Class | S3 Standard | Standard → Glacier (30d) |
-| Support | Community | Priority |
-
-### 15.2 Tier Configuration
-
-Initial implementation uses DynamoDB feature flag:
-
-```typescript
-interface ServerTierConfig {
-  serverId: string;
-  tier: "free" | "premium";
-  createdAt: string;
-  updatedAt: string;
-  // Future: stripeCustomerId, licenseKey, etc.
-}
-```
-
-Storage in DynamoDB table `gaib-server-tiers`:
-- Partition Key: `SERVER#{serverId}`
-- TTL: None (persistent)
-
-### 15.3 Rate Limits
-
-| Operation | Free Tier | Premium Tier |
-|-----------|-----------|--------------|
-| backup create | 1/day | Unlimited |
-| backup restore | 3/day | Unlimited |
-| snapshot create | 3/week | Unlimited |
-| snapshot restore | 1/day | Unlimited |
-
----
-
-## 16. Infrastructure Requirements
-
-### 16.1 New AWS Resources
-
-#### S3 Bucket: `gaib-backups-{account_id}`
-```hcl
-resource "aws_s3_bucket" "gaib_backups" {
-  bucket = "gaib-backups-${data.aws_caller_identity.current.account_id}"
-
-  tags = {
-    Name    = "Gaib Backup Storage"
-    Purpose = "Discord IaC Backups"
-  }
-}
-
-resource "aws_s3_bucket_versioning" "gaib_backups" {
-  bucket = aws_s3_bucket.gaib_backups.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_lifecycle_configuration" "gaib_backups" {
-  bucket = aws_s3_bucket.gaib_backups.id
-
-  rule {
-    id     = "free-tier-retention"
-    status = "Enabled"
-
-    filter {
-      tag {
-        key   = "Tier"
-        value = "free"
-      }
-    }
-
-    expiration {
-      days = 7
-    }
-  }
-
-  rule {
-    id     = "premium-tier-glacier"
-    status = "Enabled"
-
-    filter {
-      tag {
-        key   = "Tier"
-        value = "premium"
-      }
-    }
-
-    transition {
-      days          = 30
-      storage_class = "GLACIER"
-    }
-
-    expiration {
-      days = 90
-    }
-  }
-}
-```
-
-#### KMS Key for Backup Encryption
-```hcl
-resource "aws_kms_key" "gaib_backups" {
-  description             = "Gaib backup encryption key"
-  deletion_window_in_days = 30
-  enable_key_rotation     = true
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-        }
-        Action   = "kms:*"
-        Resource = "*"
-      }
-    ]
-  })
-}
-```
-
-#### DynamoDB Table: `gaib-backup-metadata`
-```hcl
-resource "aws_dynamodb_table" "gaib_backup_metadata" {
-  name           = "gaib-backup-metadata"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "PK"
-  range_key      = "SK"
-
-  attribute {
-    name = "PK"
-    type = "S"
-  }
-
-  attribute {
-    name = "SK"
-    type = "S"
-  }
-
-  attribute {
-    name = "GSI1PK"
-    type = "S"
-  }
-
-  attribute {
-    name = "GSI1SK"
-    type = "S"
-  }
-
-  global_secondary_index {
-    name            = "GSI1"
-    hash_key        = "GSI1PK"
-    range_key       = "GSI1SK"
-    projection_type = "ALL"
-  }
-
-  ttl {
-    attribute_name = "TTL"
-    enabled        = true
-  }
-
-  point_in_time_recovery {
-    enabled = true
-  }
-}
-```
-
-#### EventBridge Rules for Scheduled Backups
-```hcl
-# Free tier: Daily at 03:00 UTC
-resource "aws_cloudwatch_event_rule" "backup_daily" {
-  name                = "gaib-backup-daily"
-  schedule_expression = "cron(0 3 * * ? *)"
-}
-
-# Premium tier: Hourly
-resource "aws_cloudwatch_event_rule" "backup_hourly" {
-  name                = "gaib-backup-hourly"
-  schedule_expression = "rate(1 hour)"
-}
-```
-
-#### SNS Topic for Notifications
-```hcl
-resource "aws_sns_topic" "gaib_backup_notifications" {
-  name = "gaib-backup-notifications"
-}
-```
-
-### 16.2 Cross-Region Replication (Premium)
-
-```hcl
-resource "aws_s3_bucket_replication_configuration" "gaib_backups" {
-  count  = var.enable_cross_region_replication ? 1 : 0
-  bucket = aws_s3_bucket.gaib_backups.id
-  role   = aws_iam_role.replication.arn
-
-  rule {
-    id     = "premium-replication"
-    status = "Enabled"
-
-    filter {
-      tag {
-        key   = "Tier"
-        value = "premium"
-      }
-    }
-
-    destination {
-      bucket        = aws_s3_bucket.gaib_backups_replica.arn
-      storage_class = "STANDARD"
-    }
-  }
-}
-```
-
----
-
-## 17. CLI File Structure
-
-### 17.1 New Files
-
-```
-packages/cli/src/commands/server/backup/
-├── index.ts                    # Command registration
-├── types.ts                    # Backup/snapshot types
-├── BackupManager.ts            # Core backup operations
-├── SnapshotManager.ts          # Full snapshot operations
-├── RestoreEngine.ts            # Restore logic with validation
-├── ThemeRegistryManager.ts     # Theme deployment tracking
-├── TierManager.ts              # Service tier management
-├── NotificationService.ts      # SNS notifications
-└── __tests__/
-    ├── BackupManager.test.ts
-    ├── SnapshotManager.test.ts
-    ├── RestoreEngine.test.ts
-    └── ThemeRegistryManager.test.ts
-```
-
-### 17.2 Files to Modify
-
-| File | Changes |
-|------|---------|
-| `packages/cli/src/commands/server/index.ts` | Add backup, snapshot, theme registry commands |
-| `packages/cli/src/commands/server/export.ts` | Add `--backup` flag integration |
-| `packages/cli/src/commands/server/iac/ApplyEngine.ts` | Hook theme registry on apply |
-| `infrastructure/terraform/variables.tf` | Add backup-related variables |
-
----
-
-## 18. Implementation Phases
-
-### Phase 3: Backup Foundation (Sprint 166)
-- [ ] Create `BackupManager` class
-- [ ] Implement `gaib server backup create`
-- [ ] Implement `gaib server backup list`
-- [ ] Terraform: S3 bucket, KMS key, DynamoDB table
-- [ ] Unit tests for BackupManager
-
-### Phase 4: Restore Engine (Sprint 167)
-- [ ] Create `RestoreEngine` with integrity validation
-- [ ] Implement `gaib server backup restore`
-- [ ] Lineage validation (prevent cross-workspace restores)
-- [ ] Integration tests for full backup → restore cycle
-
-### Phase 5: Snapshots (Sprint 168)
-- [ ] Create `SnapshotManager` for full bundles
-- [ ] Implement snapshot create/list/restore/download/compare
-- [ ] Compression with gzip (zstd optional)
-- [ ] Checksum verification on restore
-
-### Phase 6: Theme Registry (Sprint 169)
-- [ ] Create `ThemeRegistryManager`
-- [ ] Hook into ApplyEngine for automatic tracking
-- [ ] Implement registry/history/rollback commands
-- [ ] Audit logging for all deployments
-
-### Phase 7: Service Tiers (Sprint 170)
-- [ ] Create `TierManager` with usage tracking
-- [ ] Implement S3 lifecycle policies per tier
-- [ ] EventBridge scheduled backups (daily/hourly)
-- [ ] Cross-region replication for premium
-
-### Phase 8: Polish & Notifications (Sprint 171)
-- [ ] SNS notifications on backup success/failure
-- [ ] CloudWatch alarms for backup errors
-- [ ] Documentation
-- [ ] Performance optimization
-
----
-
-## 19. Testing Strategy (Backup System)
-
-### 19.1 Unit Tests
-
-- BackupManager: create, list, delete operations
-- RestoreEngine: integrity checks, lineage validation
-- SnapshotManager: bundle creation, compression, checksums
-- ThemeRegistryManager: tracking, rollback logic
-- TierManager: rate limiting, tier detection
-
-### 19.2 Integration Tests
-
-```bash
-# Backup cycle
-gaib server backup create --message "Test backup"
-gaib server backup list
-gaib server backup restore <id> --dry-run
-gaib server backup restore <id>
-gaib server backup delete <id>
-
-# Snapshot cycle
-gaib server snapshot create --message "Full snapshot"
-gaib server snapshot list
-gaib server snapshot download <id> -o ./test-backup/
-gaib server snapshot compare <id1> <id2>
-gaib server snapshot restore <id> --dry-run
-
-# Theme registry
-gaib server theme registry
-gaib server theme history
-gaib server theme rollback --steps 1
-```
-
-### 19.3 Verification Checklist
-
-- [ ] Backup creates compressed file in S3
-- [ ] Restore matches original state exactly
-- [ ] Snapshot bundle contains all 3 files
-- [ ] Theme registry tracks all apply operations
-- [ ] Tier limits enforced correctly
-- [ ] Lifecycle policies delete old backups
-- [ ] Cross-region replication works (premium)
-
----
-
-## 20. Acceptance Criteria (Backup System)
-
-### 20.1 Backup Commands
-- [ ] `gaib server backup create` creates backup in S3
-- [ ] `gaib server backup list` shows backups with metadata
-- [ ] `gaib server backup restore` restores state correctly
-- [ ] `gaib server backup delete` removes backup from S3
-- [ ] Rate limits enforced per tier
-
-### 20.2 Snapshot Commands
-- [ ] `gaib server snapshot create` creates full bundle
-- [ ] `gaib server snapshot list` shows snapshots
-- [ ] `gaib server snapshot restore` restores all state
-- [ ] `gaib server snapshot download` exports locally
-- [ ] `gaib server snapshot compare` shows diff
-
-### 20.3 Theme Registry
-- [ ] Apply operations auto-register in theme registry
-- [ ] `gaib server theme registry` shows current state
-- [ ] `gaib server theme history` shows deployment history
-- [ ] `gaib server theme rollback` restores previous theme
-
-### 20.4 Infrastructure
-- [ ] S3 bucket with versioning and lifecycle rules
-- [ ] KMS key with rotation enabled
-- [ ] DynamoDB table with TTL and PITR
-- [ ] EventBridge rules for scheduled backups
-- [ ] SNS topic for notifications
-
----
-
-## 21. Risks & Mitigations (Backup System)
-
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| S3 quota exceeded | Low | Medium | Monitor bucket size, lifecycle policies |
-| Restore corrupts state | Medium | High | Checksum verification, dry-run mode |
-| Cross-region latency | Low | Low | Async replication, local-first reads |
-| DynamoDB throttling | Low | Medium | Pay-per-request billing, retries |
-| Rate limit bypass | Medium | Low | Server-side enforcement, audit logs |
-
----
-
-## 22. References (Backup System)
-
-| Document | Path |
-|----------|------|
-| Backup System Plan | `grimoires/loa/plans/gaib-backup-system.md` |
-| S3Backend Reference | `packages/cli/src/commands/server/iac/backends/S3Backend.ts` |
-| StateWriter Reference | `packages/cli/src/commands/server/iac/StateWriter.ts` |
-| Existing KMS Config | `infrastructure/terraform/kms.tf` |
+*"The spice must flow." — But first, the pipes must connect.*

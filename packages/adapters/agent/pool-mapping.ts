@@ -13,13 +13,18 @@
  */
 
 import type { AccessLevel, ModelAlias } from '@arrakis/core/ports';
+import {
+  POOL_IDS as HOUNFOUR_POOL_IDS,
+  TIER_POOL_ACCESS,
+  TIER_DEFAULT_POOL,
+} from '@0xhoneyjar/loa-hounfour';
 
 // --------------------------------------------------------------------------
-// Pool ID vocabulary (must match loa-finn pool-registry)
+// Pool ID vocabulary (hounfour canonical source)
 // --------------------------------------------------------------------------
 
-export const POOL_IDS = ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'] as const;
-export type PoolId = (typeof POOL_IDS)[number];
+export const POOL_IDS = HOUNFOUR_POOL_IDS;
+export type PoolId = (typeof HOUNFOUR_POOL_IDS)[number];
 
 /** Set for O(1) validation */
 export const VALID_POOL_IDS: ReadonlySet<string> = new Set(POOL_IDS);
@@ -56,15 +61,21 @@ function loadPoolProviderHints(): Record<PoolId, 'openai' | 'anthropic'> {
   const raw = process.env['POOL_PROVIDER_HINTS'];
   if (!raw) return { ...DEFAULT_POOL_PROVIDER_HINTS };
 
-  let parsed: Record<string, string>;
+  let parsedUnknown: unknown;
   try {
-    parsed = JSON.parse(raw) as Record<string, string>;
+    parsedUnknown = JSON.parse(raw);
   } catch {
     // AC-2.12: Invalid JSON → startup warning + defaults used
     console.warn('[pool-mapping] POOL_PROVIDER_HINTS env var is not valid JSON — using defaults');
     return { ...DEFAULT_POOL_PROVIDER_HINTS };
   }
 
+  if (!parsedUnknown || typeof parsedUnknown !== 'object' || Array.isArray(parsedUnknown)) {
+    console.warn('[pool-mapping] POOL_PROVIDER_HINTS must be a JSON object — using defaults');
+    return { ...DEFAULT_POOL_PROVIDER_HINTS };
+  }
+
+  const parsed = parsedUnknown as Record<string, string>;
   const result = { ...DEFAULT_POOL_PROVIDER_HINTS };
 
   for (const [poolId, provider] of Object.entries(parsed)) {
@@ -105,9 +116,9 @@ export const POOL_PROVIDER_HINT: Record<PoolId, 'openai' | 'anthropic'> = loadPo
 // --------------------------------------------------------------------------
 
 export const ACCESS_LEVEL_POOLS: Record<AccessLevel, { default: PoolId; allowed: PoolId[] }> = {
-  free:       { default: 'cheap',     allowed: ['cheap'] },
-  pro:        { default: 'fast-code', allowed: ['cheap', 'fast-code', 'reviewer'] },
-  enterprise: { default: 'architect', allowed: ['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect'] },
+  free:       { default: TIER_DEFAULT_POOL.free as PoolId,       allowed: TIER_POOL_ACCESS.free as PoolId[] },
+  pro:        { default: TIER_DEFAULT_POOL.pro as PoolId,        allowed: TIER_POOL_ACCESS.pro as PoolId[] },
+  enterprise: { default: TIER_DEFAULT_POOL.enterprise as PoolId, allowed: TIER_POOL_ACCESS.enterprise as PoolId[] },
 };
 
 // --------------------------------------------------------------------------
@@ -130,10 +141,11 @@ export const ALIAS_TO_POOL: Partial<Record<ModelAlias, PoolId>> = {
 };
 
 // `native` resolves tier-dependently — not in ALIAS_TO_POOL
+// Uses hounfour canonical defaults (enterprise default is 'reviewer', not 'architect')
 const NATIVE_POOL: Record<AccessLevel, PoolId> = {
-  free: 'cheap',        // Anti-escalation: free tier never gets expensive pool
-  pro: 'fast-code',     // Pro tier default
-  enterprise: 'architect', // Enterprise gets highest-capability pool
+  free: TIER_DEFAULT_POOL.free as PoolId,             // Anti-escalation: free tier never gets expensive pool
+  pro: TIER_DEFAULT_POOL.pro as PoolId,               // Pro tier default
+  enterprise: TIER_DEFAULT_POOL.enterprise as PoolId,  // Enterprise tier default (hounfour canonical)
 };
 
 // --------------------------------------------------------------------------
@@ -230,7 +242,9 @@ export function resolvePoolId(
   modelAlias: ModelAlias | undefined,
   accessLevel: AccessLevel,
 ): PoolResolution {
-  const { default: defaultPool, allowed: allowedPools } = ACCESS_LEVEL_POOLS[accessLevel];
+  // Guard against invalid access levels at runtime — fallback to least-privileged tier
+  const level: AccessLevel = isAccessLevel(accessLevel as string) ? accessLevel : 'free';
+  const { default: defaultPool, allowed: allowedPools } = ACCESS_LEVEL_POOLS[level];
 
   // No alias → use tier default
   if (!modelAlias) {
@@ -239,7 +253,7 @@ export function resolvePoolId(
 
   // native → tier-aware resolution
   if (modelAlias === 'native') {
-    return { poolId: NATIVE_POOL[accessLevel], allowedPools };
+    return { poolId: NATIVE_POOL[level], allowedPools };
   }
 
   // Direct alias → pool

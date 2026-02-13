@@ -2,8 +2,8 @@
 //!
 //! Sprint S-4: Publishes serialized events to NATS JetStream
 
+use crate::error::GatewayError;
 use crate::events::serialize::GatewayEvent;
-use anyhow::{Context, Result};
 use async_nats::jetstream::{self, Context as JsContext};
 use async_nats::Client;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -43,12 +43,12 @@ pub struct NatsPublisher {
 
 impl NatsPublisher {
     /// Connect to NATS server
-    pub async fn connect(servers: &str) -> Result<Arc<Self>> {
+    pub async fn connect(servers: &str) -> Result<Arc<Self>, GatewayError> {
         info!(servers, "Connecting to NATS");
 
         let client = async_nats::connect(servers)
             .await
-            .context("Failed to connect to NATS")?;
+            .map_err(|e| GatewayError::NatsConnectionFailed(Box::new(e)))?;
 
         let jetstream = jetstream::new(client.clone());
 
@@ -79,9 +79,13 @@ impl NatsPublisher {
     }
 
     /// Publish a gateway event to the appropriate stream
-    pub async fn publish_event(&self, event: &GatewayEvent) -> Result<()> {
+    pub async fn publish_event(&self, event: &GatewayEvent) -> Result<(), GatewayError> {
         let subject = self.route_event(event);
-        let payload = serde_json::to_vec(event).context("Failed to serialize event")?;
+        let payload = serde_json::to_vec(event).map_err(|e| GatewayError::SerializationFailed {
+            event_type: event.event_type.clone(),
+            shard_id: event.shard_id,
+            source: e,
+        })?;
 
         debug!(
             event_type = %event.event_type,
@@ -91,20 +95,37 @@ impl NatsPublisher {
         );
 
         match self.jetstream.publish(subject.clone(), payload.into()).await {
-            Ok(ack) => {
-                self.messages_published.fetch_add(1, Ordering::Relaxed);
-                debug!(
-                    subject,
-                    stream = %ack.stream,
-                    seq = ack.sequence,
-                    "Event published"
-                );
-                Ok(())
+            Ok(ack_future) => {
+                // In async-nats 0.46, publish returns a PublishAckFuture
+                // that must be awaited to get the actual acknowledgment
+                match ack_future.await {
+                    Ok(ack) => {
+                        self.messages_published.fetch_add(1, Ordering::Relaxed);
+                        debug!(
+                            subject,
+                            stream = %ack.stream,
+                            seq = ack.sequence,
+                            "Event published"
+                        );
+                        Ok(())
+                    }
+                    Err(e) => {
+                        self.publish_failures.fetch_add(1, Ordering::Relaxed);
+                        warn!(subject, error = %e, "Failed to get publish acknowledgment");
+                        Err(GatewayError::NatsPublishFailed {
+                            subject,
+                            source: Box::new(e),
+                        })
+                    }
+                }
             }
             Err(e) => {
                 self.publish_failures.fetch_add(1, Ordering::Relaxed);
                 warn!(subject, error = %e, "Failed to publish event");
-                Err(e.into())
+                Err(GatewayError::NatsPublishFailed {
+                    subject,
+                    source: Box::new(e),
+                })
             }
         }
     }
@@ -141,7 +162,7 @@ impl NatsPublisher {
 /// Ensure streams exist with correct configuration
 ///
 /// This is typically run during startup or by a separate setup job.
-pub async fn ensure_streams(js: &JsContext) -> Result<()> {
+pub async fn ensure_streams(js: &JsContext) -> Result<(), GatewayError> {
     use async_nats::jetstream::stream::{Config, RetentionPolicy, StorageType};
 
     // COMMANDS stream - memory storage, 60s retention for fast command processing
@@ -161,7 +182,7 @@ pub async fn ensure_streams(js: &JsContext) -> Result<()> {
         }
         Err(e) => {
             error!(error = %e, "Failed to create COMMANDS stream");
-            return Err(e.into());
+            return Err(GatewayError::Config(format!("Failed to create COMMANDS stream: {e}")));
         }
     }
 
@@ -182,7 +203,7 @@ pub async fn ensure_streams(js: &JsContext) -> Result<()> {
         }
         Err(e) => {
             error!(error = %e, "Failed to create EVENTS stream");
-            return Err(e.into());
+            return Err(GatewayError::Config(format!("Failed to create EVENTS stream: {e}")));
         }
     }
 
@@ -217,5 +238,103 @@ mod tests {
         assert_eq!(streams::COMMANDS, "COMMANDS");
         assert_eq!(streams::EVENTS, "EVENTS");
         assert_eq!(streams::ELIGIBILITY, "ELIGIBILITY");
+    }
+
+    /// Validates that Rust hardcoded constants match the language-neutral
+    /// nats-routing.json. If this fails, Rust routing has drifted from
+    /// the shared contract consumed by TypeScript workers.
+    mod routing_conformance {
+        use super::*;
+
+        const ROUTING_JSON: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/shared/nats-schemas/nats-routing.json"
+        );
+
+        #[test]
+        fn rust_stream_names_match_routing_json() {
+            let content = std::fs::read_to_string(ROUTING_JSON)
+                .expect("Failed to read nats-routing.json");
+            let routing: serde_json::Value = serde_json::from_str(&content)
+                .expect("Failed to parse nats-routing.json");
+
+            let json_streams = routing["streams"].as_object()
+                .expect("streams should be object");
+
+            assert_eq!(
+                streams::COMMANDS,
+                json_streams["COMMANDS"]["name"].as_str().unwrap(),
+                "COMMANDS stream name mismatch"
+            );
+            assert_eq!(
+                streams::EVENTS,
+                json_streams["EVENTS"]["name"].as_str().unwrap(),
+                "EVENTS stream name mismatch"
+            );
+            assert_eq!(
+                streams::ELIGIBILITY,
+                json_streams["ELIGIBILITY"]["name"].as_str().unwrap(),
+                "ELIGIBILITY stream name mismatch"
+            );
+        }
+
+        #[test]
+        fn rust_subject_prefixes_match_routing_json() {
+            let content = std::fs::read_to_string(ROUTING_JSON)
+                .expect("Failed to read nats-routing.json");
+            let routing: serde_json::Value = serde_json::from_str(&content)
+                .expect("Failed to parse nats-routing.json");
+
+            let json_subjects = routing["subjects"].as_object()
+                .expect("subjects should be object");
+
+            assert_eq!(
+                subjects::COMMANDS,
+                json_subjects["commands"]["prefix"].as_str().unwrap(),
+                "commands prefix mismatch"
+            );
+            assert_eq!(
+                subjects::GUILD_EVENTS,
+                json_subjects["guild_events"]["prefix"].as_str().unwrap(),
+                "guild_events prefix mismatch"
+            );
+            assert_eq!(
+                subjects::MEMBER_EVENTS,
+                json_subjects["member_events"]["prefix"].as_str().unwrap(),
+                "member_events prefix mismatch"
+            );
+            assert_eq!(
+                subjects::INTERACTION,
+                json_subjects["commands"]["interaction"].as_str().unwrap(),
+                "interaction subject mismatch"
+            );
+        }
+
+        #[test]
+        fn rust_route_event_matches_routing_json_mapping() {
+            let content = std::fs::read_to_string(ROUTING_JSON)
+                .expect("Failed to read nats-routing.json");
+            let routing: serde_json::Value = serde_json::from_str(&content)
+                .expect("Failed to parse nats-routing.json");
+
+            let mapping = routing["event_type_to_subject"].as_object()
+                .expect("event_type_to_subject should be object");
+
+            // We need a NatsPublisher to call route_event, but it requires
+            // a real NATS connection. Instead, verify the mapping constants
+            // are consistent with the subject module definitions.
+            for (event_type, expected_subject) in mapping {
+                let expected = expected_subject.as_str().unwrap();
+                // Verify the expected subject starts with a known prefix
+                let valid = expected.starts_with(subjects::COMMANDS)
+                    || expected.starts_with(subjects::GUILD_EVENTS)
+                    || expected.starts_with(subjects::MEMBER_EVENTS);
+                assert!(
+                    valid,
+                    "event_type '{}' maps to subject '{}' which doesn't match any Rust prefix",
+                    event_type, expected
+                );
+            }
+        }
     }
 }

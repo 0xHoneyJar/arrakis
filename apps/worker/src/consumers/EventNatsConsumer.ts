@@ -18,22 +18,17 @@ import {
 } from '../handlers/index.js';
 
 // --------------------------------------------------------------------------
-// Types
+// Types — imported from shared NATS schema contract
 // --------------------------------------------------------------------------
 
-/**
- * Gateway event payload (per SDD §5.1.4)
- */
-export interface GatewayEventPayload {
-  event_id: string;
-  event_type: string;
-  shard_id: number;
-  timestamp: number;
-  guild_id: string | null;
-  channel_id: string | null;
-  user_id: string | null;
-  data: Record<string, unknown>;
-}
+import {
+  GatewayEventSchema,
+  type GatewayEvent,
+  type GatewayEventPayload,
+  NATS_ROUTING,
+} from '@arrakis/nats-schemas';
+
+export type { GatewayEventPayload };
 
 /**
  * Event handler signature (NATS-native)
@@ -87,7 +82,18 @@ export class EventNatsConsumer extends BaseNatsConsumer<GatewayEventPayload> {
     payload: GatewayEventPayload,
     _msg: JsMsg
   ): Promise<ProcessResult> {
-    const { event_id, event_type, guild_id, user_id } = payload;
+    // Validate at the NATS trust boundary
+    const parsed = GatewayEventSchema.safeParse(payload);
+    if (!parsed.success) {
+      this.log.error(
+        { issues: parsed.error.issues },
+        'Invalid GatewayEventPayload from NATS'
+      );
+      return { success: false, retryable: false, error: new Error('Invalid GatewayEventPayload') };
+    }
+
+    const safePayload = parsed.data as GatewayEventPayload;
+    const { event_id, event_type, guild_id, user_id } = safePayload;
 
     this.log.debug(
       { eventId: event_id, eventType: event_type, guildId: guild_id, userId: user_id },
@@ -98,7 +104,7 @@ export class EventNatsConsumer extends BaseNatsConsumer<GatewayEventPayload> {
     const natsHandler = this.natsHandlers.get(event_type);
     if (natsHandler) {
       try {
-        await natsHandler(payload, this.log);
+        await natsHandler(safePayload, this.log);
         this.log.debug({ eventId: event_id, eventType: event_type }, 'Event processed (NATS handler)');
         return { success: true };
       } catch (error) {
@@ -110,7 +116,7 @@ export class EventNatsConsumer extends BaseNatsConsumer<GatewayEventPayload> {
     // Try legacy handler with payload conversion
     const legacyHandler = this.legacyHandlers.get(event_type) ?? getEventHandler(event_type);
     if (legacyHandler) {
-      const legacyPayload = toDiscordEventPayload(payload);
+      const legacyPayload = toDiscordEventPayload(safePayload);
       try {
         const result = await legacyHandler(legacyPayload, this.log);
         this.log.debug({ eventId: event_id, eventType: event_type, result }, 'Event processed (legacy handler)');
@@ -132,14 +138,21 @@ export class EventNatsConsumer extends BaseNatsConsumer<GatewayEventPayload> {
     }
 
     // Use default handler as fallback
-    const legacyPayload = toDiscordEventPayload(payload);
+    const legacyPayload = toDiscordEventPayload(safePayload);
     try {
       await defaultEventHandler(legacyPayload, this.log);
       this.log.debug({ eventId: event_id, eventType: event_type }, 'Event processed (default handler)');
       return { success: true };
     } catch (error) {
-      this.log.warn({ eventType: event_type }, 'Unknown event type, acknowledging');
-      return { success: true };
+      this.log.error(
+        { eventId: event_id, eventType: event_type, error },
+        'Default handler error'
+      );
+      return {
+        success: false,
+        retryable: true,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
     }
   }
 }
@@ -270,11 +283,12 @@ export function createEventNatsConsumer(
   legacyHandlers: Map<string, HandlerFn> | undefined,
   logger: Logger
 ): EventNatsConsumer {
+  const eventsStream = NATS_ROUTING.streams['EVENTS'];
   return new EventNatsConsumer(
     {
-      streamName: 'EVENTS',
+      streamName: eventsStream.name,
       consumerName: 'event-worker',
-      filterSubjects: ['events.>'],
+      filterSubjects: eventsStream.subjects,
       maxAckPending: 100,
       ackWait: 15_000,
       maxDeliver: 5,

@@ -26,7 +26,7 @@ import type {
   UsageInfo,
 } from '@arrakis/core/ports';
 import type { LoaFinnConfig } from './config.js';
-import { CONTRACT_VERSION, validateContractCompatibility } from './contract-version.js';
+import { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfour';
 
 // --------------------------------------------------------------------------
 // Types
@@ -454,7 +454,7 @@ export class LoaFinnClient {
     const peerVersion = response.headers.get('x-contract-version');
     if (!peerVersion) return; // Header absent — older loa-finn, tolerate
 
-    const result = validateContractCompatibility(CONTRACT_VERSION, peerVersion);
+    const result = validateCompatibility(CONTRACT_VERSION, peerVersion);
     if (!result.compatible) {
       this.log.error(
         { ourVersion: CONTRACT_VERSION, peerVersion, reason: result.reason },

@@ -8,10 +8,10 @@ authors = ["The Honey Jar <dev@thehoneyjar.xyz>"]
 repository = "https://github.com/0xHoneyJar/arrakis"
 
 [dependencies]
-# Twilight ecosystem
+# Twilight ecosystem (all aligned to 0.17)
 twilight-gateway = "0.17"
-twilight-model = "0.15"
-twilight-http = "0.15"
+twilight-model = "0.17"
+twilight-http = "0.17"
 
 # Async runtime
 tokio = { version = "1", features = ["full", "signal"] }

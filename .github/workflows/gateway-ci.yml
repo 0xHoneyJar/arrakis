@@ -1,0 +1,72 @@
+name: Gateway CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/gateway/**'
+      - 'packages/shared/nats-schemas/fixtures/**'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/gateway/**'
+      - 'packages/shared/nats-schemas/fixtures/**'
+
+concurrency:
+  group: gateway-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gateway-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: apps/gateway
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/gateway/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/gateway/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Cargo check
+        run: cargo check --locked
+
+      - name: Cargo clippy
+        run: cargo clippy --locked -- -D warnings
+
+      - name: Cargo test
+        run: cargo test --locked
+
+      - name: Lint — anyhow boundary enforcement
+        run: |
+          # GatewayError is the domain error type. anyhow is only allowed in main.rs (process boundary).
+          if grep -rn 'anyhow::Result\|anyhow::Context\|anyhow::Error\|anyhow::bail\|anyhow::ensure' src/ --include='*.rs' | grep -v 'main.rs'; then
+            echo "::error::anyhow usage found outside main.rs — use GatewayError instead"
+            exit 1
+          fi
+
+      - name: Wire format fixture freshness
+        working-directory: .
+        run: |
+          # Regenerate fixtures from Rust, then check for drift
+          cd apps/gateway && REGENERATE_FIXTURES=1 cargo test --locked --test wire_format 2>&1 || true
+          cd ../..
+          if ! git diff --exit-code packages/shared/nats-schemas/fixtures/; then
+            echo "::error::Wire format fixtures are stale. Regenerate and commit."
+            exit 1
+          fi
+
+      - name: Docker build
+        run: docker build -f Dockerfile .
