@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "next_sprint_number": 227,
-  "active_cycle": "cycle-023",
+  "next_sprint_number": 230,
+  "active_cycle": "cycle-024",
   "cycles": [
     {
       "id": "cycle-001",
@@ -703,8 +703,10 @@
     {
       "id": "cycle-023",
       "label": "The Spice Must Flow — Production Readiness & Protocol Unification",
-      "status": "active",
+      "status": "archived",
       "created": "2026-02-13T14:30:00Z",
+      "archived": "2026-02-13T10:30:00Z",
+      "archive_path": "grimoires/loa/archive/2026-02-13-the-spice-must-flow",
       "prd": "grimoires/loa/prd.md",
       "sdd": "grimoires/loa/sdd.md",
       "sprint_plan": "grimoires/loa/sprint.md",
@@ -712,36 +714,62 @@
         {
           "global_id": 220,
           "local_label": "sprint-1",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "global_id": 221,
           "local_label": "sprint-2",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "global_id": 222,
           "local_label": "sprint-3",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "global_id": 223,
           "local_label": "sprint-4",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "global_id": 224,
           "local_label": "sprint-5",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "global_id": 225,
           "local_label": "sprint-6",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "global_id": 226,
           "local_label": "sprint-7",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "cycle-024",
+      "label": "The Golden Path — E2E Vector Migration & Launch Validation",
+      "status": "active",
+      "created": "2026-02-13T18:00:00Z",
+      "prd": "grimoires/loa/prd.md",
+      "sdd": "grimoires/loa/sdd.md",
+      "sprint_plan": "grimoires/loa/sprint.md",
+      "sprints": [
+        {
+          "global_id": 227,
+          "local_label": "sprint-1",
+          "status": "pending"
+        },
+        {
+          "global_id": 228,
+          "local_label": "sprint-2",
+          "status": "pending"
+        },
+        {
+          "global_id": 229,
+          "local_label": "sprint-3",
           "status": "pending"
         }
       ]

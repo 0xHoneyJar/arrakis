@@ -30,12 +30,15 @@ import {
   type KeyLike,
 } from 'jose';
 
-// TODO(sprint-3): Migrate CONTRACT_SCHEMA and TEST_VECTORS to hounfour or local fixture
-// These e2e tests are currently non-functional pending gateway resurrection
-// import { CONTRACT_SCHEMA, TEST_VECTORS, type TestVector } from '../../packages/contracts/src/index.js';
-type TestVector = { name: string; description: string; request: Record<string, unknown>; response: Record<string, unknown>; usage_report_payload: unknown };
-const TEST_VECTORS = { version: '0.0.0', description: 'placeholder', vectors: [] as TestVector[] };
-const CONTRACT_SCHEMA = { version: '0.0.0', description: 'placeholder', schemas: { jwt_claims: {}, invoke_response: {}, usage_report: {}, stream_events: {} }, tier_pool_mapping: {} };
+import {
+  CONTRACT_VERSION,
+  getTestVectors,
+  type TestVector,
+} from './vectors/index.js';
+import {
+  computeReqHash,
+  validateCompatibility,
+} from '@0xhoneyjar/loa-hounfour';
 
 // --------------------------------------------------------------------------
 // Types
@@ -75,6 +78,8 @@ export interface UsageReport {
   }>;
   /** Aggregate ensemble accounting (contract v1.1.0) */
   ensembleAccounting?: Record<string, unknown>;
+  /** Signed JWS token for S2S verification tests */
+  signedJws?: string;
 }
 
 // --------------------------------------------------------------------------
@@ -204,7 +209,7 @@ export class LoaFinnE2EStub {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
-    const body = await this.readBody(req);
+    const { raw, text } = await this.readBody(req);
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${this.port}`);
     const method = req.method ?? 'GET';
     const path = url.pathname;
@@ -214,7 +219,7 @@ export class LoaFinnE2EStub {
       method,
       path,
       headers: req.headers as Record<string, string | string[] | undefined>,
-      body: body ? this.safeJsonParse(body) : undefined,
+      body: text ? this.safeJsonParse(text) : undefined,
       timestamp: Date.now(),
     };
     this.requestLog.push(logEntry);
@@ -223,11 +228,11 @@ export class LoaFinnE2EStub {
     if (method === 'GET' && path === '/.well-known/jwks.json') {
       this.handleJwks(res);
     } else if (method === 'POST' && path === '/v1/agents/invoke') {
-      await this.handleInvoke(req, body, logEntry, res);
+      await this.handleInvoke(req, raw, text, logEntry, res);
     } else if (method === 'POST' && path === '/v1/agents/stream') {
-      await this.handleStream(req, body, logEntry, res);
+      await this.handleStream(req, raw, text, logEntry, res);
     } else if (method === 'POST' && path === '/v1/usage/report') {
-      await this.handleUsageReport(body, res);
+      await this.handleUsageReport(text, res);
     } else if (method === 'GET' && path === '/v1/health') {
       this.handleHealth(res);
     } else {
@@ -266,6 +271,7 @@ export class LoaFinnE2EStub {
 
   private async handleInvoke(
     req: IncomingMessage,
+    rawBody: Buffer,
     body: string,
     logEntry: (typeof this.requestLog)[number],
     res: ServerResponse,
@@ -278,6 +284,33 @@ export class LoaFinnE2EStub {
       return;
     }
     logEntry.jwtClaims = claims ?? undefined;
+
+    // Version compatibility check (loa-hounfour)
+    const compat = validateCompatibility(CONTRACT_VERSION);
+    if (!compat.compatible) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: 'VERSION_INCOMPATIBLE',
+        message: compat.reason ?? 'Contract version mismatch',
+        local_version: CONTRACT_VERSION,
+      }));
+      return;
+    }
+
+    // Request body hash agreement (loa-hounfour)
+    if (claims?.req_hash) {
+      const computed = computeReqHash(rawBody);
+      if (computed !== claims.req_hash) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'HASH_MISMATCH',
+          message: 'Request body hash does not match JWT req_hash claim',
+          expected: claims.req_hash,
+          computed,
+        }));
+        return;
+      }
+    }
 
     // Parse request body
     const parsed = this.safeJsonParse(body);
@@ -302,7 +335,7 @@ export class LoaFinnE2EStub {
     const statusCode = vector?.response.status ?? 200;
     res.writeHead(statusCode, {
       'Content-Type': 'application/json',
-      'X-Contract-Version': CONTRACT_SCHEMA.version,
+      'X-Contract-Version': CONTRACT_VERSION,
     });
     res.end(JSON.stringify(responseBody));
   }
@@ -313,6 +346,7 @@ export class LoaFinnE2EStub {
 
   private async handleStream(
     req: IncomingMessage,
+    rawBody: Buffer,
     _body: string,
     logEntry: (typeof this.requestLog)[number],
     res: ServerResponse,
@@ -324,6 +358,33 @@ export class LoaFinnE2EStub {
       return;
     }
     logEntry.jwtClaims = claims ?? undefined;
+
+    // Version compatibility check (loa-hounfour)
+    const compat = validateCompatibility(CONTRACT_VERSION);
+    if (!compat.compatible) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: 'VERSION_INCOMPATIBLE',
+        message: compat.reason ?? 'Contract version mismatch',
+        local_version: CONTRACT_VERSION,
+      }));
+      return;
+    }
+
+    // Request body hash agreement (loa-hounfour)
+    if (claims?.req_hash) {
+      const computed = computeReqHash(rawBody);
+      if (computed !== claims.req_hash) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'HASH_MISMATCH',
+          message: 'Request body hash does not match JWT req_hash claim',
+          expected: claims.req_hash,
+          computed,
+        }));
+        return;
+      }
+    }
 
     // Find stream vector
     const vector = this.matchStreamVector(claims);
@@ -339,7 +400,7 @@ export class LoaFinnE2EStub {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'X-Contract-Version': CONTRACT_SCHEMA.version,
+      'X-Contract-Version': CONTRACT_VERSION,
     });
 
     // Emit events
@@ -397,7 +458,7 @@ export class LoaFinnE2EStub {
 
     this.usageReports.push(report);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'accepted', contract_version: CONTRACT_SCHEMA.version }));
+    res.end(JSON.stringify({ status: 'accepted', contract_version: CONTRACT_VERSION }));
   }
 
   // --------------------------------------------------------------------------
@@ -409,7 +470,7 @@ export class LoaFinnE2EStub {
     res.end(
       JSON.stringify({
         status: 'ok',
-        contract_version: CONTRACT_SCHEMA.version,
+        contract_version: CONTRACT_VERSION,
         stub: true,
       }),
     );
@@ -492,8 +553,8 @@ export class LoaFinnE2EStub {
       ensembleAccounting: vectorPayload.ensemble_accounting as Record<string, unknown> | undefined,
     };
 
-    // Sign as JWS (for S2S verification)
-    await new SignJWT(report as unknown as Record<string, unknown>)
+    // Sign as JWS (for S2S verification) and store both forms
+    const signedJws = await new SignJWT(report as unknown as Record<string, unknown>)
       .setProtectedHeader({ alg: 'ES256', kid: this.keyId, typ: 'JWT' })
       .setIssuer('loa-finn')
       .setAudience('arrakis')
@@ -501,7 +562,7 @@ export class LoaFinnE2EStub {
       .setExpirationTime('5m')
       .sign(this.privateKey);
 
-    this.usageReports.push(report);
+    this.usageReports.push({ ...report, signedJws });
   }
 
   // --------------------------------------------------------------------------
@@ -521,45 +582,48 @@ export class LoaFinnE2EStub {
     // Match by specificity: hybrid BYOK+ensemble > BYOK > ensemble partial > ensemble > pool routing > free tier
     if (byok && ensemble) {
       // Hybrid BYOK/platform ensemble (cycle-019 BB6)
-      return TEST_VECTORS.vectors.find((v) => v.name === 'invoke_ensemble_hybrid_byok');
+      return getTestVectors().find((v) => v.name === 'invoke_ensemble_hybrid_byok');
     }
     if (byok) {
-      return TEST_VECTORS.vectors.find((v) => v.name === 'invoke_byok');
+      return getTestVectors().find((v) => v.name === 'invoke_byok');
     }
     if (ensemble) {
       // Match by idempotency key for specific ensemble scenarios
       const idemKey = claims.idempotency_key as string | undefined;
       if (idemKey?.includes('partial-model')) {
-        return TEST_VECTORS.vectors.find((v) => v.name === 'invoke_ensemble_per_model_partial');
+        return getTestVectors().find((v) => v.name === 'invoke_ensemble_per_model_partial');
       }
-      return TEST_VECTORS.vectors.find(
+      return getTestVectors().find(
         (v) => v.name === 'invoke_ensemble_best_of_n',
       );
     }
     if (accessLevel === 'pro' && poolId !== 'cheap') {
-      return TEST_VECTORS.vectors.find(
+      return getTestVectors().find(
         (v) => v.name === 'invoke_pro_pool_routing',
       );
     }
-    return TEST_VECTORS.vectors.find((v) => v.name === 'invoke_free_tier');
+    return getTestVectors().find((v) => v.name === 'invoke_free_tier');
   }
 
   private matchStreamVector(
     claims: Record<string, unknown> | null,
   ): TestVector | undefined {
     if (!claims) return undefined;
-    return TEST_VECTORS.vectors.find((v) => v.name === 'invoke_stream_sse');
+    return getTestVectors().find((v) => v.name === 'invoke_stream_sse');
   }
 
   // --------------------------------------------------------------------------
   // Helpers
   // --------------------------------------------------------------------------
 
-  private readBody(req: IncomingMessage): Promise<string> {
+  private readBody(req: IncomingMessage): Promise<{ raw: Buffer; text: string }> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       req.on('data', (chunk: Buffer) => chunks.push(chunk));
-      req.on('end', () => resolve(Buffer.concat(chunks).toString()));
+      req.on('end', () => {
+        const raw = Buffer.concat(chunks);
+        resolve({ raw, text: raw.toString('utf-8') });
+      });
       req.on('error', reject);
     });
   }

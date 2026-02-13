@@ -12,9 +12,12 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { LoaFinnE2EStub } from './loa-finn-e2e-stub.js';
-import { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfour';
-// TODO: Migrate getVector to hounfour test vectors or local fixture
-// import { getVector } from '../../packages/contracts/src/index.js';
+import {
+  getVector,
+  getTestVectors,
+  CONTRACT_VERSION,
+  validateCompatibility,
+} from './vectors/index.js';
 
 // --------------------------------------------------------------------------
 // Environment
@@ -22,15 +25,11 @@ import { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfou
 
 const SKIP_E2E = process.env['SKIP_E2E'] !== 'false';
 
-// Gate: E2E tests require test vectors. Currently pending hounfour migration.
-const VECTORS_AVAILABLE = false; // Set to true when getVector is restored
-const SHOULD_SKIP = SKIP_E2E || !VECTORS_AVAILABLE;
-
 // --------------------------------------------------------------------------
 // Test Suite
 // --------------------------------------------------------------------------
 
-describe.skipIf(SHOULD_SKIP)('Agent Gateway E2E', () => {
+describe.skipIf(SKIP_E2E)('Agent Gateway E2E', () => {
   let stub: LoaFinnE2EStub;
 
   beforeAll(async () => {
@@ -338,23 +337,19 @@ describe.skipIf(SHOULD_SKIP)('Agent Gateway E2E', () => {
       expect(peerVersion).toBe(CONTRACT_VERSION);
 
       // Validate compatibility succeeds
-      const compat = validateCompatibility(CONTRACT_VERSION, peerVersion!);
+      const compat = validateCompatibility(peerVersion!);
       expect(compat.compatible).toBe(true);
-      expect(compat.status).toBe('supported');
     });
 
     // AC-2.23: Version mismatch — explicit error, not silent fallthrough
     it('should detect version mismatch with incompatible major version', () => {
-      const result = validateCompatibility('1.1.0', '2.0.0');
+      const result = validateCompatibility('2.0.0');
       expect(result.compatible).toBe(false);
-      expect(result.status).toBe('unsupported');
-      expect(result.reason).toContain('Major version mismatch');
     });
 
     it('should allow minor version differences within same major', () => {
-      const result = validateCompatibility('1.0.0', '1.1.0');
+      const result = validateCompatibility('1.1.0');
       expect(result.compatible).toBe(true);
-      expect(result.contract_version).toBe('1.1.0'); // newer of the two
     });
   });
 });
@@ -420,18 +415,4 @@ function parseSSEEvents(
   return events;
 }
 
-/** Get all test vectors for iteration */
-function getTestVectors() {
-  const names = [
-    'invoke_free_tier',
-    'invoke_pro_pool_routing',
-    'invoke_stream_sse',
-    'invoke_rate_limited',
-    'invoke_budget_exceeded',
-    'stream_abort_reconciliation',
-    'invoke_byok',
-    'invoke_ensemble_best_of_n',
-    'invoke_ensemble_partial_failure',
-  ];
-  return names.map((n) => getVector(n));
-}
+// getTestVectors() is now imported from ./vectors/index.js

@@ -1,24 +1,24 @@
-# PRD: The Spice Must Flow — Production Readiness & Protocol Unification
+# PRD: The Golden Path — E2E Vector Migration & Launch Validation
 
 **Version:** 1.1.0
-**Cycle:** 023
+**Cycle:** 024
 **Date:** 2026-02-13
 **Status:** Draft
-**References:** [Issue #54](https://github.com/0xHoneyJar/arrakis/issues/54) · [RFC #31](https://github.com/0xHoneyJar/loa-finn/issues/31) · [loa-hounfour](https://github.com/0xHoneyJar/loa-hounfour)
+**References:** [RFC #31](https://github.com/0xHoneyJar/loa-finn/issues/31) · [loa-hounfour v1.1.0](https://github.com/0xHoneyJar/loa-hounfour) · [Command Deck Round 8](https://github.com/0xHoneyJar/loa-finn/issues/31#issuecomment-3896482790)
 
 ---
 
 ## 1. Problem Statement
 
-Arrakis is at 95-96% completion on the Hounfour multi-model architecture (RFC #31), but three categories of work prevent production deployment:
+RFC #31 is at 97% completion. 36 agent modules (9,600 lines), 28 test files (11,000 lines), a Rust gateway with structured error taxonomy, and the shared protocol package (`@0xhoneyjar/loa-hounfour` v1.1.0) are all merged to main across 4 repos with zero open PRs.
 
-1. **Protocol drift risk.** Arrakis maintains its own `@arrakis/loa-finn-contract` package with hand-written JSON Schema fixtures. loa-finn already consumes from `@0xhoneyjar/loa-hounfour` (the canonical shared protocol package). The two have structural divergences — integer tiers vs string tiers, different default pool mappings, separate req-hash implementations. Any further drift means interop failure at runtime.
+The remaining 3% is a validation gap: the E2E test suite cannot run.
 
-2. **Gateway is dead code.** The Rust Discord gateway (`apps/gateway/`) has 34 compilation errors from version skew (`twilight-gateway` 0.17 vs `twilight-model` 0.15, `async-nats` 0.46 API changes, `metrics` macro syntax). It has no CI pipeline and cannot be built or deployed.
+**Root cause:** The E2E tests (`tests/e2e/agent-gateway-e2e.test.ts`) reference `getVector()` from a `packages/contracts/` directory that **does not exist**. The import is commented out, `VECTORS_AVAILABLE` is hardcoded to `false`, and `TEST_VECTORS` / `CONTRACT_SCHEMA` in the stub are empty placeholders. Meanwhile, loa-hounfour v1.1.0 ships **56+ golden test vectors** (`vectors/budget/`, `vectors/jwt/`) and pre-compiled validators — they just aren't connected.
 
-3. **CI coverage gap.** The 38-file agent adapter layer (`packages/adapters/agent/`), 7 unit tests, 1 integration test, and 9-scenario E2E suite have no CI workflow. The `pr-validation.yml` only covers `themes/sietch/`. Production changes to the agent gateway subsystem are untested in CI.
+The code is written. The tests pass (unit + integration). The contracts are shared. What's missing: wire the vectors, validate the round-trip, then ship.
 
-> Sources: Gap analysis of `packages/adapters/agent/`, `tests/e2e/`, `apps/gateway/`, `.github/workflows/`, confirmed against issue #54 and RFC #31 coverage maps.
+> Sources: First-principles codebase audit (`git log main`, file system traversal, GitHub API), E2E test file analysis, loa-hounfour `node_modules` inspection.
 
 ---
 
@@ -26,11 +26,11 @@ Arrakis is at 95-96% completion on the Hounfour multi-model architecture (RFC #3
 
 | ID | Goal | Metric | Priority |
 |----|------|--------|----------|
-| G-1 | Adopt loa-hounfour as single source of truth for protocol contracts | Zero remaining imports of `@arrakis/loa-finn-contract`; all schema validation uses loa-hounfour exports | P0 |
-| G-2 | Gateway compiles and passes tests | `cargo check` exits 0; `cargo test` exits 0; Dockerfile builds successfully | P0 |
-| G-3 | Agent subsystem has CI coverage | PR validation workflow runs unit + integration tests on `packages/**` changes | P1 |
-| G-4 | E2E tests run in CI | E2E suite passes in Docker Compose with `SKIP_E2E=false` | P2 |
-| G-5 | Clean up dead code and credential risks | `sites/web/` removed or properly scaffolded; no `.env.local` tracked | P1 |
+| G-1 | Wire loa-hounfour test vectors into E2E suite | `VECTORS_AVAILABLE = true`; all 9 E2E scenarios use real vectors | P0 |
+| G-2 | E2E test suite passes end-to-end | `SKIP_E2E=false npx vitest run tests/e2e/` exits 0 | P0 |
+| G-3 | Cross-system smoke test validates JWT round-trip | Docker Compose E2E (`scripts/run-e2e.sh`) passes with loa-hounfour v1.1.0 schemas | P0 |
+| G-4 | Budget calculation conformance | All 56 loa-hounfour budget vectors pass against Arrakis budget manager | P1 |
+| G-5 | JWT conformance | All 6 loa-hounfour JWT vectors pass against Arrakis JWT service | P1 |
 
 ---
 
@@ -38,245 +38,262 @@ Arrakis is at 95-96% completion on the Hounfour multi-model architecture (RFC #3
 
 | Persona | Needs |
 |---------|-------|
-| **Platform team (us)** | Confidence that agent gateway works end-to-end with loa-finn before production rollout |
-| **loa-finn** | Arrakis speaks the same protocol contract version — schemas, hashes, and version negotiation must agree |
-| **Community operators** | Reliable Discord/Telegram bot that doesn't drop events (gateway must compile and deploy) |
+| **Platform team (us)** | Confidence that the full arrakis ↔ loa-finn round-trip works before production deployment |
+| **loa-finn** | Proof that Arrakis produces identical hashes, validates identical schemas, and speaks the same protocol version |
+| **RFC #31 reviewers** | Evidence that the 97% → 100% gap is closed with real test coverage, not just code existence |
 
 ---
 
 ## 4. Functional Requirements
 
-### 4.1 Protocol Unification (loa-hounfour Adoption)
+### 4.1 Test Vector Adapter Module
 
-**Ref:** Issue #54, BridgeBuilder comment on incremental migration
+Create `tests/e2e/vectors/` — a thin adapter that loads loa-hounfour golden vectors and maps them into the E2E test harness format.
 
-#### 4.1.1 Install loa-hounfour
+#### 4.1.1 Vector Loader
 
-Add `@0xhoneyjar/loa-hounfour` as a dependency of `packages/adapters/`, pinned to an immutable commit SHA for reproducibility:
+Create `tests/e2e/vectors/index.ts`.
 
-```bash
-pnpm add "github:0xHoneyJar/loa-hounfour#v1.1.0"
+**Loading mechanism:** loa-hounfour's `package.json` exports only `.` and `./schemas/*` — the `vectors/` directory is included in `files` but has **no subpath export**. Therefore, vectors MUST be loaded via filesystem read from the resolved package path, NOT via ESM import:
+
+```typescript
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+
+const require = createRequire(import.meta.url);
+const hounfourRoot = dirname(require.resolve('@0xhoneyjar/loa-hounfour/package.json'));
+
+function loadVectorFile<T>(relativePath: string): T {
+  const raw = readFileSync(join(hounfourRoot, relativePath), 'utf-8');
+  return JSON.parse(raw) as T;
+}
+
+const budgetBasic = loadVectorFile('vectors/budget/basic-pricing.json');
+const budgetExtreme = loadVectorFile('vectors/budget/extreme-tokens.json');
+const budgetStreaming = loadVectorFile('vectors/budget/streaming-cancel.json');
+const budgetPriceChange = loadVectorFile('vectors/budget/price-change-boundary.json');
+const jwtConformance = loadVectorFile('vectors/jwt/conformance.json');
 ```
 
-The package commits `dist/` to the repo, so no build step is needed on install. When `@0xhoneyjar` npm scope auth is configured, switch to `"@0xhoneyjar/loa-hounfour": "^1.1.0"`.
+**Requirement:** Vector loading MUST work in CI and locally on Node >= 22 with Vitest without custom flags. The `createRequire` + `readFileSync` approach is universally supported and avoids ESM JSON module resolution issues.
 
-**Node engine requirement:** loa-hounfour requires Node >= 22. Arrakis's worker already requires >= 20. Enforce Node 22 in CI via `actions/setup-node` and add `"engines": { "node": ">=22" }` to the root `package.json`. Enable `engine-strict=true` in `.npmrc`.
+Provide `getVector(name: string): TestVector` function that the E2E suite already expects.
 
-(src: `packages/adapters/package.json`, `package.json`, `.npmrc`)
+**Vector-to-scenario mapping with exact vector IDs:**
 
-#### 4.1.2 Reconcile Schema Divergences
+The 9 E2E scenarios split into two categories:
 
-Before replacing imports, reconcile structural differences:
+**Category A — Golden vector coverage** (scenarios that map directly to loa-hounfour vectors):
 
-| Divergence | Arrakis Current | loa-hounfour | Resolution |
-|-----------|----------------|--------------|------------|
-| Tier representation | Integer 1-9 (`tests/e2e/contracts/schema/loa-finn-contract.json:24`) | String enum `'free' \| 'pro' \| 'enterprise'` (`TierSchema`) | Adopt loa-hounfour's `Tier` type. Map integer tiers to canonical strings at the Arrakis external boundary only (Discord role → `Tier`). See §4.1.2.1 for canonicalization rule. |
-| Enterprise default pool | `'architect'` (`packages/adapters/agent/pool-mapping.ts:110`) | `'reviewer'` (`TIER_DEFAULT_POOL`) | Adopt loa-hounfour's `TIER_DEFAULT_POOL`. Update `pool-mapping.ts` to use imported constant. |
-| Model alias source | Hardcoded `MODEL_ALIAS_VALUES` (`packages/core/ports/agent-gateway.ts:22`) | `POOL_IDS` from loa-hounfour | Replace hardcoded values with `POOL_IDS` import. Resolves `TODO(hounfour)`. |
+| E2E Scenario | Vector IDs | What's Tested |
+|-------------|-----------|---------------|
+| `invoke_free_tier` | `jwt-valid-invoke` + `bp-08` (qwen local, cheapest tier) | JWT claims validation + free tier cost calculation |
+| `invoke_pro_pool_routing` | `jwt-valid-invoke` (tier=pro) + `bp-12` (full gpt-4o) | Pool routing via `TIER_POOL_ACCESS` + pro tier cost |
+| `invoke_stream_sse` | `sc-01` (normal stream completion) | SSE event format + streaming cost attribution |
+| `invoke_rate_limited` | `jwt-valid-invoke` + `ERROR_CODES.RATE_LIMITED` | Error code conformance |
+| `invoke_budget_exceeded` | `bp-15` (o3 reasoning-heavy) + `ERROR_CODES.BUDGET_EXCEEDED` | Budget threshold enforcement |
+| `stream_abort_reconciliation` | `sc-03` through `sc-06` (abort scenarios) | Partial billing + `billing_method` attribution |
 
-##### 4.1.2.1 Tier Canonicalization Rule
+**Category B — Locally constructed fixtures** (scenarios requiring Arrakis-specific behavior not covered by golden vectors):
 
-**Contract rule:** The payload passed to `computeReqHash()` and `deriveIdempotencyKey()` MUST use loa-hounfour's canonical `Tier` string representation. Integer-to-string mapping occurs exclusively at the Arrakis external boundary (Discord role → canonical Tier) and NEVER inside the hashed message.
+| E2E Scenario | Construction | What's Tested |
+|-------------|-------------|---------------|
+| `invoke_byok` | Constructed using `InvokeResponseSchema` + BYOK envelope fields from Arrakis adapter | BYOK envelope encryption round-trip — Arrakis-specific, not protocol-level |
+| `invoke_ensemble_best_of_n` | Constructed using `bp-12` cost × N multiplier | Ensemble budget multiplication — Arrakis orchestration logic |
+| `invoke_ensemble_partial_failure` | Constructed using `bp-12` + `ERROR_CODES` | Ensemble partial failure handling — Arrakis orchestration logic |
 
-**Canonical mapping:**
+Category B fixtures are constructed from loa-hounfour schemas and vocabulary (ensuring protocol conformance) but represent Arrakis-specific orchestration behavior that has no corresponding golden vector. Each fixture MUST validate against the relevant loa-hounfour schema before use in tests.
 
-| Discord Role Tier (integer) | loa-hounfour `Tier` (string) |
-|----------------------------|------------------------------|
-| 1–3 | `'free'` |
-| 4–6 | `'pro'` |
-| 7–9 | `'enterprise'` |
+#### 4.1.2 Contract Schema Adapter
 
-The mapping function `canonicalizeTier(roleTier: number): Tier` is implemented once in `packages/adapters/agent/tier-mapping.ts` and imported wherever Discord role tiers enter the system. All downstream code (pool mapping, request hashing, idempotency) operates exclusively on canonical `Tier` strings.
+Replace the empty `CONTRACT_SCHEMA` placeholder in `loa-finn-e2e-stub.ts` with real loa-hounfour exports:
 
-**Verification:** Add a test that constructs a request with a known Discord role tier, canonicalizes it, computes the req-hash, and asserts the hash matches the golden vector from loa-hounfour for the same canonical payload. This proves Arrakis and loa-finn produce identical hashes for equivalent requests.
+```typescript
+import {
+  JwtClaimsSchema,       // TypeBox schema for JWT claims validation
+  InvokeResponseSchema,  // TypeBox schema for invoke response validation
+  UsageReportSchema,     // TypeBox schema for usage report validation
+  StreamEventSchema,     // TypeBox schema for SSE event validation
+  POOL_IDS,              // Record<string, string> — canonical pool identifiers
+  TIER_POOL_ACCESS,      // Record<Tier, string[]> — tier → allowed pools
+  TIER_DEFAULT_POOL,     // Record<Tier, string> — tier → default pool
+  ERROR_CODES,           // Readonly object with error code constants
+  CONTRACT_VERSION,      // string — e.g. "1.1.0"
+  validators,            // Pre-compiled TypeBox validators
+  computeReqHash,        // (body: Buffer, contentEncoding?: string, options?: ReqHashOptions) => string
+  verifyReqHash,         // (body: Buffer, expectedHash: string, contentEncoding?: string, options?: ReqHashOptions) => boolean
+  deriveIdempotencyKey,  // (tenant: string, reqHash: string, provider: string, model: string) => string
+  validateCompatibility, // (remoteVersion: string) => { compatible: boolean; ... }
+} from '@0xhoneyjar/loa-hounfour';
+```
 
-#### 4.1.3 Migrate Imports (Incremental)
+**Validator API:** loa-hounfour uses `@sinclair/typebox` (v0.34+). The `validators` object provides pre-compiled check functions: `validators.jwtClaims(payload)` returns `{ success: boolean, errors?: [...] }`. The stub's request body validation MUST use these validators instead of the empty placeholder schemas.
 
-Per the BridgeBuilder migration strategy, migrate in three phases:
+**Version negotiation:** On every E2E request, the stub MUST call `validateCompatibility(CONTRACT_VERSION)` and assert `compatible === true`. If loa-hounfour's `CONTRACT_VERSION` does not match the version Arrakis sends in its headers, the test MUST fail — this catches silent version drift.
 
-**Phase 1 — Transformation validation:** Import loa-hounfour schemas alongside existing fixtures. Validate that legacy payloads can be transformed into canonical loa-hounfour payloads via the tier canonicalization rule (§4.1.2.1), then validate the transformed payload against loa-hounfour schemas only. This tests the *transformation + canonical validation* path, not naive dual-schema acceptance of identical bytes. Run loa-hounfour's 90 golden test vectors in CI as the acceptance gate for Phase 2.
+**Hash agreement:** On every E2E invoke request, the stub MUST:
+1. Receive the request body as a Buffer
+2. Call `computeReqHash(body)` to produce the canonical hash
+3. Compare against the `req_hash` claim in the JWT (which Arrakis computed independently)
+4. Assert they match — this proves both sides canonicalize and hash identically
 
-**Phase 2 — Replace imports:** Swap each local import for its loa-hounfour equivalent:
+This is the core interoperability contract: if hashes diverge, Arrakis and loa-finn will disagree on idempotency keys, causing duplicate or lost requests in production.
 
-| Local Module | loa-hounfour Replacement |
-|-------------|------------------------|
-| `packages/contracts/src/index.ts` (JwtClaimsSchema) | `import { JwtClaimsSchema } from '@0xhoneyjar/loa-hounfour'` |
-| `packages/adapters/agent/contract-version.ts` (CONTRACT_VERSION, validateCompatibility) | `import { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfour'` |
-| `packages/adapters/agent/req-hash.ts` (computeReqHash) | `import { computeReqHash, verifyReqHash } from '@0xhoneyjar/loa-hounfour'` |
-| `packages/adapters/agent/idempotency.ts` (deriveIdempotencyKey) | `import { deriveIdempotencyKey } from '@0xhoneyjar/loa-hounfour'` |
-| `packages/adapters/agent/pool-mapping.ts` (POOL_IDS, TIER_POOL_ACCESS) | `import { POOL_IDS, TIER_POOL_ACCESS, TIER_DEFAULT_POOL, isValidPoolId, tierHasAccess } from '@0xhoneyjar/loa-hounfour'` |
-| `tests/e2e/agent-gateway-e2e.test.ts` (getVector, CONTRACT_VERSION) | `import { CONTRACT_VERSION, validateCompatibility } from '@0xhoneyjar/loa-hounfour'` |
+#### 4.1.3 Activate E2E Tests
 
-**Phase 3 — Remove local packages:** Delete `packages/contracts/` and `tests/e2e/contracts/` once all imports are migrated and tests pass.
+In `agent-gateway-e2e.test.ts`:
+- Set `VECTORS_AVAILABLE = true`
+- Replace the commented-out `getVector` import with the new adapter module
+- Verify all 9 test scenarios resolve to real vector data
 
-#### 4.1.4 Run Golden Test Vectors
+### 4.2 Budget Conformance Test Suite
 
-loa-hounfour ships 90 golden test vectors. After migration, run them against Arrakis's implementation to verify cross-system conformance.
+Create `tests/conformance/budget-vectors.test.ts` — a parametrized test that runs all 56 loa-hounfour budget vectors against Arrakis's budget calculation logic.
 
-### 4.2 Gateway Resurrection
+**Numeric precision rules (CRITICAL):**
 
-**Ref:** Pre-existing compilation errors in `apps/gateway/`
+All monetary fields (`cost_micro`, `remainder_micro`, `total_cost_micro`, `price_micro_per_million`) MUST be handled as **integers**. The canonical formula from loa-hounfour is:
 
-**Error budget closure:** Before starting, capture `cargo check 2>&1` output and enumerate all 34 errors into a tracking checklist. Each error must be linked to a commit that resolves it. The Docker build must use `--locked` and the same feature flags as CI to prevent "compiles locally but not in container" divergence.
+```
+cost_micro = floor(tokens * price_micro_per_million / 1_000_000)
+remainder_micro = (tokens * price_micro_per_million) % 1_000_000
+```
 
-Fix all 34 compilation errors across 4 categories:
+- For values within `Number.MAX_SAFE_INTEGER` (2^53 - 1): JS `number` with `Math.floor()` is acceptable
+- For values exceeding `MAX_SAFE_INTEGER` (the `extreme-tokens.json` vectors): `BigInt` arithmetic is REQUIRED
+- The extreme-tokens vectors include fields like `"expected_cost_micro_string": "..."` for BigInt-required values — assert against the string representation
+- The test harness MUST include a guard that rejects any monetary value that is a non-integer JS float (e.g., `if (!Number.isInteger(value) && typeof value !== 'bigint') throw`)
 
-#### 4.2.1 Twilight Version Alignment
+**Structure:**
+- Load each vector set (basic-pricing, extreme-tokens, streaming-cancel, price-change-boundary) using the `loadVectorFile()` approach from §4.1.1
+- For single_cost_vectors: call Arrakis budget function with `(tokens, price_micro_per_million)`, assert `cost_micro` and `remainder_micro` match exactly
+- For total_cost_vectors: call with full pricing input, assert all cost fields match
+- For remainder_accumulator_sequences: process vectors in order, carrying `remainder_micro` between calls
+- Follow the existing `fixture-conformance.test.ts` pattern from `packages/shared/nats-schemas/`
 
-Upgrade `twilight-model` and `twilight-http` from 0.15 to 0.17 to match `twilight-gateway` 0.17. Fix all breaking API changes:
+### 4.3 JWT Conformance Test Suite
 
-| Change | Files Affected | Fix |
-|--------|---------------|-----|
-| `Config::builder()` removed | `shard/pool.rs:68` | Use `Config::new(token, intents)` |
-| `ShardId::new()` takes `(u32, u32)` | `shard/pool.rs:70` | Cast pool/shard IDs to `u32` at twilight boundary |
-| `shard.id().number()` returns `u32` | `shard/pool.rs:104,148` | Cast to `u64` via `.into()` for internal methods |
-| `GuildCreate.id` is now method | `events/serialize.rs:53` | Change `guild.id` to `guild.id()` |
-| `GuildCreate` fields removed | `events/serialize.rs:57-59` | Serialize full payload via `serde_json::to_value()` |
-| `ReceiveMessageError` API changed | `shard/pool.rs:162` | Adapt error handling to 0.17 API |
+Create `tests/conformance/jwt-vectors.test.ts` — parametrized tests for the 6 loa-hounfour JWT conformance vectors.
 
-(src: `apps/gateway/Cargo.toml`, `apps/gateway/src/shard/pool.rs`, `apps/gateway/src/events/serialize.rs`)
+**Static claim validation vectors** (deterministic, no JWKS interaction):
 
-#### 4.2.2 Metrics Macro Syntax
+| Vector ID | Scenario | Expected | Error Code |
+|-----------|----------|----------|------------|
+| jwt-valid-invoke | Valid JWT with all required claims (iss, aud, sub, tenant_id, tier, req_hash, jti) | PASS | — |
+| jwt-expired | `exp` in the past | REJECT | `JWT_EXPIRED` |
+| jwt-wrong-aud | `aud: "arrakis"` instead of `"loa-finn"` | REJECT | `JWT_INVALID_AUDIENCE` |
+| jwt-disallowed-iss | Issuer not in configured allowlist | REJECT | `JWT_INVALID_ISSUER` |
 
-Upgrade `metrics` to 0.24 and `metrics-exporter-prometheus` to 0.18. Update all macro invocations in `apps/gateway/src/metrics/mod.rs` to use the 0.24 label syntax.
+For static vectors: sign the claims from the vector JSON with a test ES256 key, then validate. The `req_hash` field in each vector (`sha256:e3b0c44...`) is the canonical empty-body hash — assert that `computeReqHash(Buffer.alloc(0))` produces the same value.
 
-(src: `apps/gateway/src/metrics/mod.rs` — 9 macro sites at lines 99, 109, 115, 124, 133, 143, 157, 166, 173)
+**JWKS behavioral vectors** (require deterministic choreography):
 
-#### 4.2.3 async-nats PublishAckFuture
+| Vector ID | Choreography | Expected |
+|-----------|-------------|----------|
+| jwt-rotated-key | 1. Start local JWKS server with key K1 (kid=k1). 2. Validate token signed by K1 — PASS (cache populated). 3. Rotate JWKS to key K2 (kid=k2), remove K1. 4. Validate token signed by K2 — PASS (forces JWKS refresh). 5. Validate token signed by K1 — REJECT (K1 no longer in JWKS). | Steps 2,4: PASS. Step 5: REJECT. |
+| jwt-jwks-timeout | 1. Start local JWKS server with key K1 (kid=k1). 2. Validate token signed by K1 — PASS (cache populated, TTL=5s). 3. Block JWKS endpoint (return 503 or delay >timeout). 4. Validate token signed by K1 (kid=k1, cached) — ACCEPT (DEGRADED mode). 5. Validate token signed by unknown K3 (kid=k3) — REJECT (cannot refresh, unknown kid). | Step 4: ACCEPT. Step 5: REJECT. |
 
-Fix `apps/gateway/src/nats/publisher.rs:98-99` to await the `PublishAckFuture` before accessing `.stream` and `.sequence`.
+**Test infrastructure for JWKS vectors:**
+- Spin up a local HTTP server (port 0 = random) serving `/.well-known/jwks.json`
+- Configure Arrakis JWT service with `jwksUri` pointing to `http://127.0.0.1:{port}`
+- Set cache TTL to 5 seconds and refresh timeout to 2 seconds for deterministic behavior
+- Key rotation is simulated by updating the JWKS response served by the local server
+- Timeout is simulated by making the JWKS endpoint return 503 or delay for 10 seconds
 
-#### 4.2.4 Module Visibility
+### 4.4 Docker Compose E2E Validation
 
-Change `mod serialize;` to `pub mod serialize;` in `apps/gateway/src/events/mod.rs:5`.
+Verify `scripts/run-e2e.sh` passes with the wired-up vectors:
 
-#### 4.2.5 Dockerfile Update
+1. Build Docker images for arrakis-e2e and loa-finn-e2e-stub
+2. Start services via `docker-compose.e2e.yml` (Redis on 6399, arrakis on 3099, loa-finn stub on 8099)
+3. Run E2E test suite with `SKIP_E2E=false`
+4. All 9 E2E scenarios pass (6 golden + 3 locally constructed)
 
-Update `apps/gateway/Dockerfile:6` from `rust:1.75-alpine` to `rust:1.85-alpine` (or latest stable).
+**JWKS flow alignment with production:**
 
-### 4.3 CI/CD Hardening
+The shared Docker volume is used ONLY for initial keypair generation — it seeds the ES256 key material that the stub then **serves over HTTP** via its `/.well-known/jwks.json` endpoint. Arrakis MUST fetch the JWKS via HTTP (not read from volume), matching the real production flow:
 
-**CI execution contracts (apply to all workflows below):**
+```
+┌──────────┐    ES256 keypair    ┌─────────────┐
+│ Arrakis  │ ──── generates ───→ │ shared vol  │
+│ (3099)   │                     └──────┬──────┘
+│          │                            │ stub reads at startup
+│          │    HTTP GET /.well-known   │
+│          │ ←──── JWKS.json ────────── │ ┌─────────────┐
+│          │                              │ loa-finn    │
+│          │ ──── POST /invoke ────────→ │ stub (8099) │
+│          │    (JWT with req_hash)       │             │
+│          │                              │ validates:  │
+│          │ ←──── 200 + usage report ── │ - JWT sig   │
+└──────────┘                              │ - req_hash  │
+                                          │ - schema    │
+                                          └─────────────┘
+```
 
-1. All TypeScript workflows run `pnpm -w install --frozen-lockfile` at repo root (single lockfile, deterministic).
-2. All Rust workflows use `--locked` flag (Cargo.lock must be committed and match).
-3. Required service containers for integration tests: NATS/JetStream (`nats:latest` with `-js` flag).
-4. Caching: pnpm store (`actions/cache` on `~/.local/share/pnpm/store`), Cargo registry + target (`actions/cache` on `~/.cargo/registry` + `apps/gateway/target`).
-5. Explicit timeouts per workflow (see NFR-3 scope below).
-
-#### 4.3.1 Agent Subsystem CI
-
-Add a workflow that triggers on `packages/**`, `tests/unit/**`, `tests/integration/**` changes and runs:
-- TypeScript type checking (`tsc --noEmit`)
-- Unit tests (`vitest run` on `tests/unit/`)
-- Integration tests (`vitest run` on `tests/integration/`) with NATS service container
-
-(src: `.github/workflows/pr-validation.yml` — extend or create new workflow)
-
-#### 4.3.2 Gateway CI
-
-Add a workflow that triggers on `apps/gateway/**` changes and runs:
-- `cargo check --locked`
-- `cargo test --locked`
-- `cargo clippy --locked -- -D warnings`
-- Docker build verification (`docker build apps/gateway/`)
-
-(src: `.github/workflows/` — new `gateway-ci.yml`)
-
-#### 4.3.3 E2E CI (Stretch)
-
-Add a workflow that runs the E2E suite via `docker-compose.e2e.yml`. Requires the existing `loa-finn-e2e-stub.ts` mock server (19k lines, already in-tree). This may be deferred if the Docker Compose setup is complex. **NFR-3 (< 10 min) does NOT apply to this P2 workflow** — E2E with Docker Compose may exceed 10 minutes and that is acceptable.
-
-### 4.4 Housekeeping
-
-#### 4.4.1 Remove `sites/web/`
-
-The `sites/web/` directory contains only `next-env.d.ts`, `.env.local`, and `.vercel/project.json` — no source code. Remove it and add `sites/web/` to `.gitignore`.
-
-(src: `sites/web/`)
-
-#### 4.4.2 Deduplicate Contract Packages
-
-After loa-hounfour migration (4.1.3 Phase 3), remove both:
-- `packages/contracts/`
-- `tests/e2e/contracts/`
-
-Update `packages/adapters/package.json` to remove the `"@arrakis/loa-finn-contract": "file:../contracts"` dependency.
-
-### 4.5 Security Acceptance Criteria
-
-Protocol unification (§4.1) touches JWT claims, hashing, idempotency, and compatibility negotiation — exactly the surfaces that can accidentally drop tenant scoping or accept cross-tenant replay. The following P0 acceptance criteria apply:
-
-1. **JWT validation:** The `JwtClaimsSchema` used in agent adapters MUST be imported from loa-hounfour and validated on every inbound request. No request may bypass schema validation.
-
-2. **Tenant-scoped integrity:** `computeReqHash()` and `deriveIdempotencyKey()` inputs MUST include the tenant identifier (`sub` claim from JWT). This ensures that identical request bodies from different tenants produce different hashes and idempotency keys.
-
-3. **Cross-tenant isolation test:** Add at least one integration test asserting that two requests with identical bodies but different tenant identifiers produce different req-hashes and different idempotency keys. This prevents cross-tenant replay.
-
-4. **mTLS assumption:** Document in the SDD how mTLS is configured between services in production and how it is simulated in local Docker Compose / CI (even if IaC is out of scope). At minimum, state whether mTLS is enforced at the load balancer, sidecar, or application layer.
-
----
-
-## 5. Technical & Non-Functional Requirements
-
-| ID | Requirement | Rationale |
-|----|-------------|-----------|
-| NFR-1 | loa-hounfour `computeReqHash()` output must be byte-identical to loa-finn's for identical inputs | Integrity verification at the protocol boundary |
-| NFR-2 | Gateway must compile on Rust 1.85+ stable | Current Dockerfile pins 1.75 which is 14 months old |
-| NFR-3 | P0/P1 CI workflows (agent subsystem, gateway) must complete in < 10 minutes | Developer feedback loop. Excludes P2 E2E workflow (§4.3.3) which may exceed this SLA. |
-| NFR-4 | No secrets or `.env.local` files committed to repository | Security baseline |
+The stub validates every inbound JWT against the JWKS HTTP endpoint (with caching) and verifies `req_hash` agreement via `computeReqHash()`. This proves the real HTTP-based JWKS discovery + hash agreement flow, not just shared-secret key material.
 
 ---
 
-## 6. Scope & Prioritization
+## 5. Non-Functional Requirements
 
-### In Scope (This Cycle)
+| Requirement | Target |
+|-------------|--------|
+| Vector loading | < 100ms (JSON imports, no network) |
+| E2E suite runtime | < 60s (all 9 scenarios) |
+| Conformance suite runtime | < 10s (56 budget + 6 JWT vectors) |
+| Zero new dependencies | Only imports from already-installed `@0xhoneyjar/loa-hounfour` |
 
-| Priority | Workstream | Sections |
-|----------|-----------|----------|
-| P0 | Protocol Unification | 4.1.1 — 4.1.4 |
-| P0 | Gateway Resurrection | 4.2.1 — 4.2.5 |
-| P1 | Agent CI + Gateway CI | 4.3.1, 4.3.2 |
-| P1 | Housekeeping | 4.4.1, 4.4.2 |
+---
 
-### Stretch (If Time Permits)
-
-| Priority | Item | Section |
-|----------|------|---------|
-| P2 | E2E CI integration | 4.3.3 |
-
-### Out of Scope
+## 6. Out of Scope
 
 | Item | Reason |
 |------|--------|
-| Worker event handler stubs (guild join/leave, member join/leave, eligibility) | Separate feature work, not blocking production |
-| sietch TypeScript type debt (20+ files with TODO headers) | Existing debt, not new to this cycle |
-| Infrastructure as Code (Terraform/CDK) | Separate cycle — deploy workflows work via ECS API |
-| loa-finn pool claim enforcement (loa-finn #53) | loa-finn repo scope, not Arrakis |
+| Production deployment (Terraform apply) | Deferred — requires E2E validation first |
+| Monitoring dashboards | Deferred — follows deployment |
+| CI pipeline for E2E | Deferred — focus on making tests pass locally first |
+| New agent modules | All 36 modules are complete and verified on main |
+| Rust gateway changes | Gateway is merged and tested (27 Rust tests passing) |
 
 ---
 
-## 7. Risks & Dependencies
+## 7. Risks & Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| loa-hounfour tier type change breaks E2E tests | P0 | Run dual validation (Phase 1) before removing old schemas |
-| twilight 0.17 has more breaking changes than documented | P0 | Fix incrementally, compile after each change category |
-| loa-hounfour Node >= 22 requirement conflicts with Arrakis | P1 | Check `engines` in root `package.json`; likely already >= 20 |
-| E2E CI requires loa-finn mock server | P2 | Use existing `loa-finn-e2e-stub.ts` (19k lines); may not need external dep |
-| `sites/web/` removal might break Vercel project linking | Low | Confirm with stakeholder before deleting |
+| loa-hounfour vector format doesn't match E2E harness expectations | Medium | The adapter module (§4.1) provides the mapping layer — vectors are loaded and transformed, not consumed raw |
+| Budget calculation logic has drifted from loa-hounfour expectations | High | Conformance tests (§4.2) will catch this immediately — fix any drift before E2E |
+| Docker Compose E2E requires services not available in all dev environments | Low | Tests remain skippable via `SKIP_E2E` env var; conformance tests run without Docker |
 
 ---
 
-## 8. Dependencies
+## 8. Success Definition
 
-| Dependency | Source | Status |
-|-----------|--------|--------|
-| `@0xhoneyjar/loa-hounfour` v1.1.0 | GitHub | Published, 91 tests passing |
-| `twilight-model` 0.17 | crates.io | Available |
-| `twilight-http` 0.17 | crates.io | Available |
-| `metrics` 0.24 | crates.io | Available |
+RFC #31 is complete when ALL of the following are verified:
+
+**Vector activation:**
+- `VECTORS_AVAILABLE = true` in `agent-gateway-e2e.test.ts`
+- All 9 E2E scenarios resolve to real vector data (6 golden + 3 locally constructed)
+
+**Conformance:**
+- All 56 budget vectors pass (basic-pricing, extreme-tokens, streaming-cancel, price-change-boundary)
+- All 6 JWT vectors pass (4 static claim validation + 2 JWKS behavioral)
+- Budget tests enforce integer-only arithmetic (no floating-point values accepted)
+
+**Protocol interoperability (the core contract):**
+- `validateCompatibility(CONTRACT_VERSION)` returns `compatible: true` in every E2E request
+- `computeReqHash(body)` on the stub matches the `req_hash` JWT claim from Arrakis for every invoke — proving both sides canonicalize and hash identically
+- `deriveIdempotencyKey()` produces the same key on both sides for the same request
+
+**Integration:**
+- Docker Compose E2E round-trip passes with HTTP-based JWKS discovery (not just shared volume)
+- Stub validates inbound JWTs via JWKS HTTP endpoint with caching
+- All E2E requests validate against loa-hounfour schemas via pre-compiled validators
+
+**Tracking:**
+- Command Deck Round 9 posted to loa-finn#31 confirming 100%
 
 ---
 
-*"The spice must flow." — But first, the pipes must connect.*
+*This PRD is grounded in the first-principles codebase audit (Command Deck Round 8) which verified all 36 agent modules, 28 test files, and the full loa-hounfour integration on Arrakis main. The remaining work is validation, not implementation.*

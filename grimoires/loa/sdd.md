@@ -1,767 +1,575 @@
-# SDD: The Spice Must Flow — Production Readiness & Protocol Unification
+# SDD: The Golden Path — E2E Vector Migration & Launch Validation
 
-**Version:** 1.0.0
-**Cycle:** 023
+**Version:** 1.1.0
+**Cycle:** 024
 **Date:** 2026-02-13
-**Status:** Draft
-**PRD:** grimoires/loa/prd.md v1.1.0
-**References:** [Issue #54](https://github.com/0xHoneyJar/arrakis/issues/54) · [RFC #31](https://github.com/0xHoneyJar/loa-finn/issues/31)
+**PRD:** [The Golden Path PRD](grimoires/loa/prd.md)
 
 ---
 
 ## 1. Executive Summary
 
-This SDD designs four workstreams to bring Arrakis to production readiness:
-
-1. **Protocol Unification** — Replace `@arrakis/loa-finn-contract` with `@0xhoneyjar/loa-hounfour`, reconciling tier representation and pool mapping divergences at the adapter boundary.
-2. **Gateway Resurrection** — Fix all compilation errors in the Rust Discord gateway by aligning twilight, metrics, and async-nats APIs.
-3. **CI/CD Hardening** — Add agent subsystem and gateway CI workflows with proper caching and service containers.
-4. **Housekeeping** — Remove dead code (`sites/web/`, duplicate contract packages).
-
-The design preserves Arrakis's hexagonal architecture: the core ports layer (`packages/core/ports/`) remains unchanged, and all loa-hounfour adoption occurs at the adapter boundary.
+Wire loa-hounfour v1.1.0 golden test vectors into Arrakis's disabled E2E test suite, add conformance test suites for budget calculation and JWT validation, and validate the full Docker Compose round-trip. No new modules, no new dependencies — only connecting existing infrastructure.
 
 ---
 
 ## 2. System Architecture
 
-### 2.1 Current Architecture
+### 2.1 High-Level Component Map
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Discord / Telegram                                     │
-└──────────┬──────────────────────────────────────────────┘
-           │
-┌──────────▼──────────┐    ┌─────────────────────────────┐
-│  Rust Gateway       │    │  apps/worker/               │
-│  (apps/gateway/)    │───▶│  (background jobs)          │
-│  twilight + NATS    │    └─────────────────────────────┘
-└──────────┬──────────┘
-           │ NATS JetStream
-┌──────────▼──────────┐
-│  Sietch API         │
-│  (themes/sietch/)   │
-│  Express + Redis    │
-└──────────┬──────────┘
-           │
-┌──────────▼──────────────────────────────────────────────┐
-│  Agent Adapter Layer (packages/adapters/agent/)         │
-│  ┌──────────┐ ┌───────────┐ ┌────────────┐ ┌────────┐ │
-│  │ Gateway  │ │ Budget    │ │ Pool       │ │ LoaFinn│ │
-│  │ Facade   │ │ Manager   │ │ Mapping    │ │ Client │ │
-│  └──────────┘ └───────────┘ └────────────┘ └────────┘ │
-│  ┌──────────┐ ┌───────────┐ ┌────────────┐ ┌────────┐ │
-│  │ Rate     │ │ Idempot-  │ │ Contract   │ │ Req    │ │
-│  │ Limiter  │ │ ency      │ │ Version    │ │ Hash   │ │
-│  └──────────┘ └───────────┘ └────────────┘ └────────┘ │
-└──────────┬──────────────────────────────────────────────┘
-           │ HTTPS (circuit-broken, retried)
-┌──────────▼──────────┐
-│  loa-finn           │
-│  (external service) │
-└─────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        TEST INFRASTRUCTURE                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────────┐     ┌──────────────────────────────────┐  │
+│  │ tests/e2e/vectors/  │     │ tests/conformance/               │  │
+│  │                     │     │                                  │  │
+│  │  index.ts           │     │  budget-vectors.test.ts          │  │
+│  │  (vector loader +   │     │  jwt-vectors.test.ts             │  │
+│  │   getVector() API)  │     │  jwks-test-server.ts             │  │
+│  └────────┬────────────┘     └──────────┬───────────────────────┘  │
+│           │                              │                          │
+│           │  loads vectors via fs        │  imports functions from  │
+│           ▼                              ▼                          │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  node_modules/@0xhoneyjar/loa-hounfour/                     │   │
+│  │                                                             │   │
+│  │  dist/index.js          ← validators, computeReqHash,      │   │
+│  │                           CONTRACT_VERSION, POOL_IDS, etc.  │   │
+│  │  vectors/budget/*.json  ← 56 golden budget vectors          │   │
+│  │  vectors/jwt/*.json     ← 6 golden JWT vectors              │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                        E2E TEST HARNESS                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────────────────┐    ┌──────────────────────────────┐  │
+│  │ agent-gateway-e2e.test.ts│    │ loa-finn-e2e-stub.ts         │  │
+│  │                          │    │                              │  │
+│  │ 9 scenarios:             │    │ HTTP server (port 0):        │  │
+│  │  - invoke_free_tier      │───→│  /.well-known/jwks.json      │  │
+│  │  - invoke_pro_pool_routing    │  /v1/agents/invoke           │  │
+│  │  - invoke_stream_sse     │    │  /v1/agents/stream           │  │
+│  │  - invoke_rate_limited   │    │  /v1/usage/report            │  │
+│  │  - invoke_budget_exceeded│    │  /v1/health                  │  │
+│  │  - stream_abort_recon    │    │                              │  │
+│  │  - invoke_byok           │    │ Validates:                   │  │
+│  │  - invoke_ensemble_bon   │    │  - JWT sig (optional)        │  │
+│  │  - invoke_ensemble_pf    │    │  - req_hash agreement        │  │
+│  │                          │    │  - schema conformance        │  │
+│  │ VECTORS_AVAILABLE = true │    │  - version compatibility     │  │
+│  └──────────────────────────┘    └──────────────────────────────┘  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Dependency Graph (Pre-Migration)
+### 2.2 Existing Infrastructure (No Changes)
 
-```
-packages/core/ports/agent-gateway.ts
-  ├── defines: IAgentGateway, AgentInvokeRequest, AgentStreamEvent,
-  │            AccessLevel, ModelAlias, UsageInfo, BudgetStatus
-  └── no external dependencies (pure types)
-
-packages/contracts/ (@arrakis/loa-finn-contract)
-  ├── schema/loa-finn-contract.json (JSON Schema fixtures)
-  ├── vectors/loa-finn-test-vectors.json (E2E vectors)
-  └── src/index.ts (CONTRACT_VERSION, getVector, validateContractCompatibility)
-
-packages/adapters/agent/
-  ├── imports from: @arrakis/core/ports (types)
-  ├── imports from: @arrakis/loa-finn-contract (version only, via contract-version.ts)
-  └── 38 files implementing IAgentGateway port
-```
-
-### 2.3 Post-Migration Target
-
-```
-@0xhoneyjar/loa-hounfour (external, pinned #v1.1.0)
-  ├── schemas: JwtClaimsSchema, TierSchema, PoolIdSchema, ...
-  ├── integrity: computeReqHash, verifyReqHash, deriveIdempotencyKey
-  ├── vocabulary: POOL_IDS, TIER_POOL_ACCESS, TIER_DEFAULT_POOL
-  ├── versioning: CONTRACT_VERSION, validateCompatibility
-  └── 90 golden test vectors
-
-packages/core/ports/agent-gateway.ts  (UNCHANGED — keeps local type definitions)
-
-packages/adapters/agent/
-  ├── imports from: @arrakis/core/ports (types — unchanged)
-  ├── imports from: @0xhoneyjar/loa-hounfour (schemas, integrity, vocabulary)
-  ├── NEW: tier-mapping.ts (canonicalizeTier boundary function)
-  └── REMOVED: contract-version.ts, req-hash.ts, idempotency.ts (replaced by hounfour)
-
-packages/contracts/        → DELETED
-tests/e2e/contracts/       → DELETED
-```
+| Component | Path | Role |
+|-----------|------|------|
+| JWT Service | `packages/adapters/agent/jwt-service.ts` | Signs JWTs with `computeReqHash()` from loa-hounfour |
+| Budget Manager | `packages/adapters/agent/budget-manager.ts` | Two-counter reserve/finalize via Lua scripts |
+| Budget Lua | `packages/adapters/agent/lua/*.lua` | 4 Redis Lua scripts (reserve, finalize, reaper, rate-limit) |
+| NATS Schemas | `packages/shared/nats-schemas/` | 6 fixtures + 18 tests + fixture-conformance pattern |
+| Docker Compose | `tests/e2e/docker-compose.e2e.yml` | Redis(6399), arrakis(3099), loa-finn stub(8099) |
+| E2E Runner | `scripts/run-e2e.sh` | Clones loa-finn, generates ES256 keypair, builds Docker images |
 
 ---
 
 ## 3. Component Design
 
-### 3.1 Protocol Unification — Tier Canonicalization Layer
+### 3.1 Vector Loader (`tests/e2e/vectors/index.ts`)
 
-**Problem:** Arrakis has two tier representations that must be reconciled:
-- `AgentRequestContext.tier` (integer 1-9) — from Discord role resolution
-- `AgentRequestContext.accessLevel` (string `'free'|'pro'|'enterprise'`) — already canonical, used in JWT claims and pool routing
+**Purpose:** Load loa-hounfour golden vectors from filesystem and expose `getVector(name)` API.
 
-The existing code already maps integer → string in `tier-access-mapper.ts` during Discord role resolution, before the JWT is minted. The JWT `accessLevel` claim is already a canonical string. loa-hounfour's `Tier` type matches `AccessLevel` exactly.
-
-**Design:** The canonicalization boundary is at **Discord role resolution** (where NFT/role data produces `accessLevel`), NOT at JWT middleware ingress. The JWT already carries the canonical string. No integer-to-string mapping occurs in the agent request path.
-
-#### 3.1.1 Tier Contract Clarification
-
-**Tier source-of-truth:** The JWT `accessLevel` claim IS the canonical Tier. It is set during Discord role resolution and never changes downstream.
-
-```
-Discord Role Resolution (packages/adapters/discord/)
-  │
-  ├── NFT ownership check → integer tier (1-9)
-  ├── tier-access-mapper.ts: mapTierToAccessLevel(tier) → AccessLevel string
-  └── Mints JWT with accessLevel: 'free' | 'pro' | 'enterprise'
-      │
-      ▼
-Agent Auth Middleware (packages/adapters/agent/agent-auth-middleware.ts)
-  │
-  ├── Validates JWT signature (jose)
-  ├── Validates claims against JwtClaimsSchema (loa-hounfour)
-  ├── Reads accessLevel directly from claims (already canonical string)
-  └── Builds AgentRequestContext with accessLevel as Tier
-      │
-      ▼
-  ├──▶ pool-mapping.ts (resolvePoolId using Tier)
-  ├──▶ computeReqHash() (loa-hounfour, using Tier)
-  └──▶ deriveIdempotencyKey() (loa-hounfour, using Tier)
-```
-
-**What changes:** The `AccessLevel` type in `core/ports/agent-gateway.ts` is already `'free' | 'pro' | 'enterprise'`, which matches loa-hounfour's `Tier` exactly. No new `canonicalizeTier()` function is needed in the agent request path. The existing `tier-access-mapper.ts` in the Discord adapter continues to handle integer → string mapping.
-
-**Negative test:** Add a test that a JWT with `accessLevel: 'enterprise'` is accepted without any integer mapping, and a JWT with `accessLevel: 7` (integer) is rejected by `JwtClaimsSchema` validation.
-
-**New file `packages/adapters/agent/tier-mapping.ts`** is NOT needed — the mapping already exists in `tier-access-mapper.ts` in the Discord adapter layer. What IS needed is updating `tier-access-mapper.ts` to import the `Tier` type from loa-hounfour and validate against it.
-
-#### 3.1.2 Import Migration Map
-
-Each local module is replaced by a loa-hounfour import. The mapping preserves the existing call sites — only the import path changes.
-
-| Local File | Export | Replaced By | Notes |
-|-----------|--------|-------------|-------|
-| `contract-version.ts` | `CONTRACT_VERSION` | `import { CONTRACT_VERSION } from '@0xhoneyjar/loa-hounfour'` | Dynamic `require()` removed |
-| `contract-version.ts` | `validateContractCompatibility` | `import { validateCompatibility } from '@0xhoneyjar/loa-hounfour'` | Function renamed |
-| `req-hash.ts` | `computeReqHash` | `import { computeReqHash } from '@0xhoneyjar/loa-hounfour'` | Must verify byte-identical output |
-| `idempotency.ts` | `deriveIdempotencyKey` | `import { deriveIdempotencyKey } from '@0xhoneyjar/loa-hounfour'` | See §3.1.2.1 for split details |
-| `pool-mapping.ts` | `POOL_IDS` | `import { POOL_IDS } from '@0xhoneyjar/loa-hounfour'` | Local `POOL_IDS` deleted |
-| `pool-mapping.ts` | `ACCESS_LEVEL_POOLS` | `import { TIER_POOL_ACCESS } from '@0xhoneyjar/loa-hounfour'` | Renamed constant |
-| `pool-mapping.ts` | enterprise default `'architect'` | `import { TIER_DEFAULT_POOL } from '@0xhoneyjar/loa-hounfour'` | Changes to `'reviewer'` |
-
-##### 3.1.2.1 Idempotency Module Split
-
-`idempotency.ts` currently contains two concerns that are split during migration:
-
-| Concern | Current Location | Post-Migration Location |
-|---------|-----------------|------------------------|
-| Key derivation (`deriveIdempotencyKey`) | `idempotency.ts:112` | `@0xhoneyjar/loa-hounfour` — all call sites updated to use hounfour import |
-| State machine (`IdempotencyKeyState`, `isValidTransition`, `isTerminal`, `IDEMPOTENCY_TRANSITIONS`) | `idempotency.ts:57-137` | Stays in local `idempotency.ts` — Redis state management is Arrakis-specific |
-
-After migration, `idempotency.ts` is renamed to `idempotency-state.ts` to make the scope explicit. The local `deriveIdempotencyKey` function is deleted — every call site uses the hounfour import. An integration test verifies that the hounfour-derived key is accepted by the local state machine (i.e., keys from the new derivation function are valid Redis keys for the existing state transitions).
-
-**Files that keep local code** (not replaced by hounfour):
-
-| File | Reason |
-|------|--------|
-| `agent-gateway.ts` | Orchestration logic, not protocol contract |
-| `loa-finn-client.ts` | HTTP client, circuit breaker, SSE parsing — Arrakis-specific |
-| `budget-manager.ts` | Redis Lua scripts, pricing table — Arrakis-specific |
-| `idempotency.ts` (state machine only) | `IdempotencyKeyState` transitions are local to Arrakis's Redis state management. Only `deriveIdempotencyKey` moves to hounfour. |
-| `pool-mapping.ts` (routing logic) | `resolvePoolId()`, `validatePoolClaims()`, provider hints — Arrakis-specific routing. Constants move to hounfour, logic stays. |
-
-#### 3.1.3 Migration Phases
-
-**Phase 1 — Transformation validation (non-breaking):**
-1. Install `@0xhoneyjar/loa-hounfour#v1.1.0` in `packages/adapters/`
-2. Add new test file: `tests/unit/protocol-conformance.test.ts`
-   - Test: validated JWT claims with string `accessLevel` produce req-hashes matching loa-hounfour golden vectors
-   - Test: a JWT with non-string `accessLevel` (e.g., integer `7`) is rejected by `JwtClaimsSchema` validation
-   - Test: cross-tenant isolation (different `sub` claims → different hashes and idempotency keys)
-3. Separately in the Discord adapter layer: verify `tier-access-mapper.ts` correctly maps integer role tiers to canonical string `AccessLevel` values. Integer tiers must NEVER reach `computeReqHash()` or `deriveIdempotencyKey()` inputs.
-4. Run loa-hounfour's 90 golden test vectors via `vitest`
-5. Gate: all vectors pass before proceeding to Phase 2
-
-**Phase 2 — Replace imports (breaking, single PR):**
-1. Swap imports per the migration map above (6 adapter files)
-2. Update `pool-mapping.ts` to import constants from hounfour, keep routing logic local
-3. Keep `core/ports/agent-gateway.ts` unchanged — `MODEL_ALIAS_VALUES` stays as a local port-level definition. The adapter layer validates/translates against `POOL_IDS` from loa-hounfour at the boundary. This preserves the hexagonal invariant: core/ports has zero external dependencies.
-4. Run full test suite (unit + integration + E2E)
-
-**Phase 3 — Remove local packages:**
-1. Delete `packages/contracts/`
-2. Delete `tests/e2e/contracts/`
-3. Remove `"@arrakis/loa-finn-contract": "file:../contracts"` from `packages/adapters/package.json`
-4. Remove `packages/contracts` from `pnpm-workspace.yaml`
-
-### 3.2 Protocol Unification — Security Invariants
-
-Per PRD §4.5, protocol unification must preserve tenant isolation.
-
-#### 3.2.1 Tenant-Scoped Hashing
-
-The `computeReqHash()` and `deriveIdempotencyKey()` inputs MUST include the tenant identifier (`sub` claim from JWT). Current implementation in `req-hash.ts` already includes `tenantId` in the hash input. After migration to loa-hounfour's `computeReqHash()`, verify the same field is included.
-
-**Verification test** (`tests/integration/cross-tenant-isolation.test.ts`):
-
-Both `computeReqHash` and `deriveIdempotencyKey` accept typed input objects defined by loa-hounfour. The tenant identifier is the `sub` field from JWT claims in both cases. Use the validated JWT claims object (or a typed projection satisfying loa-hounfour's input types) at every call site to prevent field name mismatches.
+**Design:**
 
 ```typescript
-import { computeReqHash, deriveIdempotencyKey } from '@0xhoneyjar/loa-hounfour';
-import type { ReqHashInput, IdempotencyKeyInput } from '@0xhoneyjar/loa-hounfour';
-
-// Same request body, different tenant → different hash
-const claimsA: ReqHashInput = { ...basePayload, sub: 'tenant-a' };
-const claimsB: ReqHashInput = { ...basePayload, sub: 'tenant-b' };
-expect(computeReqHash(claimsA)).not.toBe(computeReqHash(claimsB));
-
-// Same for idempotency keys — uses same `sub` field name
-const ctxA: IdempotencyKeyInput = { ...baseCtx, sub: 'tenant-a' };
-const ctxB: IdempotencyKeyInput = { ...baseCtx, sub: 'tenant-b' };
-expect(deriveIdempotencyKey(ctxA)).not.toBe(deriveIdempotencyKey(ctxB));
-```
-
-The typed imports (`ReqHashInput`, `IdempotencyKeyInput`) provide compile-time guarantees that `sub` is included — a missing field is a type error, not a runtime bug.
-
-#### 3.2.2 JWT Validation
-
-After migration, `JwtClaimsSchema` is imported from loa-hounfour and validated on every inbound request in `agent-auth-middleware.ts`. The middleware rejects requests where:
-- JWT signature is invalid (jose verification)
-- Claims don't conform to `JwtClaimsSchema` (TypeBox validation)
-- Contract version is incompatible (`validateCompatibility()`)
-
-#### 3.2.3 mTLS Assumptions
-
-| Environment | Transport Security | Enforcement Point |
-|-------------|-------------------|-------------------|
-| Production (ECS) | mTLS via AWS App Mesh / service mesh sidecar | Load balancer + sidecar proxy |
-| Staging | TLS (not mutual) | ALB termination |
-| Local (docker-compose) | Plain HTTP | N/A (trusted network) |
-| CI | Plain HTTP | N/A (isolated containers) |
-
-mTLS is enforced at the infrastructure layer (service mesh sidecar), not at the application layer. Arrakis and loa-finn do not implement mTLS themselves — they verify JWT claims for authentication and rely on the mesh for transport encryption. This is out of scope for this cycle (IaC is excluded per PRD §6).
-
----
-
-### 3.3 Gateway Resurrection
-
-#### 3.3.1 Architecture Overview
-
-```
-Discord WebSocket API
-  │
-  ▼
-┌──────────────────────────────────────┐
-│  ShardPool (25 shards per pod)       │
-│  ┌─────────┐ ┌─────────┐ ┌────────┐ │
-│  │ Shard 0 │ │ Shard 1 │ │ ...    │ │
-│  │ (tokio) │ │ (tokio) │ │        │ │
-│  └────┬────┘ └────┬────┘ └───┬────┘ │
-│       │           │          │       │
-│  ┌────▼───────────▼──────────▼────┐  │
-│  │  Event Serialization           │  │
-│  │  serialize.rs                  │  │
-│  │  Discord Event → GatewayEvent  │  │
-│  └────────────────┬───────────────┘  │
-│                   │                  │
-│  ┌────────────────▼───────────────┐  │
-│  │  NATS JetStream Publisher      │  │
-│  │  publisher.rs                  │  │
-│  │  COMMANDS stream | EVENTS stream│  │
-│  └────────────────────────────────┘  │
-│                                      │
-│  ┌────────────────────────────────┐  │
-│  │  Metrics + Health (Axum)       │  │
-│  │  /health /ready /metrics       │  │
-│  └────────────────────────────────┘  │
-└──────────────────────────────────────┘
-```
-
-#### 3.3.2 Compilation Error Checklist
-
-All errors are enumerated from `cargo check` output. Each must be linked to a resolving commit.
-
-**Category A: Module Visibility (2 errors)**
-
-| # | File | Line | Error | Fix |
-|---|------|------|-------|-----|
-| A1 | `events/mod.rs` | 5 | `mod serialize` is private | Change to `pub mod serialize;` |
-| A2 | (cascading from A1) | — | Cannot import `serialize::*` | Resolved by A1 |
-
-**Category B: Twilight API 0.15 → 0.17 (12+ errors)**
-
-| # | File | Line | Error | Fix |
-|---|------|------|-------|-----|
-| B1 | `shard/pool.rs` | 68 | `Config::builder()` does not exist | `Config::new(token, intents)` |
-| B2 | `shard/pool.rs` | 70 | `ShardId::new(u64, u64)` type mismatch | Cast to `(u32, u32)` |
-| B3 | `shard/pool.rs` | 104 | `shard.id().number()` returns u32, expected u64 | `.into()` cast |
-| B4 | `shard/pool.rs` | 148 | Same as B3 | `.into()` cast |
-| B5 | `shard/pool.rs` | 156 | `shard.next_event()` may not exist in 0.17 | Use `shard.next_message()` or equivalent 0.17 API |
-| B6 | `shard/pool.rs` | 160 | u32/u64 mismatch in metrics call | Cast `shard_id as u64` |
-| B7 | `shard/pool.rs` | 175 | u32/u64 mismatch in state call | Cast `shard_id as u64` |
-| B8 | `shard/pool.rs` | 200 | u32/u64 mismatch | Cast |
-| B9 | `shard/pool.rs` | 228-229 | u32/u64 mismatch (2 sites) | Cast |
-| B10 | `events/serialize.rs` | 53 | `guild.id` is now `guild.id()` | Method call syntax |
-| B11 | `events/serialize.rs` | 57-59 | `guild.name`, `member_count`, `owner_id` fields removed | Use `serde_json::to_value(&guild)` for full payload |
-| B12 | `shard/pool.rs` | 162 | `ReceiveMessageError` API changed | Adapt error matching to 0.17 variants |
-
-**Category C: Metrics 0.21 → 0.24 Macro Syntax (9 errors)**
-
-| # | File | Line | Macro | Fix |
-|---|------|------|-------|-----|
-| C1 | `metrics/mod.rs` | 99 | `counter!` | Update to 0.24 label syntax |
-| C2 | `metrics/mod.rs` | 109 | `counter!` | Same |
-| C3 | `metrics/mod.rs` | 115 | `histogram!` | Same |
-| C4 | `metrics/mod.rs` | 124 | `counter!` | Same |
-| C5 | `metrics/mod.rs` | 133 | `counter!` | Same |
-| C6 | `metrics/mod.rs` | 143 | `gauge!` | Same |
-| C7 | `metrics/mod.rs` | 157 | `gauge!` | Same |
-| C8 | `metrics/mod.rs` | 166 | `gauge!` | Same |
-| C9 | `metrics/mod.rs` | 173 | `gauge!` | Same |
-
-**Approach:** The exact breaking changes between metrics 0.21 → 0.24 and metrics-exporter-prometheus 0.12 → 0.18 must be determined empirically during implementation, not assumed. The implementation sprint will:
-
-1. Pin exact versions in `Cargo.toml`: `metrics = "0.24"`, `metrics-exporter-prometheus = "0.18"`
-2. Run `cargo check` and capture the exact compiler errors for all 9 sites
-3. Consult the `metrics` CHANGELOG for the 0.22/0.23/0.24 migration guides
-4. The breaking change is likely in **recorder installation** (`PrometheusBuilder` API in `metrics-exporter-prometheus`) and/or **label syntax** in macros. Both must be checked.
-5. Fix recorder init first (if applicable), then fix macro call sites
-6. Verify with `cargo check` after each fix
-
-**Category D: async-nats 0.46 (2 errors)**
-
-| # | File | Line | Error | Fix |
-|---|------|------|-------|-----|
-| D1 | `nats/publisher.rs` | 98 | `ack.stream` field does not exist | Await `PublishAckFuture`, access result fields |
-| D2 | `nats/publisher.rs` | 99 | `ack.sequence` field does not exist | Same — `.await` the future first |
-
-**Fix pattern:**
-```rust
-// Old: ack is PublishAckFuture, not PublishAck
-let ack = js.publish(subject, payload).await?;
-tracing::debug!(stream = %ack.stream, seq = ack.sequence);
-
-// New: await the future to get PublishAck
-let ack = js.publish(subject, payload).await?.await?;  // double await
-tracing::debug!(stream = %ack.stream, seq = ack.sequence);
-```
-
-**Category E: Dockerfile (1 change, no compilation error)**
-
-| # | File | Line | Change |
-|---|------|------|--------|
-| E1 | `Dockerfile` | 6 | `rust:1.75-alpine` → `rust:1.85-alpine` |
-
-#### 3.3.3 Fix Order
-
-Errors have dependencies. Fix in this order:
-
-1. **A1** (module visibility) — unblocks all other imports
-2. **B1-B2** (Config + ShardId constructors) — unblocks shard spawning
-3. **B3-B9** (u32/u64 casts) — cascading from B2, mechanical fixes
-4. **B5, B12** (next_event + error handling) — core event loop
-5. **B10-B11** (GuildCreate field access) — event serialization
-6. **C1-C9** (metrics macros) — independent, can be done in parallel
-7. **D1-D2** (async-nats await) — independent
-8. **E1** (Dockerfile) — last, after `cargo check` passes
-
-After each category, run `cargo check` to verify error count decreases.
-
-#### 3.3.4 Docker Build Parity
-
-The Dockerfile must use `--locked` to match CI:
-
-```dockerfile
-FROM rust:1.85-alpine AS builder
-# build-base includes gcc/g++/make; openssl-dev provides headers for OpenSSL crates.
-# If gateway dependencies use rustls instead of openssl, openssl-dev can be removed.
-RUN apk add --no-cache build-base musl-dev openssl-dev openssl-libs-static pkgconfig
-WORKDIR /app
-COPY Cargo.toml Cargo.lock ./
-COPY src/ ./src/
-RUN cargo build --release --locked
-
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates tzdata
-RUN adduser -D -u 1001 gateway
-COPY --from=builder /app/target/release/arrakis-gateway /usr/local/bin/
-USER gateway
-EXPOSE 9090
-CMD ["arrakis-gateway"]
-```
-
-**Note:** The CI gateway workflow runs `docker build` as its final step, ensuring Docker build parity is verified on every PR. If Alpine/musl linkage fails in Docker but passes in CI's ubuntu runner, the Docker build step will catch it.
-
----
-
-### 3.4 CI/CD Hardening
-
-#### 3.4.1 Agent Subsystem Workflow
-
-**File:** `.github/workflows/agent-ci.yml`
-
-```yaml
-name: Agent Subsystem CI
-on:
-  pull_request:
-    paths:
-      - 'packages/**'
-      - 'tests/unit/**'
-      - 'tests/integration/**'
-      - 'pnpm-lock.yaml'
-
-jobs:
-  agent-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      nats:
-        image: nats:2
-        ports:
-          - 4222:4222
-          - 8222:8222
-        options: --health-cmd "wget -qO- http://localhost:8222/healthz || exit 1" --health-interval 5s --health-timeout 3s --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-      - run: pnpm -w install --frozen-lockfile
-      - name: Verify services
-        run: |
-          redis-cli -h localhost -p 6379 ping
-          timeout 10 bash -c 'until echo > /dev/tcp/localhost/4222; do sleep 0.5; done'
-          # Verify JetStream is enabled via monitoring endpoint
-          curl -sf http://localhost:8222/jsz | grep -q '"config"' || (echo "JetStream not enabled" && exit 1)
-      - run: pnpm --filter @arrakis/adapters exec tsc --noEmit
-      - run: pnpm --filter @arrakis/core exec tsc --noEmit
-      - name: Unit tests
-        run: vitest run tests/unit/ --reporter=verbose
-      - name: Integration tests
-        run: vitest run tests/integration/ --reporter=verbose
-        env:
-          REDIS_URL: redis://localhost:6379
-          NATS_URL: nats://localhost:4222
-```
-
-**Key decisions:**
-- Node 22 (matches loa-hounfour requirement)
-- Redis service container with health check (required by integration tests for budget/rate limiting)
-- NATS container started without JetStream by default; a pre-test step writes a config and restarts or the workflow uses a sidecar approach (see NATS JetStream note below)
-- Pre-test connectivity verification probes `/jsz` monitoring endpoint to confirm JetStream (fail fast if not available)
-- Port mapping via `ports:` field only (not `-p` in `options:` — GitHub Actions best practice)
-
-**NATS JetStream note:** GitHub Actions `services:` do not support `command:` overrides or volume mounts. Two viable approaches for enforcing JetStream:
-
-*Option A (Recommended) — Run NATS in a pre-test step instead of as a service:*
-```yaml
-steps:
-  - name: Start NATS with JetStream
-    run: |
-      docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:2 -js -m 8222
-      timeout 10 bash -c 'until curl -sf http://localhost:8222/jsz; do sleep 0.5; done'
-```
-
-*Option B — Use a custom image with config baked in:*
-Create `tests/ci/nats.conf` with `jetstream {}` and `http: 8222`, build a thin wrapper image.
-
-The implementation sprint should use Option A for simplicity. The service definition in the YAML above serves as a reference; the actual NATS startup moves to a step.
-- `pnpm -w install --frozen-lockfile` at workspace root (deterministic)
-- 10-minute timeout (NFR-3)
-
-#### 3.4.2 Gateway CI Workflow
-
-**File:** `.github/workflows/gateway-ci.yml`
-
-```yaml
-name: Gateway CI
-on:
-  pull_request:
-    paths:
-      - 'apps/gateway/**'
-
-jobs:
-  gateway-build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/gateway/target
-          key: cargo-${{ hashFiles('apps/gateway/Cargo.lock') }}
-      - name: Check
-        working-directory: apps/gateway
-        run: cargo check --locked
-      - name: Clippy
-        working-directory: apps/gateway
-        run: cargo clippy --locked -- -D warnings
-      - name: Test
-        working-directory: apps/gateway
-        run: cargo test --locked
-      - name: Docker build
-        run: docker build -f apps/gateway/Dockerfile apps/gateway/
-```
-
-**Key decisions:**
-- `--locked` on all cargo commands (parity with Dockerfile)
-- Cargo registry + target caching (speeds up subsequent runs)
-- Docker build verification (catches Dockerfile-only issues)
-- 10-minute timeout (NFR-3)
-- Clippy with `-D warnings` (treat warnings as errors)
-
-#### 3.4.3 E2E CI Workflow (Stretch — P2)
-
-**File:** `.github/workflows/e2e-ci.yml`
-
-Only triggered on push to `main` or manual dispatch (not on every PR — too expensive).
-
-```yaml
-name: E2E Tests
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20  # NFR-3 does NOT apply
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-      - run: pnpm -w install --frozen-lockfile
-      - name: Run E2E suite
-        run: ./tests/e2e/scripts/run-e2e.sh
-        env:
-          SKIP_E2E: 'false'
-```
-
-Note: This uses the existing `run-e2e.sh` which handles Docker Compose lifecycle, ephemeral key generation, and cleanup.
-
----
-
-### 3.5 Housekeeping
-
-#### 3.5.1 Remove `sites/web/`
-
-```bash
-# Remove tracked files
-git rm -r sites/web/
-
-# Add to .gitignore
-echo 'sites/web/' >> .gitignore
-```
-
-Files being removed:
-- `sites/web/next-env.d.ts` — Next.js type declaration (no source code)
-- `sites/web/.env.local` — **Credentials risk** (NFR-4)
-- `sites/web/.vercel/project.json` — Vercel project linking
-
-#### 3.5.2 Deduplicate Contract Packages
-
-After Phase 3 of import migration:
-
-1. Delete `packages/contracts/` directory
-2. Delete `tests/e2e/contracts/` directory
-3. Remove from `packages/adapters/package.json`:
-   ```json
-   "@arrakis/loa-finn-contract": "file:../contracts"
-   ```
-4. Remove `packages/contracts` from `pnpm-workspace.yaml` (if listed)
-5. Run `pnpm install` to update lockfile
-
-#### 3.5.3 Node Engine Enforcement
-
-**Root `package.json`:**
-```json
-{
-  "engines": {
-    "node": ">=22"
-  }
+// Module: tests/e2e/vectors/index.ts
+
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+
+const require = createRequire(import.meta.url);
+const HOUNFOUR_ROOT = dirname(
+  require.resolve('@0xhoneyjar/loa-hounfour/package.json')
+);
+
+function loadVectorFile<T>(relativePath: string): T {
+  return JSON.parse(
+    readFileSync(join(HOUNFOUR_ROOT, relativePath), 'utf-8')
+  ) as T;
 }
 ```
 
-**`.npmrc`:**
-```ini
-engine-strict=true
+**Vector registry:** A `Map<string, TestVector>` built at module load time, mapping E2E scenario names to their vector data.
+
+**Category A vectors** (6 golden): Loaded directly from loa-hounfour JSON files, transformed into the `TestVector` shape the E2E harness expects:
+
+```typescript
+interface TestVector {
+  name: string;
+  description: string;
+  request: {
+    jwt_claims: Record<string, unknown>;
+    body: Record<string, unknown>;
+  };
+  response: {
+    status: number;
+    headers?: Record<string, string>;
+    body?: Record<string, unknown>;
+    stream_events?: Array<{ type: string; data: unknown }>;
+    abort_after_events?: number;
+    expect_reconciliation?: boolean;
+  };
+  usage_report_payload: Record<string, unknown> | null;
+}
 ```
 
-This ensures `pnpm install` fails if Node < 22, catching mismatches before runtime.
+**Category B vectors** (3 locally constructed): Built from loa-hounfour schemas and vocabulary, validated against `validators` before registration. Each Category B vector includes a `_constructed: true` metadata flag.
+
+**Exports:**
+
+| Export | Signature | Description |
+|--------|-----------|-------------|
+| `getVector` | `(name: string) => TestVector` | Returns named vector; throws if not found |
+| `getTestVectors` | `() => TestVector[]` | Returns all 9 vectors |
+| `VECTORS_AVAILABLE` | `boolean` | Always `true` — hardcoded |
+
+### 3.2 E2E Test Modifications (`tests/e2e/agent-gateway-e2e.test.ts`)
+
+**Changes (minimal — surgical edits to existing file):**
+
+1. **Line 16-17:** Replace commented import with:
+   ```typescript
+   import { getVector, getTestVectors, VECTORS_AVAILABLE } from './vectors/index.js';
+   ```
+
+2. **Line 26:** Change `const VECTORS_AVAILABLE = false;` to remove (now imported).
+
+3. **Line 27:** Simplify to `const SHOULD_SKIP = SKIP_E2E;` (VECTORS_AVAILABLE is always true from import).
+
+4. **Lines 316, 436:** `getTestVectors()` function at bottom of file can be removed — imported from vectors module.
+
+**No changes to test logic.** The 9 test scenarios, helpers (`createMockJwt`, `parseSSEEvents`), and assertion logic remain identical. Only the vector source changes.
+
+### 3.3 E2E Stub Modifications (`tests/e2e/loa-finn-e2e-stub.ts`)
+
+**Changes:**
+
+1. **Lines 33-38:** Replace placeholder imports with real loa-hounfour imports:
+   ```typescript
+   import {
+     CONTRACT_VERSION,
+     validators,
+     computeReqHash,
+     verifyReqHash,
+     POOL_IDS,
+     TIER_POOL_ACCESS,
+     ERROR_CODES,
+   } from '@0xhoneyjar/loa-hounfour';
+   import { getVector, getTestVectors } from './vectors/index.js';
+   ```
+
+2. **Line 305, 343, 400:** Replace `CONTRACT_SCHEMA.version` with `CONTRACT_VERSION` (direct import).
+
+3. **Vector matching (lines 511-552):** Update `matchVector()` and `matchStreamVector()` to use `getTestVectors()` instead of `TEST_VECTORS.vectors`.
+
+4. **Raw body preservation:** The existing `readBody()` method (line 558) already accumulates `Buffer` chunks and calls `Buffer.concat(chunks)`. Add a `rawBody: Buffer` field alongside the string body to preserve exact wire bytes for hashing:
+   ```typescript
+   // In readBody(), return both raw Buffer and string:
+   private readBody(req: IncomingMessage): Promise<{ raw: Buffer; text: string }> {
+     return new Promise((resolve, reject) => {
+       const chunks: Buffer[] = [];
+       req.on('data', (chunk: Buffer) => chunks.push(chunk));
+       req.on('end', () => {
+         const raw = Buffer.concat(chunks);
+         resolve({ raw, text: raw.toString('utf-8') });
+       });
+       req.on('error', reject);
+     });
+   }
+   ```
+
+5. **Request validation (handleInvoke, line 267):** Add `computeReqHash()` agreement check using **raw bytes** (not re-encoded string):
+   ```typescript
+   // CRITICAL: Hash the raw wire bytes, not the re-encoded string.
+   // This matches how Arrakis computes the hash before sending.
+   const computedHash = computeReqHash(rawBody);  // rawBody is the Buffer from readBody()
+   const jwtHash = claims?.req_hash as string;
+   if (jwtHash && computedHash !== jwtHash) {
+     res.writeHead(409, { 'Content-Type': 'application/json' });
+     res.end(JSON.stringify({
+       error: 'HASH_MISMATCH',
+       computed: computedHash,
+       jwt: jwtHash
+     }));
+     return;
+   }
+   ```
+   **Why raw bytes:** `computeReqHash()` canonicalizes and hashes the HTTP request body. If we converted to string and back to Buffer, whitespace or encoding differences could cause hash divergence even when the request is correct. The raw Buffer from `req.on('data')` is the exact byte sequence Arrakis sent.
+
+### 3.4 Budget Conformance Suite (`tests/conformance/budget-vectors.test.ts`)
+
+**Purpose:** Parametrized tests running 56 loa-hounfour budget vectors against Arrakis budget calculation logic.
+
+**Design:**
+
+```
+tests/conformance/
+├── budget-vectors.test.ts    ← Parametrized budget tests
+├── jwt-vectors.test.ts       ← Parametrized JWT tests
+└── jwks-test-server.ts       ← Local JWKS server for behavioral tests
+```
+
+**Budget test structure:**
+
+```typescript
+describe('Budget Conformance — basic-pricing', () => {
+  const vectors = loadVectorFile<BasicPricingVectors>(
+    'vectors/budget/basic-pricing.json'
+  );
+
+  describe('single_cost_vectors', () => {
+    for (const v of vectors.single_cost_vectors) {
+      it(`${v.id}: ${v.note}`, () => {
+        const result = calculateSingleCost(v.tokens, v.price_micro_per_million);
+        expect(result.cost_micro).toBe(v.expected_cost_micro);
+        expect(result.remainder_micro).toBe(v.expected_remainder_micro);
+      });
+    }
+  });
+
+  describe('total_cost_vectors', () => {
+    for (const v of vectors.total_cost_vectors) {
+      it(`${v.id}: ${v.note}`, () => {
+        const result = calculateTotalCost(v.input);
+        expect(result.input_cost_micro).toBe(v.expected.input_cost_micro);
+        expect(result.output_cost_micro).toBe(v.expected.output_cost_micro);
+        expect(result.total_cost_micro).toBe(v.expected.total_cost_micro);
+      });
+    }
+  });
+});
+```
+
+**`calculateSingleCost` implementation:**
+
+The budget vectors define a pure arithmetic function:
+```
+cost_micro = floor(tokens * price_micro_per_million / 1_000_000)
+remainder_micro = (tokens * price_micro_per_million) % 1_000_000
+```
+
+This function is extracted from the budget manager's `estimateCost()` path.
+
+**JSON numeric parsing (CRITICAL):** JSON cannot represent `bigint`. The extreme-tokens vectors encode large values in two ways:
+- `"tokens": 9007199254740992` — exceeds `MAX_SAFE_INTEGER`, lossy as JS `number`
+- `"expected_cost_micro_string": "900719925474099200"` — string representation for BigInt-required values
+
+**Parsing layer:** All vector numeric fields MUST be parsed through a safe conversion function:
+
+```typescript
+/** Parse a vector numeric field to BigInt, handling both number and string inputs */
+function toBigInt(value: number | string): bigint {
+  if (typeof value === 'string') return BigInt(value);
+  // Guard: reject numbers that exceed MAX_SAFE_INTEGER (lossy from JSON)
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`Unsafe integer ${value} — use string representation`);
+  }
+  return BigInt(value);
+}
+
+function calculateSingleCost(tokens: number | string, priceMicroPerMillion: number | string) {
+  const t = toBigInt(tokens);
+  const p = toBigInt(priceMicroPerMillion);
+  const product = t * p;
+  const MILLION = 1_000_000n;
+  return {
+    cost_micro: product / MILLION,
+    remainder_micro: product % MILLION,
+  };
+}
+```
+
+**Assertion strategy:** Compare BigInt to BigInt. For vectors with `expected_cost_micro_string`, parse expected as `BigInt(string)`. For vectors with `expected_cost_micro` as a safe integer, compare with `BigInt(expected)`:
+
+```typescript
+const expected = v.expected_cost_micro_string
+  ? BigInt(v.expected_cost_micro_string)
+  : BigInt(v.expected_cost_micro);
+expect(result.cost_micro).toBe(expected);
+```
+
+**Integer guard:** Every test includes:
+```typescript
+// Result is always BigInt from our calculation
+expect(typeof result.cost_micro).toBe('bigint');
+```
+
+### 3.5 JWT Conformance Suite (`tests/conformance/jwt-vectors.test.ts`)
+
+**Purpose:** Parametrized tests for 6 JWT conformance vectors — 4 static claim validation + 2 JWKS behavioral.
+
+**Static claim tests:**
+
+```typescript
+describe('JWT Conformance — static claims', () => {
+  let testKey: { privateKey: KeyLike; publicJwk: JWK };
+
+  beforeAll(async () => {
+    testKey = await generateTestES256Key();
+  });
+
+  for (const vector of staticVectors) {
+    it(`${vector.id}: ${vector.description}`, async () => {
+      // Sign the claims from the vector with test key
+      const token = await signClaims(vector.claims, testKey.privateKey);
+
+      // Validate using Arrakis JWT validation logic
+      const result = await validateJwt(token, testKey.publicJwk);
+
+      if (vector.expected === 'valid') {
+        expect(result.valid).toBe(true);
+      } else {
+        expect(result.valid).toBe(false);
+        expect(result.error).toBe(vector.error);
+      }
+    });
+  }
+
+  // Hash agreement: validate req_hash is well-formed and consistent
+  // NOTE: Only assert empty-body hash for vectors that don't include a body field.
+  // Vectors with explicit body material should have their hash computed from that body.
+  it('req_hash in body-less vectors matches computeReqHash(empty)', () => {
+    const emptyHash = computeReqHash(Buffer.alloc(0));
+    for (const v of staticVectors) {
+      if (!v.body && !v.req_body_bytes_base64) {
+        // Vector has no explicit body → req_hash must be the empty-body canonical hash
+        expect(v.claims.req_hash).toBe(emptyHash);
+      } else if (v.req_body_bytes_base64) {
+        // Vector includes explicit body bytes → compute hash from those bytes
+        const bodyBuf = Buffer.from(v.req_body_bytes_base64, 'base64');
+        const expectedHash = computeReqHash(bodyBuf);
+        expect(v.claims.req_hash).toBe(expectedHash);
+      }
+      // If vector has body but no base64 bytes, skip hash assertion —
+      // rely on E2E stub hash agreement for end-to-end validation
+    }
+  });
+});
+```
+
+### 3.6 JWKS Test Server (`tests/conformance/jwks-test-server.ts`)
+
+**Purpose:** Local HTTP server for deterministic JWKS rotation and timeout simulation.
+
+**API:**
+
+```typescript
+class JwksTestServer {
+  constructor();
+
+  // Lifecycle
+  async start(): Promise<void>;        // Listen on random port
+  async stop(): Promise<void>;
+  getJwksUri(): string;                 // http://127.0.0.1:{port}/.well-known/jwks.json
+
+  // Key management
+  async addKey(kid: string): Promise<{ privateKey: KeyLike; publicJwk: JWK }>;
+  removeKey(kid: string): void;
+  getKeys(): JWK[];
+
+  // Fault injection
+  setBlocked(blocked: boolean): void;   // 503 responses
+  setDelay(ms: number): void;           // Artificial latency
+  resetFaults(): void;
+}
+```
+
+**JWKS endpoint behavior:**
+- Normal: Returns `{ keys: [...] }` with all registered keys
+- Blocked (`setBlocked(true)`): Returns 503 Service Unavailable
+- Delayed (`setDelay(10000)`): Responds after delay (triggers client timeout)
+
+**Test choreography for jwt-rotated-key:**
+
+**JWKS refresh semantics:** The test MUST configure the validator to refetch JWKS on unknown `kid` (kid-miss refresh), not just on TTL expiry. This is the production behavior — `jose`'s `createRemoteJWKSet()` does this by default. The `cacheTtl` parameter only controls how often the full keyset is refreshed proactively; kid-miss triggers an immediate refetch regardless of TTL.
+
+For the **rotation test**, set `cacheTtl: 0` to guarantee no stale cache interference:
+
+```typescript
+it('jwt-rotated-key: accepts after rotation, rejects old key', async () => {
+  const server = new JwksTestServer();
+  await server.start();
+
+  // Step 1: Register K1
+  const k1 = await server.addKey('k1');
+  // cacheTtl=0 ensures JWKS is always fetched fresh — removes TTL flakiness
+  const jwtService = createJwtValidator({
+    jwksUri: server.getJwksUri(),
+    cacheTtl: 0,
+    refreshTimeout: 2000,
+  });
+
+  // Step 2: Validate K1 token — PASS (fetches JWKS, finds K1)
+  const t1 = await signToken(validClaims, k1.privateKey, 'k1');
+  expect(await jwtService.validate(t1)).toHaveProperty('valid', true);
+
+  // Step 3: Rotate to K2
+  server.removeKey('k1');
+  const k2 = await server.addKey('k2');
+
+  // Step 4: Validate K2 token — PASS (kid-miss triggers refetch, finds K2)
+  const t2 = await signToken(validClaims, k2.privateKey, 'k2');
+  expect(await jwtService.validate(t2)).toHaveProperty('valid', true);
+
+  // Step 5: Validate K1 token — REJECT (refetch returns only K2)
+  const t3 = await signToken(validClaims, k1.privateKey, 'k1');
+  expect(await jwtService.validate(t3)).toHaveProperty('valid', false);
+
+  await server.stop();
+});
+```
+
+For the **timeout test**, set `cacheTtl: 5000` so cache is populated before blocking:
+
+```typescript
+it('jwt-jwks-timeout: DEGRADED mode with cached vs unknown kid', async () => {
+  const server = new JwksTestServer();
+  await server.start();
+
+  // Step 1: Register K1, populate cache
+  const k1 = await server.addKey('k1');
+  const jwtService = createJwtValidator({
+    jwksUri: server.getJwksUri(),
+    cacheTtl: 5000,
+    refreshTimeout: 2000,
+  });
+  const t1 = await signToken(validClaims, k1.privateKey, 'k1');
+  expect(await jwtService.validate(t1)).toHaveProperty('valid', true);
+
+  // Step 2: Block JWKS endpoint
+  server.setBlocked(true);
+
+  // Step 3: Cached kid=k1 — ACCEPT (DEGRADED, serves from cache)
+  const t2 = await signToken(validClaims, k1.privateKey, 'k1');
+  expect(await jwtService.validate(t2)).toHaveProperty('valid', true);
+
+  // Step 4: Unknown kid=k3 — REJECT (cannot refresh, kid not in cache)
+  const k3 = await generateTestES256Key('k3');
+  const t3 = await signToken(validClaims, k3.privateKey, 'k3');
+  expect(await jwtService.validate(t3)).toHaveProperty('valid', false);
+
+  server.resetFaults();
+  await server.stop();
+});
+```
 
 ---
 
 ## 4. Data Architecture
 
-No database schema changes in this cycle. The existing PostgreSQL schema (managed by Drizzle ORM in `themes/sietch/`) and Redis key structures (budget Lua scripts in `packages/adapters/agent/lua/`) are unchanged.
+No database changes. All test data comes from:
 
-**Redis key impact from pool mapping change:**
-- Enterprise default pool changes from `'architect'` to `'reviewer'` (TIER_DEFAULT_POOL)
-- Budget keys are scoped by `communityId:month` — pool ID is not part of the key
-- No Redis data migration needed
-
----
-
-## 5. API Design
-
-No API endpoint changes in this cycle. The agent gateway HTTP API (exposed via Sietch) maintains the same request/response contracts. The change is internal: which package provides the schema validators and hash functions.
-
-**Wire format impact:** None. The JSON payloads between Arrakis and loa-finn are unchanged. The JWT already carries `accessLevel` as a canonical string (`'free'|'pro'|'enterprise'`) — this is the same representation as loa-hounfour's `Tier` type. The integer `tier` field exists only in the Discord role resolution layer and never appears in JWT claims or loa-finn payloads. No wire format migration is needed.
+| Source | Format | Size |
+|--------|--------|------|
+| `loa-hounfour/vectors/budget/*.json` | JSON (5 files) | ~56 vectors |
+| `loa-hounfour/vectors/jwt/conformance.json` | JSON (1 file) | 6 vectors |
+| Category B fixtures | TypeScript objects | 3 constructed vectors |
 
 ---
 
-## 6. Security Architecture
+## 5. Security Architecture
 
-### 6.1 JWT Claim Validation Chain
+### 5.1 Hash Agreement (Core Contract)
+
+The `req_hash` is the cryptographic lynchpin of the arrakis ↔ loa-finn protocol:
 
 ```
-Inbound Request (JWT with accessLevel: 'free'|'pro'|'enterprise')
-  │
-  ▼
-agent-auth-middleware.ts
-  ├── 1. Verify JWT signature (jose library, JWKS rotation)
-  ├── 2. Validate claims against JwtClaimsSchema (loa-hounfour TypeBox)
-  │      → Rejects non-string accessLevel (e.g., integer 7 fails validation)
-  ├── 3. Extract tenant ID (sub claim)
-  ├── 4. Read accessLevel directly from validated claims (already canonical Tier)
-  └── 5. Build AgentRequestContext with accessLevel as Tier
-  │
-  ▼
-agent-gateway.ts
-  ├── 6. computeReqHash(claims) — typed input includes sub, different tenants → different hashes
-  ├── 7. deriveIdempotencyKey(claims) — typed input includes sub, prevents cross-tenant replay
-  └── 8. validateCompatibility() checks CONTRACT_VERSION header
+Arrakis:   reqHash = computeReqHash(requestBody)
+           JWT.req_hash = reqHash
+
+loa-finn:  computedHash = computeReqHash(receivedBody)
+           assert(JWT.req_hash === computedHash)
 ```
 
-### 6.2 Threat Mitigations
+If hashes diverge → idempotency keys diverge → duplicate or lost requests.
 
-| Threat | Mitigation | Verification |
-|--------|-----------|-------------|
-| Cross-tenant replay | `sub` included in req-hash and idempotency key inputs | Integration test (§3.2.1) |
-| Schema bypass | JwtClaimsSchema validated on every request, imported from loa-hounfour | Middleware unit test |
-| Hash mismatch | Golden test vectors run in CI (Phase 1 gate) | 90 vectors in test suite |
-| Contract version drift | `validateCompatibility()` checks on every loa-finn response | loa-finn-client.ts:457 |
+The E2E tests validate this by:
+1. Stub receives request body as Buffer
+2. Calls `computeReqHash(body)` independently
+3. Compares against `req_hash` claim extracted from JWT
+4. Returns 409 HASH_MISMATCH on divergence (fail-loud)
 
----
+### 5.2 Version Negotiation
 
-## 7. Integration Points
+`validateCompatibility(local, remote)` enforces semver N/N-1:
+- Same major + minor within 1: `compatible: true`
+- Major version mismatch: `compatible: false, reason: "Major version mismatch"`
+- Minor version gap > 1: `compatible: false`
 
-| Integration | Protocol | Auth | Changes This Cycle |
-|------------|----------|------|-------------------|
-| Arrakis → loa-finn | HTTPS + SSE | JWT (ES256) | Schema validation source changes to loa-hounfour |
-| Gateway → NATS | NATS protocol | Token auth | Fix compilation errors (async-nats 0.46) |
-| Gateway → Discord | WebSocket | Bot token | Fix compilation errors (twilight 0.17) |
-| Sietch → Redis | Redis protocol | Password | No changes |
-| Sietch → PostgreSQL | TCP | Password | No changes |
-| CI → GitHub | HTTPS | GITHUB_TOKEN | New workflows added |
+Tested via existing contract version tests in E2E suite (lines 292-359).
 
 ---
 
-## 8. Scalability & Performance
+## 6. File Manifest
 
-No performance-impacting changes. The protocol unification is a build-time change (different import paths) with identical runtime behavior. The gateway fixes restore existing functionality without architectural changes.
+### New Files
 
-**Gateway performance targets** (unchanged):
-- ~40MB memory per 1000 guilds
-- 25 shards per pod
-- <1ms event serialization
-- <5ms NATS publish latency
+| Path | Purpose | Lines (est.) |
+|------|---------|-------------|
+| `tests/e2e/vectors/index.ts` | Vector loader + getVector() API | ~180 |
+| `tests/conformance/budget-vectors.test.ts` | 56 budget conformance tests | ~200 |
+| `tests/conformance/jwt-vectors.test.ts` | 6 JWT conformance tests | ~250 |
+| `tests/conformance/jwks-test-server.ts` | Local JWKS server for behavioral tests | ~120 |
 
----
+### Modified Files
 
-## 9. Deployment Architecture
+| Path | Change | Impact |
+|------|--------|--------|
+| `tests/e2e/agent-gateway-e2e.test.ts` | Replace vector import, remove VECTORS_AVAILABLE const | 4 lines changed |
+| `tests/e2e/loa-finn-e2e-stub.ts` | Replace placeholders with loa-hounfour imports, add hash check | ~20 lines changed |
 
-No deployment changes in this cycle (IaC is out of scope per PRD §6). The existing ECS deployment via `deploy-production.yml` workflow continues to work. The gateway Dockerfile update (rust:1.75 → 1.85) requires rebuilding the container image.
+### Unchanged Files (Verified on Main)
 
-**Deployment sequence for gateway:**
-1. Fix compilation errors → `cargo check` passes
-2. Update Dockerfile base image → `docker build` passes
-3. Gateway CI workflow catches regressions going forward
-4. Deploy via existing ECS workflow (manual trigger)
-
----
-
-## 10. Development Workflow
-
-### 10.1 Branch Strategy
-
-Single feature branch for this cycle: `feature/spice-must-flow`
-
-Sprint commits use conventional commit format:
-- `feat(protocol): install loa-hounfour dependency`
-- `feat(protocol): add tier canonicalization layer`
-- `refactor(protocol): replace contract-version imports with loa-hounfour`
-- `fix(gateway): align twilight-model to 0.17`
-- `fix(gateway): update metrics macro syntax for 0.24`
-- `ci: add agent subsystem CI workflow`
-- `ci: add gateway CI workflow`
-- `chore: remove sites/web/ dead code`
-
-### 10.2 Testing Strategy
-
-| Test Type | When | What |
-|-----------|------|------|
-| Golden vectors (90) | Phase 1 gate | loa-hounfour conformance |
-| Cross-tenant isolation | Phase 1 | Hash and idempotency key isolation |
-| Unit tests | Every commit | Tier mapping, pool mapping, budget manager |
-| Integration tests | Every PR (new CI) | Full adapter layer with Redis + NATS |
-| `cargo check --locked` | Every gateway PR (new CI) | Compilation verification |
-| `cargo clippy` | Every gateway PR | Lint quality |
-| E2E tests | Post-merge to main (stretch) | Full contract compliance |
+All 36 agent modules, 4 Lua scripts, jwt-service.ts, budget-manager.ts, NATS schemas, Rust gateway — no modifications needed.
 
 ---
 
-## 11. Technical Risks & Mitigation
+## 7. Technical Risks & Mitigations
 
-| Risk | Impact | Likelihood | Mitigation |
-|------|--------|-----------|------------|
-| loa-hounfour `computeReqHash` produces different output than local implementation | P0 — protocol interop failure | Low (golden vectors) | Phase 1 gate: run 90 vectors before replacing imports |
-| Twilight 0.17 has undocumented breaking changes beyond the 12 identified | P0 — gateway still broken | Medium | Fix incrementally, `cargo check` after each category |
-| Enterprise default pool change (`architect` → `reviewer`) breaks existing users | P1 — wrong model routing | Low | This is adopting the canonical value; loa-finn already uses `reviewer` |
-| NATS service container in CI is flaky | P1 — unreliable CI | Low | Use official `nats:latest` image with health check |
-| Node 22 requirement breaks existing dev environments | P1 — developer friction | Low | Most devs already on 22+; `.npmrc` engine-strict catches mismatches early |
-
----
-
-## 12. Future Considerations
-
-| Item | Cycle | Notes |
-|------|-------|-------|
-| Worker event handler stubs | Next | Guild join/leave, member join/leave, eligibility |
-| Pool claim enforcement | loa-finn scope | loa-finn #53 |
-| IaC (Terraform/CDK) | Next | Currently deploying via ECS API |
-| sietch TypeScript type debt | Future | 20+ files with TODO headers |
-| npm registry publication of loa-hounfour | Future | Switch from GitHub dep to `@0xhoneyjar/loa-hounfour: "^1.1.0"` |
+| Risk | Impact | Mitigation | PRD Ref |
+|------|--------|------------|---------|
+| Budget manager uses cents internally, vectors use micro-USD | High | Extract pure arithmetic function that operates in micro-USD; existing manager calls it with unit conversion | §4.2 |
+| Extreme-tokens vectors overflow JS number | Medium | BigInt path for values > MAX_SAFE_INTEGER; integer guard rejects floats | §4.2 |
+| JWKS cache timing makes rotation tests flaky | Medium | Fixed cache TTL=5s, refresh timeout=2s, deterministic choreography | §4.3 |
+| Category B fixtures drift from loa-hounfour schemas | Low | Each fixture validated against loa-hounfour validators at test setup | §4.1.1 |
 
 ---
 
-*"The spice must flow." — And now we've drawn the blueprints for the pipes.*
+## 8. Development Workflow
+
+### Test Execution Order
+
+```bash
+# 1. Conformance tests (fast, no Docker)
+npx vitest run tests/conformance/
+
+# 2. E2E tests (requires stub, no Docker)
+SKIP_E2E=false npx vitest run tests/e2e/agent-gateway-e2e.test.ts
+
+# 3. Docker Compose E2E (full round-trip)
+./scripts/run-e2e.sh
+```
+
+### Definition of Done
+
+Per PRD §8 — all conformance vectors pass, VECTORS_AVAILABLE=true, hash agreement verified, Docker Compose round-trip passes.
+
+---
+
+*This SDD describes connecting existing infrastructure, not building new systems. The architecture adds ~750 lines of test code to wire 62 golden vectors into an already-complete 20,000-line codebase.*
