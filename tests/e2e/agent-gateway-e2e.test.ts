@@ -24,11 +24,6 @@ const SKIP_E2E = process.env['SKIP_E2E'] !== 'false';
 
 // Gate: E2E tests require test vectors. Currently pending hounfour migration.
 const VECTORS_AVAILABLE = false; // Set to true when getVector is restored
-const SKIP_REASON = SKIP_E2E
-  ? 'E2E tests disabled (SKIP_E2E != false)'
-  : !VECTORS_AVAILABLE
-    ? 'E2E tests skipped: pending hounfour vector migration (getVector unavailable)'
-    : '';
 const SHOULD_SKIP = SKIP_E2E || !VECTORS_AVAILABLE;
 
 // --------------------------------------------------------------------------

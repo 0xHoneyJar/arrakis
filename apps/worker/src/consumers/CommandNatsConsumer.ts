@@ -36,7 +36,7 @@ export interface InteractionPayload {
   data: {
     interaction_id: string;
     interaction_type: string;
-    token: string;
+    interaction_token: string;
     command_name?: string;
     subcommand?: string;
     options?: Record<string, unknown>;
@@ -57,7 +57,7 @@ function toDiscordEventPayload(payload: InteractionPayload): DiscordEventPayload
     channelId: payload.channel_id ?? undefined,
     userId: payload.user_id ?? undefined,
     interactionId: payload.data.interaction_id,
-    interactionToken: payload.data.token,
+    interactionToken: payload.data.interaction_token,
     commandName: payload.data.command_name,
     subcommand: payload.data.subcommand,
     data: payload.data.options,
