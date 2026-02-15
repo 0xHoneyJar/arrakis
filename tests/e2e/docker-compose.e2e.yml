@@ -1,5 +1,6 @@
 # E2E Test Infrastructure — Full Cross-System Stack
 # Cycle-017: Containerized E2E (arrakis + loa-finn + Redis)
+# Cycle-026: Added billing E2E env vars (Sprint 244, Task 6.1)
 #
 # JWKS Bootstrap: arrakis writes JWKS to a shared volume on startup.
 # loa-finn reads JWKS from the mounted file (ARRAKIS_JWKS_FILE),
@@ -42,6 +43,12 @@ services:
       - AGENT_JWT_PRIVATE_KEY=${AGENT_JWT_PRIVATE_KEY:-}
       - AGENT_JWT_KEY_ID=e2e-test-key
       - JWKS_EXPORT_PATH=/shared/arrakis-jwks.json
+      # Billing E2E (Sprint 244, Task 6.1)
+      - FEATURE_BILLING_ENABLED=true
+      - BILLING_MODE=${BILLING_MODE:-live}
+      - BILLING_ADMIN_JWT_SECRET=${BILLING_ADMIN_JWT_SECRET:-e2e-admin-jwt-secret-for-testing-only-32ch}
+      - BILLING_INTERNAL_JWT_SECRET=${BILLING_INTERNAL_JWT_SECRET:-e2e-s2s-jwt-secret-for-testing-only-32chr}
+      - DATABASE_PATH=/data/billing.db
     ports:
       - "3099:3000"
     depends_on:
@@ -49,6 +56,7 @@ services:
         condition: service_healthy
     volumes:
       - jwks-shared:/shared
+      - billing-data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 5s
@@ -83,3 +91,4 @@ services:
 
 volumes:
   jwks-shared:
+  billing-data:
