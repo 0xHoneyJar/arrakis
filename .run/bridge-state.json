@@ -1,25 +1,27 @@
 {
   "schema_version": 1,
-  "bridge_id": "bridge-20260213-c012rt",
+  "bridge_id": "bridge-20260215-2faa8f",
   "state": "ITERATING",
   "config": {
-    "depth": 5,
+    "depth": 3,
     "mode": "full",
     "flatline_threshold": 0.05,
     "per_sprint": false,
-    "branch": "feature/cycle-012-flatline-red-team",
-    "pr_number": null
+    "branch": "feature/billing-payments-release",
+    "repo": "",
+    "pr_number": 63
   },
   "timestamps": {
-    "started": "2026-02-13T20:15:00Z",
-    "last_activity": "2026-02-13T20:15:00Z"
+    "started": "2026-02-15T20:00:00Z",
+    "last_activity": "2026-02-15T20:00:00Z"
   },
   "iterations": [],
   "flatline": {
     "initial_score": null,
     "last_score": null,
     "consecutive_below_threshold": 0,
-    "flatlined": false
+    "flatline_detected": false,
+    "flatline_iteration": null
   },
   "metrics": {
     "total_sprints_executed": 0,
@@ -27,5 +29,10 @@
     "total_findings_addressed": 0,
     "total_visions_captured": 0
   },
-  "previous_bridge": "bridge-20260213-c011he-005"
+  "finalization": {
+    "ground_truth_updated": false,
+    "rtfm_passed": false,
+    "pr_url": "https://github.com/0xHoneyJar/arrakis/pull/63",
+    "butterfreezone_generated": false
+  }
 }

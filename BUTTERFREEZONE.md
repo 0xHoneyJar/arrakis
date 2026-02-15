@@ -1,13 +1,13 @@
 <!-- AGENT-CONTEXT
-name: loa
+name: arrakis
 type: framework
 purpose: No description available
-key_files: [.claude/loa/CLAUDE.loa.md, .loa.config.yaml, .claude/scripts/]
-version: v1.33.1
+key_files: [.claude/loa/CLAUDE.loa.md, .loa.config.yaml, .claude/scripts/, package.json]
+version: v6.0.0
 trust_level: grounded
 -->
 
-# loa
+# arrakis
 
 <!-- provenance: DERIVED -->
 No description available
@@ -49,9 +49,21 @@ No description available
 <!-- provenance: DERIVED -->
 Directory structure:
 ```
+./apps
+./apps/gateway
+./apps/ingestor
+./apps/worker
+./decisions
 ./docs
 ./docs/architecture
+./docs/gaib
 ./docs/integration
+./docs/planning
+./docs/proposals
+./docs/research
+./docs/runbook
+./drizzle
+./drizzle/migrations
 ./evals
 ./evals/baselines
 ./evals/fixtures
@@ -64,20 +76,47 @@ Directory structure:
 ./grimoires
 ./grimoires/loa
 ./grimoires/pub
-./skills
-./skills/legba
-./tests
-./tests/e2e
-./tests/edge-cases
-./tests/fixtures
-./tests/helpers
-./tests/integration
-./tests/performance
-./tests/unit
+./infrastructure
+./infrastructure/k8s
+./infrastructure/migrations
 ```
 
 ## Interfaces
 <!-- provenance: DERIVED -->
+### HTTP Routes
+themes/sietch/src/api/middleware.ts:397: * router.get('/admin/stats', (req, res) => { ... });
+themes/sietch/src/api/middleware/auth.ts:176: * router.get('/protected', (req, res) => {
+themes/sietch/src/api/middleware/auth.ts:382: * router.patch('/:userId/thresholds', requireAuth, requireQARole, handler);
+themes/sietch/src/api/middleware/auth.ts:417: * router.delete('/sandbox/:sandboxId/reset', requireAuth, requireAdminRole, handler);
+themes/sietch/src/api/middleware/dashboardAuth.ts:125:   * router.get('/config', requireDashboardAuth, handler);
+themes/sietch/src/api/middleware/dashboardAuth.ts:217:   * router.post('/config', requireDashboardAuth, liveAdminCheck, handler);
+themes/sietch/src/api/middleware/rate-limit.ts:367: * router.post('/endpoint', writeLimiter, handler);
+themes/sietch/src/api/routes/admin/agent-config.ts:139:  router.get(
+themes/sietch/src/api/routes/admin/agent-config.ts:162:  router.put(
+themes/sietch/src/api/routes/admin/agent-config.ts:210:  router.post(
+themes/sietch/src/api/routes/admin/agent-config.ts:247:  router.post(
+themes/sietch/src/api/routes/admin/byok.routes.ts:109:  router.post(
+themes/sietch/src/api/routes/admin/byok.routes.ts:147:  router.get(
+themes/sietch/src/api/routes/admin/byok.routes.ts:164:  router.delete(
+themes/sietch/src/api/routes/admin/byok.routes.ts:189:  router.post(
+themes/sietch/src/api/routes/agents.routes.ts:142:  router.get('/.well-known/jwks.json', (req: Request, res: Response) => {
+themes/sietch/src/api/routes/agents.routes.ts:193:  router.get('/api/agents/health', setDefaultRateLimitPolicy, killSwitch(agentEnabled), async (_req: Request, res: Response) => {
+themes/sietch/src/api/routes/agents.routes.ts:211:  router.post('/api/agents/invoke', ...authMiddlewares, async (req: Request, res: Response) => {
+themes/sietch/src/api/routes/agents.routes.ts:243:  router.post('/api/agents/stream', ...authMiddlewares, async (req: Request, res: Response) => {
+themes/sietch/src/api/routes/agents.routes.ts:336:  router.get('/api/agents/models', ...authMiddlewares, (req: Request, res: Response) => {
+
+### CLI Commands
+packages/cli/src/commands/auth/index.ts:113:    .command('login')
+packages/cli/src/commands/auth/index.ts:130:    .command('logout')
+packages/cli/src/commands/auth/index.ts:145:    .command('whoami')
+packages/cli/src/commands/sandbox/index.ts:78:    .command('new [name]')
+packages/cli/src/commands/sandbox/index.ts:97:    .command('ls')
+packages/cli/src/commands/sandbox/index.ts:116:    .command('rm <name>')
+packages/cli/src/commands/sandbox/index.ts:134:    .command('env <name>')
+packages/cli/src/commands/sandbox/index.ts:151:    .command('link <sandbox> <guildId>')
+packages/cli/src/commands/sandbox/index.ts:168:    .command('unlink <sandbox> <guildId>')
+packages/cli/src/commands/sandbox/index.ts:185:    .command('status <name>')
+
 ### Skill Commands
 - `/auditing-security`
 - `/autonomous-agent`
@@ -113,41 +152,63 @@ Directory structure:
 <!-- provenance: DERIVED -->
 | Module | Files | Purpose |
 |--------|-------|---------|
-| `docs/` | 4 | Documentation |
-| `evals/` | 998 |  |
-| `grimoires/` | 508 | Loa state files |
-| `skills/` | 5112 |  |
-| `tests/` | 142 | Test suites |
+| `apps/` | 34983 |  |
+| `decisions/` | 6 |  |
+| `docs/` | 28 | Documentation |
+| `drizzle/` | 1 |  |
+| `evals/` | 122 |  |
+| `grimoires/` | 962 | Loa state files |
+| `infrastructure/` | 181 |  |
+| `packages/` | 57581 |  |
+| `scripts/` | 10 | Utility scripts |
+| `sites/` | 28151 |  |
+| `tests/` | 79 | Test suites |
+| `themes/` | 65825 |  |
+
+## Ecosystem
+<!-- provenance: OPERATIONAL -->
+### Dependencies
+- `@0xhoneyjar/loa-hounfour`
+- `@types/express`
+- `@types/supertest`
+- `ajv`
+- `ajv-formats`
+- `aws-embedded-metrics`
+- `express`
+- `jose`
+- `supertest`
 
 ## Quick Start
 <!-- provenance: OPERATIONAL -->
-## Quick Start (~2 minutes)
-
-**Prerequisites**: [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) (Anthropic's CLI for Claude), Git, jq, [yq v4+](https://github.com/mikefarah/yq). See **[INSTALLATION.md](INSTALLATION.md)** for full details.
+## Quick Start
 
 ```bash
-# Install (one command, any existing repo)
-curl -fsSL https://raw.githubusercontent.com/0xHoneyJar/loa/main/.claude/scripts/mount-loa.sh | bash
+# Clone
+git clone https://github.com/0xHoneyJar/arrakis.git
+cd arrakis
 
-# Start Claude Code
-claude
+# Install dependencies
+npm install
 
-# These are slash commands typed inside Claude Code, not your terminal.
-# 5 commands. Full development cycle.
-/plan      # Requirements -> Architecture -> Sprints
-/build     # Implement the current sprint
-/review    # Code review + security audit
-/ship      # Deploy and archive
-```
+# Set up environment
+cp themes/sietch/.env.example themes/sietch/.env
+# Edit .env with your Discord bot token, database URL, etc.
+
+# Run database migrations
+cd themes/sietch
+npx drizzle-kit push
+
+# Start development server
 <!-- ground-truth-meta
-head_sha: 72434c26d1b4f9cd1ac5f7dcc95b747ab746e13b
-generated_at: 2026-02-14T08:46:52Z
+head_sha: 0d28fb4745ea21efb605b515eebb944076c5c875
+generated_at: 2026-02-15T05:56:20Z
 generator: butterfreezone-gen v1.0.0
 sections:
-  agent_context: b09a6c0215127e4e9e31487cadb96d5d1c659ce8257abbae9662592779dde922
+  agent_context: de6f6bb02d57dbbca499e864ef92bd6730bae8b2256fd306e4c4d147e8cc602e
   capabilities: fb6ef381fb7c2032e949e99a675dae0b4d58aabe935aec3c9c48c362594e9ca7
-  architecture: a5ffce49636c71a93df41e9cb65f1bf394cce17d65413c45607d64e248f908f7
-  interfaces: 8a9d2731493f0fccd5d66ecaf4842a34e20c4a125497c33a92f17bdf2f3c1ac5
-  module_map: 1852bedbfc3a9e5b981cddbbf488d04a566f2c8a45387af4768edc33ec35b909
-  quick_start: a6405f431b837c85a4beb869478df1e6a43f256f4d76b31927744707468cf68f
+  architecture: ac0df8c3054b47de4a589106e66d40cd9ac67a53a68f20b02cef3ce1bed2beea
+  interfaces: ad3885132bd141b5cc8707fa779d267bfe28bcd3fafb5b0bcf1d9f3b32bb71af
+  module_map: b484b528e883480d5f91f82d452ea6aca6fce42cd271944ac331e379f2792a44
+  ecosystem: 29fc390a2a77ec8d5bdbe657182dd47a2a5cd0c0c36c74c763c9e65cfad170e3
+  quick_start: e26d726aebbf5e8317bee1b55fe4e7979ca39f8a9eee91f7c3b47373a268ff8d
 -->
