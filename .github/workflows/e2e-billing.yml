@@ -1,20 +1,34 @@
-name: Billing E2E Smoke Tests
+name: Billing E2E Tests
 
 on:
   push:
     branches: [main]
     paths:
       - 'themes/sietch/src/api/routes/billing-*.ts'
+      - 'themes/sietch/src/api/routes/credit-pack-routes.ts'
+      - 'themes/sietch/src/api/routes/spending-visibility.ts'
+      - 'themes/sietch/src/api/middleware/billing-guard.ts'
       - 'themes/sietch/src/packages/adapters/billing/**'
+      - 'themes/sietch/src/packages/adapters/middleware/**'
+      - 'themes/sietch/src/packages/adapters/payment/**'
+      - 'themes/sietch/src/packages/core/billing/**'
       - 'themes/sietch/src/packages/core/contracts/**'
+      - 'themes/sietch/src/packages/core/ports/**'
       - 'themes/sietch/src/db/migrations/**'
       - 'tests/e2e/billing-*'
       - 'tests/e2e/docker-compose.e2e.yml'
   pull_request:
     paths:
       - 'themes/sietch/src/api/routes/billing-*.ts'
+      - 'themes/sietch/src/api/routes/credit-pack-routes.ts'
+      - 'themes/sietch/src/api/routes/spending-visibility.ts'
+      - 'themes/sietch/src/api/middleware/billing-guard.ts'
       - 'themes/sietch/src/packages/adapters/billing/**'
+      - 'themes/sietch/src/packages/adapters/middleware/**'
+      - 'themes/sietch/src/packages/adapters/payment/**'
+      - 'themes/sietch/src/packages/core/billing/**'
       - 'themes/sietch/src/packages/core/contracts/**'
+      - 'themes/sietch/src/packages/core/ports/**'
       - 'themes/sietch/src/db/migrations/**'
       - 'tests/e2e/billing-*'
       - 'tests/e2e/docker-compose.e2e.yml'
@@ -27,12 +41,15 @@ concurrency:
 jobs:
   billing-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     env:
       BILLING_ADMIN_JWT_SECRET: e2e-admin-jwt-secret-for-testing-only-32ch
       BILLING_INTERNAL_JWT_SECRET: e2e-s2s-jwt-secret-for-testing-only-32chr
       BILLING_MODE: live
+      X402_ENABLED: 'true'
+      X402_RECIPIENT_ADDRESS: '0xe2eTestRecipient000000000000000000000001'
+      IDENTITY_ANCHOR_ENABLED: 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -84,10 +101,24 @@ jobs:
         env:
           SKIP_E2E: 'false'
 
+      - name: Run full-loop billing E2E tests
+        run: |
+          cd themes/sietch
+          SKIP_E2E=false \
+          ARRAKIS_BASE_URL=http://localhost:3099 \
+          COMPOSE_FILE=../../tests/e2e/docker-compose.e2e.yml \
+            npx vitest run ../../tests/e2e/billing-full-loop.e2e.test.ts \
+              --reporter=verbose
+        env:
+          SKIP_E2E: 'false'
+
       - name: Collect logs on failure
         if: failure()
         run: |
+          echo "=== arrakis-e2e logs ==="
           docker compose -f tests/e2e/docker-compose.e2e.yml logs --tail=100 arrakis-e2e
+          echo "=== redis-e2e logs ==="
+          docker compose -f tests/e2e/docker-compose.e2e.yml logs --tail=50 redis-e2e
 
       - name: Tear down
         if: always()
