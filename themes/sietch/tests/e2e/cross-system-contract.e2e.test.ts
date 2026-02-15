@@ -33,6 +33,7 @@ const S2S_JWT_SECRET = process.env.BILLING_INTERNAL_JWT_SECRET || 'e2e-s2s-jwt-s
  * Matches the format expected by requireInternalAuth in billing-routes.ts.
  */
 function createS2SToken(sub = 'e2e-test-service'): string {
+  const { createHmac } = require('crypto');
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify({
     sub,
@@ -42,7 +43,6 @@ function createS2SToken(sub = 'e2e-test-service'): string {
     exp: Math.floor(Date.now() / 1000) + 3600,
   })).toString('base64url');
 
-  const { createHmac } = await import('crypto');
   const signature = createHmac('sha256', S2S_JWT_SECRET)
     .update(`${header}.${payload}`)
     .digest('base64url');

@@ -20,7 +20,7 @@
  * @module packages/adapters/billing/billing-entry-mapper
  */
 
-import type { LedgerEntry } from '../../core/ports/ICreditLedgerService.js';
+import type { LedgerEntry, FinalizeResult } from '../../core/ports/ICreditLedgerService.js';
 import type { BillingEntry, ProtocolEntryType } from '../../core/protocol/billing-entry.js';
 import { BILLING_ENTRY_CONTRACT_VERSION } from '../../core/protocol/billing-entry.js';
 
@@ -39,6 +39,28 @@ export function toLohBillingEntry(entry: LedgerEntry): BillingEntry {
     reference_id: entry.lotId ?? entry.reservationId ?? null,
     created_at: entry.createdAt,
     metadata: entry.metadata,
+    contract_version: BILLING_ENTRY_CONTRACT_VERSION,
+  };
+}
+
+/**
+ * Convert a FinalizeResult to a loa-hounfour BillingEntry.
+ *
+ * Used at the S2S finalize boundary when ?format=loh is requested.
+ * This ensures the same mapping logic governs all BillingEntry serialization.
+ *
+ * @param result - Finalize result from the billing engine
+ * @returns BillingEntry suitable for cross-system wire format
+ */
+export function fromFinalizeResult(result: FinalizeResult): BillingEntry {
+  return {
+    entry_id: `finalize:${result.reservationId}`,
+    account_id: result.accountId,
+    total_micro: result.actualCostMicro.toString(),
+    entry_type: 'finalize',
+    reference_id: result.reservationId,
+    created_at: result.finalizedAt,
+    metadata: null,
     contract_version: BILLING_ENTRY_CONTRACT_VERSION,
   };
 }

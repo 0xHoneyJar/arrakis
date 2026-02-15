@@ -16,14 +16,13 @@
 
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { requireAuth } from '../middleware/auth.js';
 import { memberRateLimiter } from '../middleware.js';
 import { serializeBigInt } from '../../packages/core/protocol/arithmetic.js';
 import { PROTOCOL_VERSION, validateCompatibility } from '../../packages/core/protocol/compatibility.js';
 import { verifyIdentityAnchor } from '../../packages/core/protocol/identity-trust.js';
-import { BILLING_ENTRY_CONTRACT_VERSION } from '../../packages/core/protocol/billing-entry.js';
-import type { BillingEntry } from '../../packages/core/protocol/billing-entry.js';
+import { fromFinalizeResult } from '../../packages/adapters/billing/billing-entry-mapper.js';
 import { s2sFinalizeRequestSchema, historyQuerySchema } from '../../packages/core/contracts/s2s-billing.js';
 import { logger } from '../../utils/logger.js';
 import type { IPaymentService } from '../../packages/core/ports/IPaymentService.js';
@@ -265,7 +264,11 @@ function verifyInternalToken(token: string): InternalTokenPayload | null {
       .update(headerPayload)
       .digest('base64url');
 
-    if (signature !== parts[2]) return null;
+    const provided = parts[2];
+    if (signature.length !== provided.length) return null;
+    const sigBuf = Buffer.from(signature, 'utf8');
+    const provBuf = Buffer.from(provided, 'utf8');
+    if (!timingSafeEqual(sigBuf, provBuf)) return null;
 
     const payload = JSON.parse(
       Buffer.from(parts[1], 'base64url').toString('utf-8')
@@ -276,7 +279,10 @@ function verifyInternalToken(token: string): InternalTokenPayload | null {
 
     const now = Math.floor(Date.now() / 1000);
     const clockSkew = 30;
+    if (!Number.isFinite(payload.exp) || !Number.isFinite(payload.iat)) return null;
+    if (payload.iat > now + clockSkew) return null;
     if (payload.exp < now - clockSkew) return null;
+    if (payload.exp - payload.iat > 5 * 60) return null;
 
     return payload;
   } catch {
@@ -492,16 +498,7 @@ creditBillingRouter.post(
       });
 
       if (req.query.format === 'loh') {
-        const billingEntry: BillingEntry = {
-          entry_id: `finalize:${finalizeResult.reservationId}`,
-          account_id: finalizeResult.accountId,
-          total_micro: finalizeResult.actualCostMicro.toString(),
-          entry_type: 'finalize',
-          reference_id: finalizeResult.reservationId,
-          created_at: finalizeResult.finalizedAt,
-          metadata: null,
-          contract_version: BILLING_ENTRY_CONTRACT_VERSION,
-        };
+        const billingEntry = fromFinalizeResult(finalizeResult);
         res.json({ ...nativeResponse, billing_entry: billingEntry });
       } else {
         res.json(nativeResponse);
