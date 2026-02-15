@@ -1,248 +1,310 @@
-# Sprint Plan: The Golden Path — E2E Vector Migration & Launch Validation
+# Sprint Plan: The Stillsuit — Cross-System Integration & Revenue Rules
 
-**Cycle:** 024
-**PRD:** [The Golden Path PRD](prd.md) (v1.1.0, GPT-approved)
-**SDD:** [The Golden Path SDD](sdd.md) (v1.1.0, GPT-approved)
-**Date:** 2026-02-13
-**Global Sprint Range:** 227–229
-
----
-
-## Overview
-
-3 sprints completing the final 3% of RFC #31. No new application modules — all work is test infrastructure connecting existing code to existing vectors.
-
-| Sprint | Focus | New Files | Modified Files | Est. Lines |
-|--------|-------|-----------|----------------|------------|
-| 1 | Vector Adapter + E2E Activation | 1 | 2 | ~250 |
-| 2 | Conformance Test Suites | 3 | 0 | ~570 |
-| 3 | Docker Compose E2E + Final Integration | 0 | 0–2 (scripts if needed) | ~50 |
-
-**Dependency chain:** Sprint 1 → Sprint 2 (conformance suites import from vector loader) → Sprint 3 (Docker Compose runs the full activated suite).
+**Version:** 1.0.0
+**Cycle:** 026
+**PRD:** [The Stillsuit PRD v1.0.0](prd.md)
+**SDD:** [The Stillsuit SDD v1.0.0](sdd.md)
+**Sprints:** 6
+**Estimated New Tests:** 70
 
 ---
 
-## Sprint 1: Vector Adapter + E2E Activation
+## Sprint 1: Protocol Adoption — Vendored loa-hounfour Types
 
-**Global ID:** 227
-**Goal:** Wire loa-hounfour golden vectors into the E2E test suite and set `VECTORS_AVAILABLE = true`.
-**PRD refs:** §4.1 (Vector Adapter Module), §4.1.3 (Activate E2E Tests)
-**SDD refs:** §3.1 (Vector Loader), §3.2 (E2E Test Modifications), §3.3 (E2E Stub Modifications)
+**Goals:** G-1
+**SDD Refs:** §2.1
+**Dependencies:** None
 
 ### Tasks
 
-#### Task 1.1: Create Vector Loader Module
+#### Task 1.1: Create vendored protocol directory
+- Create `themes/sietch/src/packages/core/protocol/` directory structure
+- Copy billing types from loa-hounfour (pinned commit): `billing-types.ts`, `guard-types.ts`, `state-machines.ts`, `arithmetic.ts`, `compatibility.ts`
+- Create `index.ts` re-export barrel
+- Create `VENDORED.md` with pinned commit hash and upgrade instructions
+- **AC:** Directory exists with all type files. `VENDORED.md` documents commit hash.
 
-**File:** `tests/e2e/vectors/index.ts` (~180 lines)
-**Description:** Create the vector adapter that loads loa-hounfour golden vectors via `createRequire` + `readFileSync` and exposes both the E2E-focused `getVector(name)` API and the raw `loadVectorFile()` utility for conformance suites.
+#### Task 1.2: Map local types to protocol types
+- Update `ICreditLedgerService` to extend/import `CreditBalance` from protocol types
+- Update `IRevenueRulesService` to use protocol state machine definitions
+- Update `IPaymentService` to use shared `GuardResult` type
+- Ensure all adapters compile against updated port interfaces
+- **AC:** All 6 port interfaces import from `protocol/` where applicable. Zero local duplicates of protocol exports.
 
-**Acceptance Criteria:**
-- [ ] Uses `createRequire(import.meta.url)` to resolve `@0xhoneyjar/loa-hounfour/package.json` path
-- [ ] `loadVectorFile<T>(relativePath: string): T` exported — reads JSON from loa-hounfour package root via `readFileSync`, used by conformance suites in Sprint 2
-- [ ] Loads all 5 budget vector files (`vectors/budget/basic-pricing.json`, `extreme-tokens.json`, `streaming-cancel.json`, `price-change-boundary.json`, `multi-model-batch.json`) containing 56 total vectors (bp-01..bp-15, extreme, streaming, price-change, batch sequences)
-- [ ] Loads JWT conformance file (`vectors/jwt/conformance.json`) containing 6 vectors (jwt-valid-invoke, jwt-expired, jwt-wrong-aud, jwt-rotated-key, jwt-disallowed-iss, jwt-jwks-timeout)
-- [ ] Defines `TestVector` interface matching SDD §3.1
-- [ ] Maps 6 Category A E2E scenarios to golden vectors: `invoke_free_tier` → jwt-valid-invoke + bp-08, `invoke_pro_pool_routing` → jwt-valid-invoke + bp-12, `invoke_stream_sse` → sc-01, `invoke_rate_limited` → jwt-valid-invoke + ERROR_CODES.RATE_LIMITED, `invoke_budget_exceeded` → bp-15, `stream_abort_reconciliation` → sc-03..sc-06
-- [ ] Constructs 3 Category B scenarios (BYOK, ensemble best-of-N, ensemble partial failure) from loa-hounfour schemas
-- [ ] Each Category B vector validated against loa-hounfour `validators` before registration
-- [ ] Category B vectors include `_constructed: true` metadata flag
-- [ ] `getVector(name)` throws with descriptive error if name not found
-- [ ] `VECTORS_AVAILABLE` exported as `true`
-- [ ] Module loads without errors in Vitest with Node >= 22
+#### Task 1.3: Replace local arithmetic with shared helpers
+- Replace any local BigInt micro-USD helpers with `protocol/arithmetic.ts` exports
+- Update `RevenueDistributionService` to use shared arithmetic
+- Update `CreditLedgerAdapter` lot calculations
+- **AC:** No local BigInt arithmetic that duplicates protocol helpers. Existing tests pass.
 
-**Exports:** `getVector`, `getTestVectors`, `VECTORS_AVAILABLE`, `loadVectorFile`
+#### Task 1.4: Implement cross-service compatibility check
+- loa-finn `/health` is a **public endpoint** (no auth required — standard health check convention)
+- `/health` response includes `{ protocol_version: "4.6.0" }` field
+- Add `validateCompatibility()` call at startup: fetch loa-finn `/health`, extract `protocol_version`, compare against vendored version
+- Log protocol version at startup
+- Graceful handling if loa-finn is unreachable (log warning, don't crash — compatibility is validated on first authenticated S2S call using the S2S JWT trust boundary)
+- **Note:** The `/health` check validates version agreement only. The actual S2S trust boundary (ES256 JWT validation) is tested separately in Sprint 6 E2E.
+- **AC:** Startup log shows protocol version. `validateCompatibility()` test passes with matching versions, fails with mismatched. Unreachable loa-finn logs warning without crashing.
 
-#### Task 1.2: Activate E2E Test Suite
-
-**File:** `tests/e2e/agent-gateway-e2e.test.ts` (~4 lines changed)
-**Description:** Replace the disabled vector import and hardcoded `VECTORS_AVAILABLE = false` with the new vector adapter module.
-
-**Acceptance Criteria:**
-- [ ] Line 16-17: Replace commented import with `import { getVector, getTestVectors, VECTORS_AVAILABLE } from './vectors/index.js';`
-- [ ] Line 26: Remove `const VECTORS_AVAILABLE = false;` (now imported)
-- [ ] Line 27: Simplify `SHOULD_SKIP` to depend only on `SKIP_E2E` (VECTORS_AVAILABLE always true)
-- [ ] Remove local `getTestVectors()` function (lines 316, 436) — now imported
-- [ ] No changes to existing test logic or assertions
-- [ ] `npx vitest run tests/e2e/agent-gateway-e2e.test.ts` compiles without import errors
-
-#### Task 1.3: Wire Stub to loa-hounfour
-
-**File:** `tests/e2e/loa-finn-e2e-stub.ts` (~20 lines changed)
-**Description:** Replace placeholder `TEST_VECTORS` / `CONTRACT_SCHEMA` with real loa-hounfour imports, add raw-body hash agreement check, and version compatibility validation.
-
-**Acceptance Criteria:**
-- [ ] Lines 33-38: Replace empty placeholders with real imports (`CONTRACT_VERSION`, `validators`, `computeReqHash`, `verifyReqHash`, `validateCompatibility`, `POOL_IDS`, `TIER_POOL_ACCESS`, `ERROR_CODES`)
-- [ ] Import `getVector`, `getTestVectors` from `./vectors/index.js`
-- [ ] `readBody()` returns `{ raw: Buffer; text: string }` — raw Buffer preserved for hashing
-- [ ] `handleInvoke()` calls `computeReqHash(rawBody)` and compares against JWT `req_hash` claim
-- [ ] Returns 409 HASH_MISMATCH on divergence (fail-loud)
-- [ ] `handleInvoke()` calls `validateCompatibility(CONTRACT_VERSION)` on every request; returns 400 with `{ error: 'VERSION_INCOMPATIBLE', details: result.reason }` if `compatible === false`
-- [ ] `matchVector()` and `matchStreamVector()` use `getTestVectors()` instead of empty `TEST_VECTORS.vectors`
-- [ ] `CONTRACT_SCHEMA.version` references replaced with `CONTRACT_VERSION` import
-- [ ] Existing stub behavior (JWKS, invoke, stream, usage report, health) unchanged
-
-### Sprint 1 Definition of Done
-
-- `VECTORS_AVAILABLE = true` in the E2E test file
-- All 9 E2E scenarios resolve to real vector data (verified by test compilation)
-- Hash agreement check active in stub (`computeReqHash(rawBody) === jwt.req_hash`)
-- Version compatibility check active in stub (`validateCompatibility(CONTRACT_VERSION)`)
-- `npx vitest typecheck tests/e2e/` passes (no type errors)
+#### Task 1.5: Protocol adoption tests
+- Test type compatibility (local types satisfy protocol interfaces)
+- Test arithmetic helpers match existing behavior
+- Test compatibility validator with matching and mismatched versions
+- **AC:** 8 new tests pass. All 109 existing tests still pass.
 
 ---
 
-## Sprint 2: Conformance Test Suites
+## Sprint 2: Revenue Rules Admin Workflow
 
-**Global ID:** 228
-**Goal:** Create parametrized conformance test suites for all 56 budget vectors and 6 JWT vectors.
-**PRD refs:** §4.2 (Budget Conformance), §4.3 (JWT Conformance)
-**SDD refs:** §3.4 (Budget Conformance Suite), §3.5 (JWT Conformance Suite), §3.6 (JWKS Test Server)
+**Goals:** G-3
+**SDD Refs:** §2.2, §2.6, §4.1
+**Dependencies:** Sprint 1 (protocol types for state machine definitions)
 
 ### Tasks
 
-#### Task 2.1: Create Budget Conformance Suite
+#### Task 2.1: Audit log immutability triggers
+- Create migration `038_audit_immutability.ts`
+- Pre-check: verify `revenue_rule_audit_log` table exists (created in 035_revenue_rules)
+- Add `BEFORE UPDATE` trigger on `revenue_rule_audit_log` → ABORT with "audit log is immutable"
+- Add `BEFORE DELETE` trigger on `revenue_rule_audit_log` → ABORT with "audit log is immutable"
+- **Note:** Migration runner uses numeric prefix ordering (030 → 032 → 035 → 036 → 037 → 038 → 039). All base tables exist before triggers are applied.
+- **AC:** Attempting UPDATE/DELETE on audit log raises SQLite error.
 
-**File:** `tests/conformance/budget-vectors.test.ts` (~200 lines)
-**Description:** Parametrized test suite running all 56 loa-hounfour budget vectors against a pure-arithmetic `calculateSingleCost` / `calculateTotalCost` function extracted from Arrakis budget logic.
+#### Task 2.2: Revenue rules lifecycle endpoints
+- POST `/admin/billing/revenue-rules` — create draft (validate bps_sum_100, set `created_by` from JWT `sub`)
+- POST `/admin/billing/revenue-rules/:id/submit` — transition to pending_approval
+- POST `/admin/billing/revenue-rules/:id/approve` — transition to cooling_down (four-eyes: JWT `sub` != `created_by`)
+- POST `/admin/billing/revenue-rules/:id/activate` — transition to active (cooldown expired check)
+- POST `/admin/billing/revenue-rules/:id/reject` — transition to rejected (requires reason)
+- POST `/admin/billing/revenue-rules/:id/emergency-activate` — override cooldown (requires `admin:rules:emergency` scope + justification)
+- GET `/admin/billing/revenue-rules` — list with status filter
+- GET `/admin/billing/revenue-rules/:id/audit` — full audit trail
+- **AC:** All 8 endpoints respond correctly. State machine transitions enforced. Invalid transitions return 409.
 
-**Acceptance Criteria:**
-- [ ] Loads all 5 budget vector files via `loadVectorFile()` imported from `tests/e2e/vectors/index.js` (exported in Task 1.1)
-- [ ] `toBigInt(value: number | string)` parser with `Number.isSafeInteger` guard
-- [ ] `calculateSingleCost(tokens, priceMicroPerMillion)` uses BigInt arithmetic: `cost_micro = (t * p) / 1_000_000n`, `remainder_micro = (t * p) % 1_000_000n`
-- [ ] `single_cost_vectors` (bp-01 through bp-11): asserts `cost_micro` and `remainder_micro` match exactly
-- [ ] `total_cost_vectors` (bp-12 through bp-15): asserts `input_cost_micro`, `output_cost_micro`, `total_cost_micro`
-- [ ] Extreme-tokens vectors: uses `expected_cost_micro_string` (string) for BigInt comparison when present
-- [ ] Integer guard: `typeof result.cost_micro === 'bigint'` assertion on every test
-- [ ] `remainder_accumulator_sequences`: processes vectors in order carrying `remainder_micro`
-- [ ] All 56 vectors pass: `npx vitest run tests/conformance/budget-vectors.test.ts` exits 0
+#### Task 2.3: Four-eyes enforcement
+- Approve endpoint: compare JWT `sub` against `created_by` field
+- Same actor → 403 `four_eyes_violation`
+- Different actor → proceed
+- Audit log records both `created_by` and `approved_by` with correlation ID
+- **AC:** Test: same-actor approve returns 403. Different-actor approve succeeds. Audit log has both IDs.
 
-#### Task 2.2: Create JWKS Test Server
+#### Task 2.4: Admin JWT validation hardening
+- Validate `iss` = `arrakis-admin`, `aud` = `arrakis-billing-admin`, `exp` present, `sub` present
+- Reject JWTs missing any required claim
+- Ensure admin secret is separate from S2S secret (already ADR-003, verify in tests)
+- **AC:** JWT missing `iss`, `aud`, `exp`, or `sub` returns 401. Wrong `iss`/`aud` returns 401.
 
-**File:** `tests/conformance/jwks-test-server.ts` (~120 lines)
-**Description:** Local HTTP server for deterministic JWKS rotation and timeout simulation.
+#### Task 2.5: Notification system
+- Create migration `039_billing_notifications.ts` (separate from audit triggers to avoid coupling)
+- `billing_notifications` table with: id, rule_id, transition, old_splits, new_splits, actor_id, urgency, created_at
+- Create notifications on `activate` and `emergency-activate` transitions
+- Emergency activations → `urgency = 'urgent'`
+- GET `/admin/billing/notifications` endpoint
+- **AC:** Migration runs. Activation creates notification. Emergency creates urgent notification. GET returns history.
 
-**Acceptance Criteria:**
-- [ ] `JwksTestServer` class with `start()`, `stop()`, `getJwksUri()` API
-- [ ] `getJwksUri()` returns `http://127.0.0.1:{port}/.well-known/jwks.json` (full path)
-- [ ] `addKey(kid)` generates ES256 keypair, returns `{ privateKey, publicJwk }`
-- [ ] `removeKey(kid)` removes key from JWKS response
-- [ ] `getKeys()` returns current JWK array
-- [ ] `setBlocked(true)` makes endpoint return 503
-- [ ] `setDelay(ms)` adds artificial latency before response
-- [ ] `resetFaults()` clears all fault injection
-- [ ] Serves `{ keys: [...] }` at `/.well-known/jwks.json`
-- [ ] Listens on random port (port 0) — no port conflicts
-- [ ] No external dependencies beyond Node built-ins + `jose` (already installed)
-
-#### Task 2.3: Create JWT Conformance Suite
-
-**File:** `tests/conformance/jwt-vectors.test.ts` (~250 lines)
-**Description:** Parametrized tests for 4 static JWT claim vectors + 2 JWKS behavioral vectors.
-
-**Acceptance Criteria:**
-- [ ] Loads `vectors/jwt/conformance.json` via `loadVectorFile()` imported from `tests/e2e/vectors/index.js` (exported in Task 1.1)
-- [ ] **Static claim tests** (jwt-valid-invoke, jwt-expired, jwt-wrong-aud, jwt-disallowed-iss):
-  - Signs vector claims with test ES256 key via `jose` `SignJWT`
-  - Validates using Arrakis JWT validation logic (`createJwtValidator` from `packages/adapters/agent/jwt-service.ts`)
-  - Asserts pass/reject + error code matches vector expectation
-- [ ] **req_hash consistency**: body-less vectors assert `computeReqHash(Buffer.alloc(0))` matches `claims.req_hash`
-  - Vectors with `req_body_bytes_base64` compute hash from decoded body bytes
-  - Vectors with body but no base64 bytes: hash assertion skipped (deferred to E2E)
-- [ ] **JWT validator configuration for behavioral tests:** `createJwtValidator()` accepts constructor params `{ jwksUri: string, cacheTtl: number, refreshTimeout: number }`. Tests pass `jwksUri: server.getJwksUri()` to point at the local `JwksTestServer`. No env vars or global state — all configuration via constructor injection.
-- [ ] **jwt-rotated-key** behavioral test:
-  - `createJwtValidator({ jwksUri: server.getJwksUri(), cacheTtl: 0, refreshTimeout: 2000 })`
-  - `cacheTtl: 0` guarantees fresh JWKS fetch on every validation (no stale cache)
-  - Step 2: K1 token PASS
-  - Step 4: K2 token PASS (kid-miss triggers refetch, finds K2)
-  - Step 5: K1 token REJECT (K1 removed from JWKS)
-  - Does not rely on real-time waits — deterministic via `cacheTtl: 0`
-- [ ] **jwt-jwks-timeout** behavioral test:
-  - `createJwtValidator({ jwksUri: server.getJwksUri(), cacheTtl: 5000, refreshTimeout: 2000 })`
-  - Step 2: K1 validation populates cache (TTL=5s)
-  - Step 3: `server.setBlocked(true)` blocks JWKS endpoint
-  - Step 4: cached K1 ACCEPT (DEGRADED mode — serves from cache within TTL)
-  - Step 5: unknown K3 REJECT (kid-miss triggers refetch, blocked → timeout → reject)
-  - Timing: test runs within 5s TTL window; `setDelay`/`setBlocked` on server controls timing, not `setTimeout`
-- [ ] All 6 vectors pass: `npx vitest run tests/conformance/jwt-vectors.test.ts` exits 0
-
-### Sprint 2 Definition of Done
-
-- All 56 budget conformance vectors pass with BigInt arithmetic
-- All 6 JWT conformance vectors pass (4 static + 2 behavioral)
-- JWKS test server handles rotation and timeout deterministically
-- `npx vitest run tests/conformance/` exits 0
+#### Task 2.6: Revenue rules admin tests
+- Full lifecycle: create → submit → approve → (mock cooldown) → activate
+- Four-eyes violation test
+- Emergency override test
+- Rejection test
+- Audit immutability trigger test
+- Notification creation tests
+- **AC:** 15 new tests pass.
 
 ---
 
-## Sprint 3: Docker Compose E2E + Final Integration
+## Sprint 3: Atomic Daily Spending Counter
 
-**Global ID:** 229
-**Goal:** Validate the full Docker Compose round-trip and close RFC #31 at 100%.
-**PRD refs:** §4.4 (Docker Compose E2E), §8 (Success Definition)
-**SDD refs:** §8 (Development Workflow), §5 (Security Architecture)
+**Goals:** G-4
+**SDD Refs:** §2.3, §3.1
+**Dependencies:** None (can run parallel with Sprint 2)
+**Note:** Sprint 6 (E2E) depends on this sprint for cap enforcement behavior.
 
 ### Tasks
 
-#### Task 3.1: Docker Compose Round-Trip Validation
+#### Task 3.1: Create daily_agent_spending migration
+- Create migration `036_daily_agent_spending.ts`
+- Table: `daily_agent_spending(agent_account_id, spending_date, total_spent_micro, updated_at)`
+- Primary key: `(agent_account_id, spending_date)`
+- Foreign key to `credit_accounts(id)`
+- **AC:** Migration runs. Table exists with correct schema.
 
-**Description:** Run the full E2E test suite via Docker Compose and verify all 9 scenarios pass end-to-end.
+#### Task 3.2: Update finalize to write SQLite spending
+- In `AgentWalletPrototype.finalizeInference()`:
+  - Within `BEGIN IMMEDIATE` transaction (same as ledger entries)
+  - UPSERT `daily_agent_spending` with atomic increment: `ON CONFLICT DO UPDATE SET total_spent_micro = total_spent_micro + excluded.total_spent_micro`
+  - Cap enforcement: if total + actual > dailyCap, cap to remaining budget
+- **AC:** Finalize updates daily spending table. Capping works when budget exceeded.
 
-**Existing infrastructure (SDD §2.2 — already on main, no new files needed):**
-- `scripts/run-e2e.sh` — E2E runner script (clones loa-finn, generates ES256 keypair, builds Docker images)
-- `tests/e2e/docker-compose.e2e.yml` — Compose config (Redis:6399, arrakis:3099, loa-finn stub:8099, shared volume for keypair)
-- Dockerfiles for arrakis-e2e and loa-finn-e2e-stub images (referenced in compose config)
+#### Task 3.3: Redis INCRBY with atomic TTL
+- Extend `AgentRedisClient` with `incrby` and `eval` methods
+- After SQLite commit, run Lua script: `INCRBY` + `EXPIREAT` on first write (detect new key by comparing return to increment)
+- TTL set to next midnight UTC
+- **AC:** Redis key created with correct TTL. INCRBY returns correct accumulated value.
 
-If `run-e2e.sh` or compose config require edits (e.g., env vars for `SKIP_E2E=false`, exit code propagation), those edits are scoped to this task.
+#### Task 3.4: Update read path (Redis → SQLite fallback)
+- `reserveForInference`: try Redis GET, fall back to SQLite SELECT (not in-memory)
+- `getRemainingDailyBudget()`: Redis first, SQLite fallback
+- `getRemainingDailyBudgetSync()`: in-memory Map only (test/prototype mode)
+- Remove in-memory Map from production enforcement path
+- **AC:** Redis failure falls back to SQLite. In-memory only used in sync variant.
 
-**Acceptance Criteria:**
-- [ ] `scripts/run-e2e.sh` builds Docker images successfully (arrakis-e2e, loa-finn-e2e-stub)
-- [ ] Docker Compose starts all services (Redis on 6399, arrakis on 3099, loa-finn stub on 8099)
-- [ ] Shared Docker volume seeds ES256 keypair only — stub serves JWKS over HTTP
-- [ ] Arrakis fetches JWKS via HTTP `GET /.well-known/jwks.json` (not from shared volume)
-- [ ] All 9 E2E scenarios pass with `SKIP_E2E=false`
-- [ ] Hash agreement verified on every invoke request (stub logs `computeReqHash` match)
-- [ ] Version compatibility asserted on every request (`validateCompatibility` returns compatible)
-- [ ] No 409 HASH_MISMATCH responses in test output
-
-#### Task 3.2: Conformance + E2E Integration Smoke Test
-
-**Description:** Run the full test execution sequence from SDD §8.
-
-**Acceptance Criteria:**
-- [ ] Step 1: `npx vitest run tests/conformance/` exits 0 (56 budget + 6 JWT)
-- [ ] Step 2: `SKIP_E2E=false npx vitest run tests/e2e/agent-gateway-e2e.test.ts` exits 0 (9 scenarios)
-- [ ] Step 3: `./scripts/run-e2e.sh` exits 0 (Docker Compose round-trip)
-- [ ] All PRD §8 success criteria verified
-
-#### Task 3.3: Post Command Deck Round 9 to loa-finn#31
-
-**Description:** Post final status update confirming RFC #31 at 100%.
-
-**Acceptance Criteria:**
-- [ ] Command Deck Round 9 posted to `0xHoneyJar/loa-finn#31`
-- [ ] Includes: conformance results, E2E results, Docker Compose results
-- [ ] Declares RFC #31 at 100% with evidence
-- [ ] Links to Arrakis PR with all changes
-
-### Sprint 3 Definition of Done
-
-- Docker Compose E2E passes all 9 scenarios end-to-end
-- Full test execution sequence passes (conformance → E2E → Docker Compose)
-- Command Deck Round 9 posted confirming RFC #31 at 100%
-- All PRD §8 success criteria met
+#### Task 3.5: Concurrent spending tests
+- 10 parallel finalizations test: total daily spending = sum of all costs
+- Redis failure fallback test: spending enforcement works via SQLite
+- Cap enforcement at finalize: actual cost capped when budget exceeded
+- Sync vs async budget query tests
+- **AC:** 8 new tests pass. Existing agent wallet tests pass.
 
 ---
 
-## Risk Register
+## Sprint 4: Admin Contract Extraction & Notifications
 
-| Risk | Sprint | Mitigation |
-|------|--------|------------|
-| Budget manager uses cents, vectors use micro-USD | 2 | Extract pure arithmetic function; no unit conversion needed for conformance |
-| Extreme-tokens overflow JS number | 2 | `toBigInt()` parser with `isSafeInteger` guard; string comparison for large values |
-| JWKS cache timing makes rotation tests flaky | 2 | `cacheTtl: 0` for rotation, `cacheTtl: 5000` for timeout; deterministic choreography |
-| Docker Compose not available in all environments | 3 | Sprint 3 is independently skippable; conformance + E2E pass without Docker |
-| Category B fixtures drift from loa-hounfour schemas | 1 | Each fixture validated against loa-hounfour `validators` at module load |
+**Goals:** G-6, G-7
+**SDD Refs:** §2.5, §2.7
+**Dependencies:** Sprint 2 (admin routes exist)
+
+### Tasks
+
+#### Task 4.1: Create admin-billing.ts contracts file
+- Create `packages/core/contracts/admin-billing.ts`
+- Extract all Zod schemas from `billing-admin-routes.ts`:
+  - `createRuleSchema`, `rejectRuleSchema`, `emergencyActivateSchema`
+  - `batchGrantSchema`, `adminMintSchema`
+  - Revenue rules query/filter schemas
+- Export TypeScript types via `z.infer<>`
+- **AC:** All Zod schemas in admin contracts file. Zero inline schemas in billing-admin-routes.ts.
+
+#### Task 4.2: Update billing-admin-routes.ts to import contracts
+- Replace all inline Zod schema definitions with imports from `admin-billing.ts`
+- Verify all endpoints use imported schemas
+- **AC:** `billing-admin-routes.ts` has zero inline Zod `z.object()` definitions. All imports from contracts file.
+
+#### Task 4.3: Contract type exports for cross-service
+- Export `CreateRuleRequest`, `RejectRuleRequest`, `EmergencyActivateRequest` types
+- Export `BatchGrantRequest`, `AdminMintRequest` types
+- **AC:** Types importable from contracts file. TypeScript compilation succeeds.
+
+#### Task 4.4: Admin contract tests
+- Schema validation tests (valid inputs pass, invalid reject)
+- Type compatibility tests
+- **AC:** 6 new tests pass. All existing admin tests pass.
 
 ---
 
-*This sprint plan covers ~750 lines of new test code across 4 new files and 2 modified files. The work connects existing infrastructure — no new application modules, no new dependencies.*
+## Sprint 5: Identity Anchor Cross-System Verification
+
+**Goals:** G-5
+**SDD Refs:** §2.4, §4.2
+**Dependencies:** Sprint 1 (protocol types)
+
+### Tasks
+
+#### Task 5.1: Create agent identity migration
+- Create migration `037_agent_identity.ts`
+- Table: `agent_identity_anchors(agent_account_id, identity_anchor, created_by, created_at, rotated_at, rotated_by)`
+- `created_by` TEXT NOT NULL — actor who bound the anchor (admin JWT `sub` or system for auto-creation)
+- UNIQUE constraint on `identity_anchor`
+- Foreign key to `credit_accounts(id)`
+- **AC:** Migration runs. UNIQUE constraint enforced (duplicate anchor insert fails). `created_by` is required.
+
+#### Task 5.2: Persist identity anchor on wallet creation
+- Update `AgentWalletPrototype.createAgentWallet()` to INSERT anchor into `agent_identity_anchors` when config has `identityAnchor`
+- Idempotent: if anchor already exists for account, skip insert
+- **AC:** Creating wallet with anchor persists to DB. Duplicate creation is idempotent.
+
+#### Task 5.3: S2S finalize identity verification
+- Update S2S finalize handler in `billing-routes.ts`:
+  - Derive `accountId` from `reservationId` (not from request body)
+  - Look up stored anchor for derived account
+  - If stored anchor exists and request omits `identity_anchor` → 403
+  - If stored anchor exists and request anchor doesn't match → 403
+  - If no stored anchor → skip verification (non-agent accounts)
+- Update `s2sFinalizeRequestSchema`: remove `accountId`, keep optional `identity_anchor`
+- **AC:** Correct anchor → 200. Wrong anchor → 403. Missing anchor when required → 403. No anchor stored → skip.
+
+#### Task 5.4: Anchor rotation endpoint
+- POST `/admin/billing/agents/:id/rotate-anchor`
+- Requires `admin:rules:write` scope
+- Four-eyes: JWT `sub` (rotator) must differ from `created_by` in `agent_identity_anchors` table
+- Same actor → 403 `four_eyes_violation`
+- Updates `identity_anchor`, `rotated_at`, `rotated_by` in `agent_identity_anchors`
+- Creates audit log entry with old_anchor_hash (truncated) and new_anchor
+- **AC:** Rotation succeeds with different actor. Same-actor rotation returns 403. Audit log records rotation with both actor IDs.
+
+#### Task 5.5: Identity anchor tests
+- Anchor persistence on wallet creation
+- UNIQUE constraint violation test
+- S2S finalize with correct/wrong/missing anchor
+- Anchor rotation with audit trail
+- **AC:** 8 new tests pass.
+
+---
+
+## Sprint 6: Cross-System E2E Smoke Test
+
+**Goals:** G-2
+**SDD Refs:** §1.3, §6.3
+**Dependencies:** Sprints 1, 2, 3, 5 (protocol types, admin API, daily spending cap enforcement, identity anchors)
+
+### Tasks
+
+#### Task 6.1: Docker Compose infrastructure
+- Create `docker-compose.e2e.yml` with:
+  - `arrakis` container (includes SQLite, ES256 private key for tenant JWT, loa-finn public key)
+  - `loa-finn` container (ES256 private key for S2S JWT, arrakis public key)
+  - `redis` service (shared on Compose network)
+- Health check probes on `/health` for both services
+- Volume mounts for ES256 keys (read-only for public keys)
+- Compose env vars: `REDIS_URL`, `BILLING_MODE`, `CHAIN_PROVIDER=rpc` configured in `.env.e2e`
+- **AC:** `docker compose -f docker-compose.e2e.yml up` starts all services. Arrakis logs confirm Redis spending backend enabled.
+
+#### Task 6.2: Key generation script
+- Create `scripts/e2e-keygen.sh`
+- Generates ES256 keypairs for arrakis (tenant JWT) and loa-finn (S2S JWT)
+- Outputs to `e2e/keys/` directory
+- **AC:** Script generates 4 files: arrakis private/public, loa-finn private/public.
+
+#### Task 6.3: Test data seeding script
+- Create deterministic seed script: creates test account, deposits credits
+- Idempotent (can run multiple times)
+- **AC:** After seeding, test account exists with known balance.
+
+#### Task 6.4: E2E smoke test script
+- **Verification method**: Use existing admin API endpoints for assertions (GET `/admin/billing/reconciliation` for ledger state, GET `/admin/billing/revenue-rules` for rule state). For shadow_finalize verification, query `GET /api/billing/history?accountId={id}` which returns ledger entries with `entry_type` field.
+- **Happy path**: create account → deposit → reserve → tenant JWT to loa-finn → S2S finalize back to arrakis → GET history → verify `finalize`, `commons_contribution`, `revenue_share` entries exist with correct amounts
+- **Overrun (shadow mode)**: set BILLING_MODE=shadow → reserve 1M → finalize 1.5M → GET history → verify `shadow_finalize` entry with actualCostMicro=1500000
+- **Overrun (live mode)**: set BILLING_MODE=live → reserve 1M → finalize 1.5M → GET history → verify `finalize` entry capped at reservedMicro=1000000
+- **Identity anchor**: finalize with correct anchor → 200; wrong anchor → 403 response body contains `identity_anchor_mismatch`
+- **JWT validation**: expired/invalid JWT → 401 response
+- **AC:** All 5 E2E test scenarios pass. Each scenario uses API responses (not log scraping) for assertions.
+
+#### Task 6.5: CI integration
+- GitHub Actions workflow for E2E tests
+- Key generation in setup step
+- Docker Compose up with health check wait
+- Run test script
+- Tear down
+- **AC:** E2E tests run in CI and pass.
+
+---
+
+## Sprint Summary
+
+| Sprint | Focus | Goals | New Tests | Dependencies |
+|--------|-------|-------|-----------|-------------|
+| 1 | Protocol adoption | G-1 | 8 | None |
+| 2 | Revenue rules admin | G-3 | 15 | Sprint 1 |
+| 3 | Atomic daily spending | G-4 | 8 | None |
+| 4 | Admin contracts + notifications | G-6, G-7 | 6 | Sprint 2 |
+| 5 | Identity anchor verification | G-5 | 8 | Sprint 1 |
+| 6 | E2E smoke test | G-2 | 5 (E2E) | Sprints 1, 2, 3, 5 |
+| **Total** | | | **~70** | |
+
+**Migration ordering:** Numeric prefix (036 → 037 → 038 → 039). All base tables from 030/032/035 exist before new migrations. Audit triggers (038) and notifications (039) are separate migrations to avoid coupling.
+
+**Parallelization:** Sprints 1 and 3 can run in parallel. Sprints 2 and 5 can run in parallel (both depend on Sprint 1). Sprint 4 depends on Sprint 2. Sprint 6 is the integration gate requiring all prior sprints.
+
+**Critical path:** Sprint 1 → Sprint 2 → Sprint 4 → Sprint 6
+**Parallel path:** Sprint 1 → Sprint 5 → Sprint 6
+**Independent path:** Sprint 3 → Sprint 6
