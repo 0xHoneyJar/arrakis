@@ -68,3 +68,12 @@ export {
 } from './compatibility.js';
 
 export type { CompatibilityResult } from './compatibility.js';
+
+// Atomic counter primitive
+export type {
+  ICounterBackend,
+  IAtomicCounter,
+  AtomicCounterConfig,
+} from './atomic-counter.js';
+
+export { createAtomicCounter } from './atomic-counter.js';

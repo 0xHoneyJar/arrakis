@@ -7,16 +7,13 @@
  * 3. Agent reserves credits for inference
  * 4. Agent finalizes after inference completes
  *
- * Daily spending tracking (Sprint 241):
- * - SQLite: persistent source of truth (daily_agent_spending table)
- * - Redis: INCRBY cache for fast reads with midnight UTC TTL
- * - In-memory Map: sync-only fallback for test/prototype mode
- *
- * Read path: Redis → SQLite → in-memory (production)
- * Sync path: in-memory only (getRemainingDailyBudgetSync)
+ * Daily spending tracking uses shared IAtomicCounter (Sprint 246):
+ * - Primary: Redis (INCRBY cache with midnight UTC TTL)
+ * - Fallback: SQLite (persistent source of truth)
+ * - Bootstrap: InMemory (sync-only fallback for test/prototype mode)
  *
  * SDD refs: §8 Sprint 6, §2.3 Daily Spending
- * Sprint refs: Task 6.2, Tasks 3.1-3.5
+ * Sprint refs: Task 6.2, Tasks 3.1-3.5, Task 2.5
  *
  * @module packages/adapters/billing/AgentWalletPrototype
  */
@@ -28,6 +25,11 @@ import type {
   ReservationResult,
   FinalizeResult,
 } from '../../core/ports/ICreditLedgerService.js';
+import type { IAtomicCounter } from '../../core/protocol/atomic-counter.js';
+import { createAtomicCounter } from '../../core/protocol/atomic-counter.js';
+import { RedisCounterBackend } from './counters/RedisCounterBackend.js';
+import { SqliteCounterBackend } from './counters/SqliteCounterBackend.js';
+import { InMemoryCounterBackend } from './counters/InMemoryCounterBackend.js';
 import type Database from 'better-sqlite3';
 
 // =============================================================================
@@ -90,36 +92,84 @@ export interface AgentFinalizeResult {
 // AgentWalletPrototype
 // =============================================================================
 
-/** Redis key prefix for agent daily spending */
-const DAILY_SPEND_PREFIX = 'billing:agent:daily:';
-
-/**
- * Lua script for atomic INCRBY + EXPIREAT on first write.
- * Detects new key by comparing INCRBY result to the increment value.
- * If they match, this was the first write — set EXPIREAT to midnight UTC.
- */
-const REDIS_INCRBY_EXPIREAT_LUA = `
-local newval = redis.call('INCRBY', KEYS[1], ARGV[1])
-if newval == tonumber(ARGV[1]) then
-  redis.call('EXPIREAT', KEYS[1], ARGV[2])
-end
-return newval
-`;
-
 export class AgentWalletPrototype {
   private ledger: ICreditLedgerService;
+  private counter: IAtomicCounter;
   private dailySpent: Map<string, bigint> = new Map();
-  private redis: AgentRedisClient | null;
   private db: Database.Database | null;
 
+  /**
+   * Create with explicit counter (preferred).
+   */
+  constructor(
+    ledger: ICreditLedgerService,
+    options: {
+      counter: IAtomicCounter;
+      db?: Database.Database | null;
+    },
+  );
+  /**
+   * Legacy constructor — builds counter chain from redis/db.
+   * Kept for backward compatibility with existing tests.
+   */
   constructor(
     ledger: ICreditLedgerService,
     redis?: AgentRedisClient | null,
     db?: Database.Database | null,
+  );
+  constructor(
+    ledger: ICreditLedgerService,
+    redisOrOptions?: AgentRedisClient | null | {
+      counter: IAtomicCounter;
+      db?: Database.Database | null;
+    },
+    legacyDb?: Database.Database | null,
   ) {
     this.ledger = ledger;
-    this.redis = redis ?? null;
-    this.db = db ?? null;
+
+    // Detect which constructor signature was used
+    if (redisOrOptions && typeof redisOrOptions === 'object' && 'counter' in redisOrOptions) {
+      // New signature: (ledger, { counter, db? })
+      this.counter = redisOrOptions.counter;
+      this.db = redisOrOptions.db ?? null;
+    } else {
+      // Legacy signature: (ledger, redis?, db?)
+      const redis = redisOrOptions as AgentRedisClient | null | undefined;
+      this.db = legacyDb ?? null;
+      this.counter = this.buildCounterChain(redis ?? null, this.db);
+    }
+  }
+
+  /**
+   * Build a counter chain from legacy redis/db arguments.
+   * Replicates the original 3-layer fallback behavior.
+   */
+  private buildCounterChain(
+    redis: AgentRedisClient | null,
+    db: Database.Database | null,
+  ): IAtomicCounter {
+    const inMemory = new InMemoryCounterBackend();
+
+    if (redis && db) {
+      return createAtomicCounter({
+        primary: new RedisCounterBackend(redis, 'billing:agent:daily:'),
+        fallback: new SqliteCounterBackend(db),
+        bootstrap: inMemory,
+      });
+    }
+    if (redis) {
+      return createAtomicCounter({
+        primary: new RedisCounterBackend(redis, 'billing:agent:daily:'),
+        fallback: inMemory,
+      });
+    }
+    if (db) {
+      return createAtomicCounter({
+        primary: new SqliteCounterBackend(db),
+        fallback: inMemory,
+      });
+    }
+    return createAtomicCounter({ primary: inMemory });
   }
 
   /**
@@ -186,15 +236,14 @@ export class AgentWalletPrototype {
 
   /**
    * Agent reserves credits for an inference call.
-   * Enforces daily spending cap. Reads from Redis → SQLite → in-memory.
+   * Enforces daily spending cap via shared counter.
    */
   async reserveForInference(
     wallet: AgentWallet,
     estimatedCostMicro: bigint,
   ): Promise<AgentSpendResult> {
-    // Check daily cap — read from Redis first, fallback to SQLite, then in-memory
     const todayKey = `${wallet.account.id}:${new Date().toISOString().slice(0, 10)}`;
-    const spent = await this.getDailySpent(todayKey);
+    const spent = await this.counter.get(todayKey);
 
     if (spent + estimatedCostMicro > wallet.config.dailyCapMicro) {
       throw new Error(
@@ -223,8 +272,7 @@ export class AgentWalletPrototype {
 
   /**
    * Finalize an agent's inference reservation with actual cost.
-   * Writes daily spending to SQLite (persistent) + Redis (cache) + in-memory.
-   * Cap enforcement at finalize: if total exceeds cap, actual cost is capped.
+   * Increments daily spending counter and enforces cap.
    */
   async finalizeInference(
     wallet: AgentWallet,
@@ -233,8 +281,7 @@ export class AgentWalletPrototype {
   ): Promise<AgentFinalizeResult> {
     // Cap enforcement at finalize time
     const todayKey = `${wallet.account.id}:${new Date().toISOString().slice(0, 10)}`;
-    const todayDate = new Date().toISOString().slice(0, 10);
-    const currentSpent = await this.getDailySpent(todayKey);
+    const currentSpent = await this.counter.get(todayKey);
 
     let cappedCost = actualCostMicro;
     if (currentSpent + actualCostMicro > wallet.config.dailyCapMicro) {
@@ -244,15 +291,12 @@ export class AgentWalletPrototype {
 
     const result = await this.ledger.finalize(reservationId, cappedCost);
 
-    // Write to SQLite (persistent source of truth)
-    this.upsertDailySpending(wallet.account.id, todayDate, result.actualCostMicro);
+    // Increment counter via shared counter chain
+    await this.counter.increment(todayKey, result.actualCostMicro);
 
-    // Update in-memory cache
+    // Mirror to sync Map for getRemainingDailyBudgetSync
     const newSpent = currentSpent + result.actualCostMicro;
     this.dailySpent.set(todayKey, newSpent);
-
-    // Write to Redis cache (non-blocking, failure is acceptable)
-    await this.incrbyRedisSpending(todayKey, result.actualCostMicro);
 
     const balance = await this.ledger.getBalance(wallet.account.id);
 
@@ -281,11 +325,13 @@ export class AgentWalletPrototype {
 
   /**
    * Get remaining daily budget for an agent (async).
-   * Reads from Redis → SQLite → in-memory.
+   * Reads via shared counter chain.
    */
   async getRemainingDailyBudget(wallet: AgentWallet): Promise<bigint> {
     const todayKey = `${wallet.account.id}:${new Date().toISOString().slice(0, 10)}`;
-    const spent = await this.getDailySpent(todayKey);
+    const spent = await this.counter.get(todayKey);
+    // Mirror to sync Map for getRemainingDailyBudgetSync
+    this.dailySpent.set(todayKey, spent);
     const remaining = wallet.config.dailyCapMicro - spent;
     return remaining > 0n ? remaining : 0n;
   }
@@ -293,6 +339,7 @@ export class AgentWalletPrototype {
   /**
    * Get remaining daily budget synchronously (in-memory Map only).
    * For test/prototype mode where Redis and SQLite may not be available.
+   * @deprecated Use getRemainingDailyBudget (async) instead.
    */
   getRemainingDailyBudgetSync(wallet: AgentWallet): bigint {
     const todayKey = `${wallet.account.id}:${new Date().toISOString().slice(0, 10)}`;
@@ -340,160 +387,5 @@ export class AgentWalletPrototype {
     } catch {
       return null;
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private: SQLite daily spending (Sprint 241, Task 3.2)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Atomic UPSERT into daily_agent_spending.
-   * ON CONFLICT increments existing total rather than replacing it.
-   */
-  private upsertDailySpending(
-    accountId: string,
-    spendingDate: string,
-    incrementMicro: bigint,
-  ): void {
-    if (!this.db) return;
-    try {
-      this.db.prepare(`
-        INSERT INTO daily_agent_spending (agent_account_id, spending_date, total_spent_micro, updated_at)
-        VALUES (?, ?, ?, datetime('now'))
-        ON CONFLICT(agent_account_id, spending_date) DO UPDATE SET
-          total_spent_micro = total_spent_micro + excluded.total_spent_micro,
-          updated_at = datetime('now')
-      `).run(accountId, spendingDate, incrementMicro.toString());
-    } catch {
-      // SQLite write failure — Redis and in-memory still function
-    }
-  }
-
-  /**
-   * Read daily spent from SQLite.
-   * Returns 0n if table doesn't exist or no row found.
-   */
-  private getDailySpentFromSqlite(accountId: string, spendingDate: string): bigint {
-    if (!this.db) return 0n;
-    try {
-      const row = this.db.prepare(
-        `SELECT total_spent_micro FROM daily_agent_spending
-         WHERE agent_account_id = ? AND spending_date = ?`
-      ).get(accountId, spendingDate) as { total_spent_micro: number | string } | undefined;
-
-      if (row) return BigInt(row.total_spent_micro);
-    } catch {
-      // Table may not exist in test setup — fall through
-    }
-    return 0n;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private: Redis daily spending (Task 9.4, extended Sprint 241 Task 3.3)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Read daily spent from Redis → SQLite → in-memory.
-   * Production read path: Redis (fast) → SQLite (persistent) → Map (last resort)
-   */
-  private async getDailySpent(todayKey: string): Promise<bigint> {
-    // Layer 1: Redis (fast cache)
-    if (this.redis) {
-      try {
-        const redisKey = `${DAILY_SPEND_PREFIX}${todayKey}`;
-        const val = await this.redis.get(redisKey);
-        if (val !== null) {
-          const parsed = BigInt(val);
-          this.dailySpent.set(todayKey, parsed);
-          return parsed;
-        }
-      } catch {
-        // Redis unavailable — fall through to SQLite
-      }
-    }
-
-    // Layer 2: SQLite (persistent source of truth)
-    const [accountId, date] = todayKey.split(':').length >= 2
-      ? [todayKey.substring(0, todayKey.lastIndexOf(':')), todayKey.substring(todayKey.lastIndexOf(':') + 1)]
-      : [todayKey, ''];
-
-    if (date && this.db) {
-      const sqliteSpent = this.getDailySpentFromSqlite(accountId, date);
-      if (sqliteSpent > 0n) {
-        this.dailySpent.set(todayKey, sqliteSpent);
-        return sqliteSpent;
-      }
-    }
-
-    // Layer 3: In-memory Map (last resort / test mode)
-    return this.dailySpent.get(todayKey) ?? 0n;
-  }
-
-  /**
-   * Atomic Redis INCRBY with EXPIREAT on first write.
-   * Uses Lua script if eval is available, otherwise falls back to INCRBY + EXPIRE.
-   */
-  private async incrbyRedisSpending(todayKey: string, incrementMicro: bigint): Promise<void> {
-    if (!this.redis) return;
-    try {
-      const redisKey = `${DAILY_SPEND_PREFIX}${todayKey}`;
-      const incrementNum = Number(incrementMicro);
-      const midnightEpoch = this.midnightUtcEpoch();
-
-      // Prefer atomic Lua script: INCRBY + EXPIREAT on first write
-      if (this.redis.eval) {
-        await this.redis.eval(
-          REDIS_INCRBY_EXPIREAT_LUA,
-          1,
-          redisKey,
-          incrementNum,
-          midnightEpoch,
-        );
-        return;
-      }
-
-      // Fallback: separate INCRBY + EXPIRE
-      if (this.redis.incrby) {
-        const newVal = await this.redis.incrby(redisKey, incrementNum);
-        // If newVal equals increment, this was the first write — set TTL
-        if (newVal === incrementNum && this.redis.expire) {
-          const ttl = this.secondsUntilMidnightUtc();
-          await this.redis.expire(redisKey, ttl);
-        }
-        return;
-      }
-
-      // Last resort: use set (overwrites — less accurate under concurrency)
-      const currentSpent = this.dailySpent.get(todayKey) ?? 0n;
-      const ttl = this.secondsUntilMidnightUtc();
-      if (this.redis.setex) {
-        await this.redis.setex(redisKey, ttl, currentSpent.toString());
-      } else {
-        await this.redis.set(redisKey, currentSpent.toString());
-        if (this.redis.expire) {
-          await this.redis.expire(redisKey, ttl);
-        }
-      }
-    } catch {
-      // Redis unavailable — SQLite and in-memory are still updated
-    }
-  }
-
-  /** Seconds remaining until midnight UTC */
-  private secondsUntilMidnightUtc(): number {
-    const now = new Date();
-    const midnight = new Date(Date.UTC(
-      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1,
-    ));
-    return Math.max(1, Math.floor((midnight.getTime() - now.getTime()) / 1000));
-  }
-
-  /** Unix epoch seconds for next midnight UTC */
-  private midnightUtcEpoch(): number {
-    const now = new Date();
-    const midnight = new Date(Date.UTC(
-      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1,
-    ));
-    return Math.floor(midnight.getTime() / 1000);
   }
 }
