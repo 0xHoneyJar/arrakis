@@ -21,6 +21,7 @@ import { logger } from '../../utils/logger.js';
 import { serializeBigInt } from '../../packages/core/utils/micro-usd.js';
 import type { ICampaignService, GrantInput } from '../../packages/core/ports/ICampaignService.js';
 import type { ICreditLedgerService } from '../../packages/core/ports/ICreditLedgerService.js';
+import type { IRevenueRulesService } from '../../packages/core/ports/IRevenueRulesService.js';
 import type Database from 'better-sqlite3';
 
 // =============================================================================
@@ -35,15 +36,18 @@ export const billingAdminRouter = Router();
 
 let campaignService: ICampaignService | null = null;
 let ledgerService: ICreditLedgerService | null = null;
+let revenueRulesService: IRevenueRulesService | null = null;
 let adminDb: Database.Database | null = null;
 
 export function setBillingAdminServices(services: {
   campaign: ICampaignService;
   ledger: ICreditLedgerService;
+  revenueRules?: IRevenueRulesService;
   db: Database.Database;
 }): void {
   campaignService = services.campaign;
   ledgerService = services.ledger;
+  revenueRulesService = services.revenueRules ?? null;
   adminDb = services.db;
 }
 
@@ -201,6 +205,25 @@ const mintSchema = z.object({
   sourceType: z.enum(['grant', 'deposit']).default('grant'),
   description: z.string().max(500).optional(),
   poolId: z.string().default('general'),
+});
+
+const proposeRuleSchema = z.object({
+  name: z.string().min(1).max(200),
+  commonsBps: z.number().int().min(0).max(10000),
+  communityBps: z.number().int().min(0).max(10000),
+  foundationBps: z.number().int().min(0).max(10000),
+  notes: z.string().max(1000).optional(),
+}).refine(
+  d => d.commonsBps + d.communityBps + d.foundationBps === 10000,
+  { message: 'Basis points must sum to 10000 (100%)' },
+);
+
+const rejectRuleSchema = z.object({
+  reason: z.string().min(1).max(1000),
+});
+
+const overrideCooldownSchema = z.object({
+  reason: z.string().min(1).max(1000),
 });
 
 // =============================================================================
@@ -361,3 +384,257 @@ billingAdminRouter.get(
     }
   },
 );
+
+// =============================================================================
+// Revenue Rules Endpoints (Sprint 8, Task 8.3)
+// =============================================================================
+
+function getRevenueRulesService(): IRevenueRulesService {
+  if (!revenueRulesService) {
+    throw new Error('Revenue rules service not initialized');
+  }
+  return revenueRulesService;
+}
+
+// POST /admin/billing/revenue-rules — propose a new rule
+billingAdminRouter.post(
+  '/revenue-rules',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (req: Request, res: Response) => {
+    const service = getRevenueRulesService();
+    const result = proposeRuleSchema.safeParse(req.body);
+    if (!result.success) {
+      res.status(400).json({
+        error: 'Validation Error',
+        details: result.error.issues.map(i => ({
+          field: i.path.join('.'),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    try {
+      const rule = await service.proposeRule({
+        ...result.data,
+        proposedBy: (req as any).adminId ?? 'unknown',
+      });
+
+      logAudit('revenue_rule_proposed', req, {
+        targetType: 'revenue_rule',
+        targetId: rule.id,
+        commonsBps: rule.commonsBps,
+        communityBps: rule.communityBps,
+        foundationBps: rule.foundationBps,
+      });
+
+      res.status(201).json(rule);
+    } catch (err) {
+      logger.error({ event: 'admin.revenue_rule.propose.error', err },
+        (err as Error).message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// PATCH /admin/billing/revenue-rules/:id/submit — submit for approval
+billingAdminRouter.patch(
+  '/revenue-rules/:id/submit',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (req: Request, res: Response) => {
+    const service = getRevenueRulesService();
+    try {
+      const rule = await service.submitForApproval(
+        req.params.id,
+        (req as any).adminId ?? 'unknown',
+      );
+      res.json(rule);
+    } catch (err) {
+      handleRuleError(err, res);
+    }
+  },
+);
+
+// PATCH /admin/billing/revenue-rules/:id/approve — approve a pending rule
+billingAdminRouter.patch(
+  '/revenue-rules/:id/approve',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (req: Request, res: Response) => {
+    const service = getRevenueRulesService();
+    try {
+      const rule = await service.approveRule(
+        req.params.id,
+        (req as any).adminId ?? 'unknown',
+      );
+
+      logAudit('revenue_rule_approved', req, {
+        targetType: 'revenue_rule',
+        targetId: rule.id,
+        activatesAt: rule.activatesAt,
+      });
+
+      res.json(rule);
+    } catch (err) {
+      handleRuleError(err, res);
+    }
+  },
+);
+
+// PATCH /admin/billing/revenue-rules/:id/reject — reject with reason
+billingAdminRouter.patch(
+  '/revenue-rules/:id/reject',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (req: Request, res: Response) => {
+    const service = getRevenueRulesService();
+    const result = rejectRuleSchema.safeParse(req.body);
+    if (!result.success) {
+      res.status(400).json({
+        error: 'Validation Error',
+        details: result.error.issues.map(i => ({
+          field: i.path.join('.'),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    try {
+      const rule = await service.rejectRule(
+        req.params.id,
+        (req as any).adminId ?? 'unknown',
+        result.data.reason,
+      );
+
+      logAudit('revenue_rule_rejected', req, {
+        targetType: 'revenue_rule',
+        targetId: rule.id,
+        reason: result.data.reason,
+      });
+
+      res.json(rule);
+    } catch (err) {
+      handleRuleError(err, res);
+    }
+  },
+);
+
+// PATCH /admin/billing/revenue-rules/:id/override-cooldown — emergency override
+billingAdminRouter.patch(
+  '/revenue-rules/:id/override-cooldown',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (req: Request, res: Response) => {
+    const service = getRevenueRulesService();
+    const result = overrideCooldownSchema.safeParse(req.body);
+    if (!result.success) {
+      res.status(400).json({
+        error: 'Validation Error',
+        details: result.error.issues.map(i => ({
+          field: i.path.join('.'),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    try {
+      const rule = await service.overrideCooldown(
+        req.params.id,
+        (req as any).adminId ?? 'unknown',
+        result.data.reason,
+      );
+
+      logAudit('revenue_rule_cooldown_override', req, {
+        targetType: 'revenue_rule',
+        targetId: rule.id,
+        reason: result.data.reason,
+      });
+
+      res.json(rule);
+    } catch (err) {
+      handleRuleError(err, res);
+    }
+  },
+);
+
+// GET /admin/billing/revenue-rules — list rules (with optional status filter)
+billingAdminRouter.get(
+  '/revenue-rules',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (req: Request, res: Response) => {
+    const service = getRevenueRulesService();
+    try {
+      const status = req.query.status as string | undefined;
+      if (status === 'pending') {
+        const rules = await service.getPendingRules();
+        res.json({ rules });
+      } else {
+        const limit = parseInt(req.query.limit as string, 10) || 50;
+        const rules = await service.getRuleHistory(limit);
+        res.json({ rules });
+      }
+    } catch (err) {
+      logger.error({ event: 'admin.revenue_rules.list.error', err },
+        (err as Error).message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// GET /admin/billing/revenue-rules/active — get currently active rule
+billingAdminRouter.get(
+  '/revenue-rules/active',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (_req: Request, res: Response) => {
+    const service = getRevenueRulesService();
+    try {
+      const rule = await service.getActiveRule();
+      if (!rule) {
+        res.status(404).json({ error: 'No active revenue rule' });
+        return;
+      }
+      res.json(rule);
+    } catch (err) {
+      logger.error({ event: 'admin.revenue_rules.active.error', err },
+        (err as Error).message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// GET /admin/billing/revenue-rules/:id/audit — audit log for a rule
+billingAdminRouter.get(
+  '/revenue-rules/:id/audit',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (req: Request, res: Response) => {
+    const service = getRevenueRulesService();
+    try {
+      const entries = await service.getRuleAudit(req.params.id);
+      res.json({ ruleId: req.params.id, entries });
+    } catch (err) {
+      logger.error({ event: 'admin.revenue_rules.audit.error', err },
+        (err as Error).message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// Error handler for revenue rule operations
+function handleRuleError(err: unknown, res: Response): void {
+  const msg = (err as Error).message;
+  if (msg.includes('not found')) {
+    res.status(404).json({ error: 'Revenue rule not found' });
+  } else if (msg.includes('Invalid state') || msg.includes('Cannot')) {
+    res.status(409).json({ error: 'Invalid state transition', message: msg });
+  } else {
+    logger.error({ event: 'admin.revenue_rule.error', err }, msg);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}

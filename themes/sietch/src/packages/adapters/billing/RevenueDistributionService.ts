@@ -48,33 +48,47 @@ export interface DistributionConfig {
 export class RevenueDistributionService {
   private db: Database.Database;
   private configCache: DistributionConfig | null = null;
+  /** Tracks whether the active config came from revenue_rules or billing_config */
+  private configSource: 'revenue_rule' | 'billing_config' = 'billing_config';
 
   constructor(db: Database.Database) {
     this.db = db;
   }
 
   /**
-   * Load distribution config from billing_config table.
+   * Load distribution config. Priority:
+   * 1. Active revenue rule (from revenue_rules table)
+   * 2. Fallback to billing_config table values
+   *
    * Cached after first load; call invalidateConfig() to refresh.
    */
   getConfig(): DistributionConfig {
     if (this.configCache) return this.configCache;
 
-    const getVal = (key: string): string => {
-      const row = this.db.prepare(
-        `SELECT value FROM billing_config WHERE key = ?`
-      ).get(key) as { value: string } | undefined;
-      if (!row) throw new Error(`Missing billing_config key: ${key}`);
-      return row.value;
-    };
+    // Try active revenue rule first (Task 8.5)
+    const activeRule = this.getActiveRevenueRule();
+    if (activeRule) {
+      this.configSource = 'revenue_rule';
+      this.configCache = {
+        commonsRateBps: BigInt(activeRule.commons_bps),
+        communityRateBps: BigInt(activeRule.community_bps),
+        foundationRateBps: BigInt(activeRule.foundation_bps),
+        commonsAccountId: this.getConfigVal('commons_account_id'),
+        communityAccountId: this.getConfigVal('community_account_id'),
+        foundationAccountId: this.getConfigVal('foundation_account_id'),
+      };
+      return this.configCache;
+    }
 
+    // Fallback to billing_config values
+    this.configSource = 'billing_config';
     this.configCache = {
-      commonsRateBps: BigInt(getVal('commons_rate_bps')),
-      communityRateBps: BigInt(getVal('community_rate_bps')),
-      foundationRateBps: BigInt(getVal('foundation_rate_bps')),
-      commonsAccountId: getVal('commons_account_id'),
-      communityAccountId: getVal('community_account_id'),
-      foundationAccountId: getVal('foundation_account_id'),
+      commonsRateBps: BigInt(this.getConfigVal('commons_rate_bps')),
+      communityRateBps: BigInt(this.getConfigVal('community_rate_bps')),
+      foundationRateBps: BigInt(this.getConfigVal('foundation_rate_bps')),
+      commonsAccountId: this.getConfigVal('commons_account_id'),
+      communityAccountId: this.getConfigVal('community_account_id'),
+      foundationAccountId: this.getConfigVal('foundation_account_id'),
     };
 
     // Validate rates sum to 10000 bps (100%)
@@ -88,6 +102,11 @@ export class RevenueDistributionService {
     }
 
     return this.configCache;
+  }
+
+  /** Get the config source used for the last distribution */
+  getConfigSource(): 'revenue_rule' | 'billing_config' {
+    return this.configSource;
   }
 
   /**
@@ -201,6 +220,7 @@ export class RevenueDistributionService {
       commonsShare: commonsShare.toString(),
       communityShare: communityShare.toString(),
       foundationShare: foundationShare.toString(),
+      source: this.configSource,
     }, 'Revenue distribution posted');
 
     return {
@@ -211,5 +231,39 @@ export class RevenueDistributionService {
       communityAccountId: config.communityAccountId,
       foundationAccountId: config.foundationAccountId,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private Helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Look up the active revenue rule from revenue_rules table.
+   * Returns null if the table doesn't exist or no active rule.
+   */
+  private getActiveRevenueRule(): {
+    commons_bps: number;
+    community_bps: number;
+    foundation_bps: number;
+  } | null {
+    try {
+      const row = this.db.prepare(
+        `SELECT commons_bps, community_bps, foundation_bps
+         FROM revenue_rules WHERE status = 'active' LIMIT 1`
+      ).get() as { commons_bps: number; community_bps: number; foundation_bps: number } | undefined;
+      return row ?? null;
+    } catch {
+      // Table may not exist yet (pre-migration 035) — fall through to billing_config
+      return null;
+    }
+  }
+
+  /** Read a single value from billing_config */
+  private getConfigVal(key: string): string {
+    const row = this.db.prepare(
+      `SELECT value FROM billing_config WHERE key = ?`
+    ).get(key) as { value: string } | undefined;
+    if (!row) throw new Error(`Missing billing_config key: ${key}`);
+    return row.value;
   }
 }
