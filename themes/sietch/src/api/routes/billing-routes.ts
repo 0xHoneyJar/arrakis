@@ -6,9 +6,10 @@
  * GET /api/billing/history — paginated ledger entries
  * GET /api/billing/pricing — public pricing page data
  * POST /api/internal/billing/finalize — S2S finalize for loa-finn
+ * POST /api/internal/billing/verify-anchor — S2S anchor verification
  *
- * SDD refs: §5.2 Balance/History, §5.3 Top-Up Endpoint, §5.7 Auth Model
- * Sprint refs: Tasks 2.5, 5.1, 5.2
+ * SDD refs: §5.2 Balance/History, §5.3 Top-Up Endpoint, §5.7 Auth Model, §6.2 Identity Anchor S2S
+ * Sprint refs: Tasks 2.5, 5.1, 5.2; Sprint 253 Task 2.1
  *
  * @module api/routes/billing-routes
  */
@@ -20,6 +21,9 @@ import { requireAuth } from '../middleware/auth.js';
 import { memberRateLimiter } from '../middleware.js';
 import { serializeBigInt } from '../../packages/core/protocol/arithmetic.js';
 import { PROTOCOL_VERSION, validateCompatibility } from '../../packages/core/protocol/compatibility.js';
+import { verifyIdentityAnchor } from '../../packages/core/protocol/identity-trust.js';
+import { BILLING_ENTRY_CONTRACT_VERSION } from '../../packages/core/protocol/billing-entry.js';
+import type { BillingEntry } from '../../packages/core/protocol/billing-entry.js';
 import { s2sFinalizeRequestSchema, historyQuerySchema } from '../../packages/core/contracts/s2s-billing.js';
 import { logger } from '../../utils/logger.js';
 import type { IPaymentService } from '../../packages/core/ports/IPaymentService.js';
@@ -298,7 +302,19 @@ function requireInternalAuth(req: Request, res: Response, next: Function): void 
   next();
 }
 
-// S2S rate limiter: 200 per minute per service
+// =============================================================================
+// S2S Rate Limiting (Sprint 252, Task 1.3)
+//
+// S2S routes use a higher rate limit (200 req/min) than public/admin routes
+// because they serve inter-service communication (loa-finn → arrakis) where:
+//   1. Authentication is via BILLING_INTERNAL_JWT_SECRET (HS256 JWT, not API key)
+//   2. Callers are trusted internal services, not external users
+//   3. Burst patterns differ: finalize calls come in batches after agent work
+//   4. The threat model is service impersonation (mitigated by JWT), not brute-force
+//
+// The 200 req/min limit prevents runaway service loops while allowing legitimate
+// burst traffic from concurrent agent finalizations.
+// =============================================================================
 const s2sRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,
@@ -461,7 +477,11 @@ creditBillingRouter.post(
         serviceId: (req as any).internalServiceId,
       }, 'S2S finalize successful');
 
-      res.json(serializeBigInt({
+      // ADR (Sprint 255, Task 4.4): Protocol adoption at boundary, not rewrite.
+      // When format=loh is requested, include the loa-hounfour BillingEntry alongside
+      // the native format. This lets consuming services progressively adopt the protocol
+      // without requiring arrakis to change its internal representation.
+      const nativeResponse = serializeBigInt({
         reservationId: finalizeResult.reservationId,
         accountId: finalizeResult.accountId,
         finalizedMicro: finalizeResult.actualCostMicro,
@@ -469,7 +489,23 @@ creditBillingRouter.post(
         overrunMicro: finalizeResult.overrunMicro,
         billingMode: 'live',
         finalizedAt: finalizeResult.finalizedAt,
-      }));
+      });
+
+      if (req.query.format === 'loh') {
+        const billingEntry: BillingEntry = {
+          entry_id: `finalize:${finalizeResult.reservationId}`,
+          account_id: finalizeResult.accountId,
+          total_micro: finalizeResult.actualCostMicro.toString(),
+          entry_type: 'finalize',
+          reference_id: finalizeResult.reservationId,
+          created_at: finalizeResult.finalizedAt,
+          metadata: null,
+          contract_version: BILLING_ENTRY_CONTRACT_VERSION,
+        };
+        res.json({ ...nativeResponse, billing_entry: billingEntry });
+      } else {
+        res.json(nativeResponse);
+      }
     } catch (err) {
       const msg = (err as Error).message;
       logger.error({ event: 'billing.s2s.finalize.error', reservationId, err }, msg);
@@ -483,6 +519,85 @@ creditBillingRouter.post(
       } else {
         res.status(500).json({ error: 'Internal server error' });
       }
+    }
+  },
+);
+
+// =============================================================================
+// POST /api/internal/billing/verify-anchor — S2S Anchor Verification (Sprint 253, Task 2.1)
+//
+// Cross-system identity verification for high-value operations.
+// External services (loa-finn) call this endpoint to verify an identity anchor
+// against the stored value in arrakis, getting back a SHA-256 hash suitable
+// for JWT embedding. See identity-trust.ts module header for the full design.
+// =============================================================================
+
+const verifyAnchorSchema = z.object({
+  accountId: z.string().min(1, 'accountId is required'),
+  anchor: z.string().min(1, 'anchor is required'),
+});
+
+creditBillingRouter.post(
+  '/internal/verify-anchor',
+  requireInternalAuth,
+  s2sRateLimiter,
+  (req: Request, res: Response) => {
+    const result = verifyAnchorSchema.safeParse(req.body);
+    if (!result.success) {
+      res.status(400).json({
+        error: 'Validation Error',
+        details: result.error.issues.map(i => ({
+          field: i.path.join('.'),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    const { accountId, anchor } = result.data;
+    const db = billingDb;
+
+    if (!db) {
+      res.status(503).json({ error: 'Billing database not initialized' });
+      return;
+    }
+
+    // Lookup function injected into the pure service layer
+    const lookupAnchor = (id: string) => {
+      try {
+        const row = db.prepare(
+          `SELECT identity_anchor FROM agent_identity_anchors WHERE agent_account_id = ?`
+        ).get(id) as { identity_anchor: string } | undefined;
+        if (!row) return null;
+        return { anchor: row.identity_anchor };
+      } catch {
+        // Table may not exist in non-billing deployments
+        return null;
+      }
+    };
+
+    const verification = verifyIdentityAnchor(accountId, anchor, lookupAnchor);
+
+    logger.info({
+      event: 'billing.s2s.verify_anchor',
+      accountId,
+      verified: verification.verified,
+      reason: verification.reason,
+      serviceId: (req as any).internalServiceId,
+    }, `Anchor verification: ${verification.verified ? 'success' : verification.reason}`);
+
+    if (verification.verified) {
+      res.json({
+        verified: true,
+        anchor_hash: verification.anchorHash,
+        checked_at: verification.checkedAt,
+      });
+    } else {
+      res.status(403).json({
+        verified: false,
+        reason: verification.reason,
+        checked_at: verification.checkedAt,
+      });
     }
   },
 );
