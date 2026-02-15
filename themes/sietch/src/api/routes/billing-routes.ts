@@ -18,7 +18,8 @@ import { z } from 'zod';
 import { createHmac } from 'crypto';
 import { requireAuth } from '../middleware/auth.js';
 import { memberRateLimiter } from '../middleware.js';
-import { serializeBigInt } from '../../packages/core/utils/micro-usd.js';
+import { serializeBigInt } from '../../packages/core/protocol/arithmetic.js';
+import { PROTOCOL_VERSION, validateCompatibility } from '../../packages/core/protocol/compatibility.js';
 import { s2sFinalizeRequestSchema, historyQuerySchema } from '../../packages/core/contracts/s2s-billing.js';
 import { logger } from '../../utils/logger.js';
 import type { IPaymentService } from '../../packages/core/ports/IPaymentService.js';
@@ -344,6 +345,34 @@ creditBillingRouter.post(
     }
 
     const { reservationId, actualCostMicro, accountId } = result.data;
+
+    // Protocol version compatibility check (Sprint 10, Task 1.4)
+    const remoteVersion = req.headers['x-protocol-version'] as string | undefined;
+    if (remoteVersion) {
+      const compat = validateCompatibility(PROTOCOL_VERSION, remoteVersion);
+      if (!compat.compatible) {
+        logger.warn({
+          event: 'billing.s2s.finalize.version_mismatch',
+          localVersion: PROTOCOL_VERSION,
+          remoteVersion,
+          level: compat.level,
+        }, compat.message);
+        res.status(422).json({
+          error: 'Protocol Version Mismatch',
+          message: compat.message,
+          localVersion: PROTOCOL_VERSION,
+          remoteVersion,
+        });
+        return;
+      }
+      if (compat.level === 'minor_compatible') {
+        logger.info({
+          event: 'billing.s2s.finalize.version_drift',
+          localVersion: PROTOCOL_VERSION,
+          remoteVersion,
+        }, compat.message);
+      }
+    }
 
     // Task 7.1: Confused deputy prevention — verify account ownership
     if (accountId && billingDb) {

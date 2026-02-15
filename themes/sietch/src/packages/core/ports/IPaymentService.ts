@@ -10,6 +10,9 @@
  * @module packages/core/ports/IPaymentService
  */
 
+import type { PaymentState } from '../protocol/index.js';
+import { PAYMENT_MACHINE, isValidTransition as protocolIsValid } from '../protocol/index.js';
+
 // =============================================================================
 // Provider Types
 // =============================================================================

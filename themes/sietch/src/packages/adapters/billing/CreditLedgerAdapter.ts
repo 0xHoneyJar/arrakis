@@ -37,7 +37,7 @@ import type {
   HistoryOptions,
 } from '../../core/ports/ICreditLedgerService.js';
 import { DEFAULT_POOL } from '../../core/ports/ICreditLedgerService.js';
-import { assertMicroUSD } from '../../core/utils/micro-usd.js';
+import { assertMicroUSD } from '../../core/protocol/arithmetic.js';
 import { logger } from '../../../utils/logger.js';
 
 // =============================================================================

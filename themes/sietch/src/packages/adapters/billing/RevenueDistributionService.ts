@@ -17,6 +17,7 @@
 
 import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
+import { bpsShare, assertBpsSum } from '../../core/protocol/arithmetic.js';
 import { logger } from '../../../utils/logger.js';
 
 // =============================================================================
@@ -92,14 +93,11 @@ export class RevenueDistributionService {
     };
 
     // Validate rates sum to 10000 bps (100%)
-    const total = this.configCache.commonsRateBps +
-      this.configCache.communityRateBps +
-      this.configCache.foundationRateBps;
-    if (total !== 10000n) {
-      throw new Error(
-        `Revenue distribution rates must sum to 10000 bps, got ${total}`
-      );
-    }
+    assertBpsSum(
+      this.configCache.commonsRateBps,
+      this.configCache.communityRateBps,
+      this.configCache.foundationRateBps,
+    );
 
     return this.configCache;
   }
@@ -127,8 +125,8 @@ export class RevenueDistributionService {
   } {
     const config = this.getConfig();
 
-    const commonsShare = (chargeMicro * config.commonsRateBps) / 10000n;
-    const communityShare = (chargeMicro * config.communityRateBps) / 10000n;
+    const commonsShare = bpsShare(chargeMicro, config.commonsRateBps);
+    const communityShare = bpsShare(chargeMicro, config.communityRateBps);
     // Foundation absorbs remainder — exact zero-sum
     const foundationShare = chargeMicro - commonsShare - communityShare;
 

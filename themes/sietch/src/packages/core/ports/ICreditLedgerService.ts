@@ -10,6 +10,17 @@
  * @module packages/core/ports/ICreditLedgerService
  */
 
+import type {
+  CreditBalance,
+  EntityType as ProtocolEntityType,
+  SourceType as ProtocolSourceType,
+  EntryType as ProtocolEntryType,
+  BillingMode as ProtocolBillingMode,
+} from '../protocol/index.js';
+
+// Re-export protocol types for backward compatibility
+export type { CreditBalance } from '../protocol/index.js';
+
 // =============================================================================
 // Pool Types
 // =============================================================================
@@ -35,23 +46,22 @@ export type PoolId = string;
 export const DEFAULT_POOL: PoolId = 'general';
 
 // =============================================================================
-// Entity Types
+// Entity Types — Aliased from protocol types
 // =============================================================================
 
-export type EntityType = 'agent' | 'person' | 'community' | 'mod' | 'protocol' | 'foundation' | 'commons';
+/** Entity types — canonical definition in protocol/billing-types.ts */
+export type EntityType = ProtocolEntityType;
 
-export type SourceType = 'deposit' | 'grant' | 'purchase' | 'transfer_in' | 'commons_dividend';
+/** Credit lot source types — canonical definition in protocol/billing-types.ts */
+export type SourceType = ProtocolSourceType;
 
-export type EntryType =
-  | 'deposit' | 'reserve' | 'finalize' | 'release' | 'refund'
-  | 'grant' | 'shadow_charge' | 'shadow_reserve' | 'shadow_finalize'
-  | 'commons_contribution' | 'revenue_share'
-  | 'marketplace_sale' | 'marketplace_purchase'
-  | 'escrow' | 'escrow_release';
+/** Ledger entry types — canonical definition in protocol/billing-types.ts */
+export type EntryType = ProtocolEntryType;
 
 export type ReservationStatus = 'pending' | 'finalized' | 'released' | 'expired';
 
-export type BillingMode = 'shadow' | 'soft' | 'live';
+/** Billing enforcement mode — canonical definition in protocol/billing-types.ts */
+export type BillingMode = ProtocolBillingMode;
 
 // =============================================================================
 // Domain Types

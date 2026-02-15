@@ -13,17 +13,18 @@
  * @module packages/core/ports/IRevenueRulesService
  */
 
+import type { RevenueRuleState } from '../protocol/index.js';
+import { REVENUE_RULE_MACHINE, isValidTransition as protocolIsValid } from '../protocol/index.js';
+
 // =============================================================================
 // Types
 // =============================================================================
 
-export type RuleStatus =
-  | 'draft'
-  | 'pending_approval'
-  | 'cooling_down'
-  | 'active'
-  | 'superseded'
-  | 'rejected';
+/**
+ * RuleStatus — aligned with protocol RevenueRuleState.
+ * Kept as local alias for backward compatibility across existing adapters.
+ */
+export type RuleStatus = RevenueRuleState;
 
 export interface RevenueRule {
   id: string;

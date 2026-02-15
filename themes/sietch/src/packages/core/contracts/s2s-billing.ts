@@ -14,19 +14,25 @@
  */
 
 import { z } from 'zod';
+import type { UsageRecord } from '../protocol/index.js';
 
 // =============================================================================
 // Request / Response Types
 // =============================================================================
 
-/** S2S finalize request from loa-finn to arrakis */
+/**
+ * S2S finalize request from loa-finn to arrakis.
+ * Wire format aligned with protocol UsageRecord — serialized as strings for JSON safety.
+ */
 export interface S2SFinalizeRequest {
   /** The reservation ID to finalize */
   reservationId: string;
   /** Actual cost in micro-USD as a string (for BigInt safety over JSON) */
   actualCostMicro: string;
-  /** Optional account ID for confused-deputy prevention */
+  /** Optional account ID for confused-deputy prevention (removed in Sprint 5 — derived from reservation) */
   accountId?: string;
+  /** Optional identity anchor for agent verification (Sprint 5) */
+  identity_anchor?: string;
 }
 
 /** S2S finalize success response */

@@ -11,7 +11,7 @@
  * Sprint refs: Task 1.4b
  */
 
-import { assertMicroUSD } from './micro-usd.js';
+import { assertMicroUSD } from '../protocol/arithmetic.js';
 
 // =============================================================================
 // Pricing Types
