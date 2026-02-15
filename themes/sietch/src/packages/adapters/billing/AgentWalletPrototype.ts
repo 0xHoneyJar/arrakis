@@ -135,6 +135,11 @@ export class AgentWalletPrototype {
       : `tba-${config.tokenId}`;
     const tbaAddress = `0x${Buffer.from(tbaInput).toString('hex').padStart(40, '0').slice(0, 40)}`;
 
+    // Persist identity anchor to SQLite (Sprint 243, Task 5.2)
+    if (config.identityAnchor && this.db) {
+      this.persistIdentityAnchor(account.id, config.identityAnchor, config.ownerAddress);
+    }
+
     return {
       account,
       config,
@@ -294,6 +299,47 @@ export class AgentWalletPrototype {
     const spent = this.dailySpent.get(todayKey) ?? 0n;
     const remaining = wallet.config.dailyCapMicro - spent;
     return remaining > 0n ? remaining : 0n;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private: Identity anchor persistence (Sprint 243, Task 5.2)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Persist identity anchor to agent_identity_anchors table.
+   * Idempotent: INSERT OR IGNORE skips if anchor already bound to this account.
+   */
+  private persistIdentityAnchor(
+    accountId: string,
+    identityAnchor: string,
+    createdBy: string,
+  ): void {
+    if (!this.db) return;
+    try {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO agent_identity_anchors
+          (agent_account_id, identity_anchor, created_by)
+        VALUES (?, ?, ?)
+      `).run(accountId, identityAnchor, createdBy);
+    } catch {
+      // Table may not exist in test setup — non-fatal
+    }
+  }
+
+  /**
+   * Look up stored identity anchor for an agent account.
+   * Returns null if no anchor is bound or table doesn't exist.
+   */
+  getStoredAnchor(accountId: string): string | null {
+    if (!this.db) return null;
+    try {
+      const row = this.db.prepare(
+        `SELECT identity_anchor FROM agent_identity_anchors WHERE agent_account_id = ?`
+      ).get(accountId) as { identity_anchor: string } | undefined;
+      return row?.identity_anchor ?? null;
+    } catch {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------

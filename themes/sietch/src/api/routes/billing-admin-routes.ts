@@ -15,6 +15,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
 import { randomUUID, createHmac, timingSafeEqual } from 'crypto';
 import { logger } from '../../utils/logger.js';
 import { serializeBigInt } from '../../packages/core/protocol/arithmetic.js';
@@ -652,6 +653,93 @@ billingAdminRouter.get(
       logger.error({ event: 'admin.notifications.list.error', err },
         (err as Error).message);
       res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// =============================================================================
+// POST /admin/billing/agents/:id/rotate-anchor (Sprint 243, Task 5.4)
+// =============================================================================
+
+const rotateAnchorSchema = z.object({
+  newAnchor: z.string().min(1).max(256),
+});
+
+billingAdminRouter.post(
+  '/agents/:id/rotate-anchor',
+  requireAdminAuth,
+  adminRateLimiter,
+  async (req: Request, res: Response) => {
+    if (!adminDb) {
+      res.status(503).json({ error: 'Database not initialized' });
+      return;
+    }
+
+    const result = rotateAnchorSchema.safeParse(req.body);
+    if (!result.success) {
+      res.status(400).json({
+        error: 'Validation Error',
+        details: result.error.issues.map(i => ({
+          field: i.path.join('.'),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    const agentAccountId = req.params.id;
+    const rotator = (req as any).adminId ?? 'unknown';
+    const { newAnchor } = result.data;
+
+    try {
+      // Look up existing anchor
+      const existing = adminDb.prepare(
+        `SELECT identity_anchor, created_by FROM agent_identity_anchors WHERE agent_account_id = ?`
+      ).get(agentAccountId) as { identity_anchor: string; created_by: string } | undefined;
+
+      if (!existing) {
+        res.status(404).json({ error: 'No identity anchor found for this agent' });
+        return;
+      }
+
+      // Four-eyes: rotator must differ from created_by
+      if (existing.created_by === rotator) {
+        res.status(403).json({
+          error: 'four_eyes_violation',
+          message: `Anchor rotation requires a different actor than the creator '${rotator}'`,
+        });
+        return;
+      }
+
+      // Perform rotation
+      adminDb.prepare(`
+        UPDATE agent_identity_anchors
+        SET identity_anchor = ?, rotated_at = datetime('now'), rotated_by = ?
+        WHERE agent_account_id = ?
+      `).run(newAnchor, rotator, agentAccountId);
+
+      logAudit('anchor_rotated', req, {
+        targetType: 'agent_identity',
+        targetId: agentAccountId,
+        oldAnchorPrefix: existing.identity_anchor.slice(0, 8) + '...',
+        newAnchorPrefix: newAnchor.slice(0, 8) + '...',
+        createdBy: existing.created_by,
+        rotatedBy: rotator,
+      });
+
+      res.json({
+        agentAccountId,
+        rotatedAt: new Date().toISOString(),
+        rotatedBy: rotator,
+      });
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg.includes('UNIQUE constraint')) {
+        res.status(409).json({ error: 'Anchor already in use by another agent' });
+      } else {
+        logger.error({ event: 'admin.anchor_rotation.error', agentAccountId, err }, msg);
+        res.status(500).json({ error: 'Internal server error' });
+      }
     }
   },
 );

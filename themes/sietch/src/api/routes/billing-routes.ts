@@ -344,7 +344,7 @@ creditBillingRouter.post(
       return;
     }
 
-    const { reservationId, actualCostMicro, accountId } = result.data;
+    const { reservationId, actualCostMicro, accountId, identity_anchor } = result.data;
 
     // Protocol version compatibility check (Sprint 10, Task 1.4)
     const remoteVersion = req.headers['x-protocol-version'] as string | undefined;
@@ -394,6 +394,57 @@ creditBillingRouter.post(
           message: 'Account mismatch: reservation belongs to a different account',
         });
         return;
+      }
+    }
+
+    // Sprint 243, Task 5.3: Identity anchor verification for agent accounts
+    if (billingDb) {
+      // Derive accountId from reservation if not provided
+      const derivedAccountId = (() => {
+        if (accountId) return accountId;
+        const row = billingDb.prepare(
+          `SELECT account_id FROM credit_reservations WHERE id = ?`
+        ).get(reservationId) as { account_id: string } | undefined;
+        return row?.account_id ?? null;
+      })();
+
+      if (derivedAccountId) {
+        try {
+          const anchorRow = billingDb.prepare(
+            `SELECT identity_anchor FROM agent_identity_anchors WHERE agent_account_id = ?`
+          ).get(derivedAccountId) as { identity_anchor: string } | undefined;
+
+          if (anchorRow) {
+            // Agent account has a stored anchor — verification required
+            if (!identity_anchor) {
+              logger.warn({
+                event: 'billing.s2s.finalize.anchor_missing',
+                reservationId,
+                accountId: derivedAccountId,
+              }, 'Identity anchor required but not provided');
+              res.status(403).json({
+                error: 'Forbidden',
+                message: 'Identity anchor required for agent account',
+              });
+              return;
+            }
+            if (identity_anchor !== anchorRow.identity_anchor) {
+              logger.warn({
+                event: 'billing.s2s.finalize.anchor_mismatch',
+                reservationId,
+                accountId: derivedAccountId,
+              }, 'Identity anchor mismatch');
+              res.status(403).json({
+                error: 'Forbidden',
+                message: 'Identity anchor mismatch',
+              });
+              return;
+            }
+          }
+          // No stored anchor → skip verification (non-agent account)
+        } catch {
+          // agent_identity_anchors table may not exist — skip verification
+        }
       }
     }
 

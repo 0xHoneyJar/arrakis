@@ -61,6 +61,8 @@ export const s2sFinalizeRequestSchema = z.object({
   reservationId: z.string().min(1),
   actualCostMicro: z.string().regex(/^\d+$/, 'Must be a positive integer string'),
   accountId: z.string().min(1).optional(),
+  /** Identity anchor for agent verification (Sprint 243, Task 5.3) */
+  identity_anchor: z.string().min(1).optional(),
 });
 
 /** Zod schema for ledger history query params */
