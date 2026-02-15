@@ -19,6 +19,7 @@ import { boostRouter } from '../boost.routes.js';
 import { themeRouter } from './theme.routes.js';
 import { componentRouter } from './component.routes.js';
 import { internalRouter } from './internal.routes.js';
+import { referralRouter } from './referral.routes.js';
 
 /**
  * Combined API router that mounts all sub-routers
@@ -58,6 +59,9 @@ apiRouter.use('/themes', themeRouter);
 // Mount component routes at /components (Sprint 5 - Component Registry)
 apiRouter.use('/components', componentRouter);
 
+// Mount referral routes at /referrals (Sprint 258 - Creator Economy)
+apiRouter.use('/referrals', referralRouter);
+
 /**
  * Re-export individual routers for backward compatibility and direct access
  */
@@ -74,6 +78,7 @@ export {
   themeRouter,
   componentRouter,
   internalRouter,
+  referralRouter,
 };
 
 /**
@@ -137,3 +142,9 @@ export type { AgentConfigRoutesDeps, AgentConfigStore, AgentConfigAuditLogger, B
  */
 export { createBYOKRoutes } from './admin/byok.routes.js';
 export type { BYOKRoutesDeps } from './admin/byok.routes.js';
+
+/**
+ * Referral routes (Sprint 258 - Creator Economy)
+ * Referral code management, registration, and stats
+ */
+export { setReferralService } from './referral.routes.js';
