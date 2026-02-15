@@ -18,6 +18,8 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import type { ICreditLedgerService, ReservationResult, FinalizeResult } from '../../packages/core/ports/ICreditLedgerService.js';
+import type { IdentityTrustConfig } from '../../packages/core/protocol/identity-trust.js';
+import { DEFAULT_IDENTITY_TRUST, evaluateIdentityTrust } from '../../packages/core/protocol/identity-trust.js';
 import { logger } from '../../utils/logger.js';
 
 // =============================================================================
@@ -37,6 +39,12 @@ export interface BillingGuardConfig {
   overrunAlertThresholdPct?: number;
   /** Default reserve TTL in seconds (default: 300) */
   reserveTtlSeconds?: number;
+  /** Identity trust configuration (Sprint 247, Task 3.1) */
+  identityTrust?: IdentityTrustConfig;
+  /** Function to look up stored identity anchor for an account */
+  getStoredAnchor?: (accountId: string) => string | null;
+  /** Whether this guard is mounted on a purchase route (exempt from anchor check) */
+  isPurchaseRoute?: boolean;
 }
 
 export interface BillingContext {
@@ -125,6 +133,34 @@ export function createBillingReserveMiddleware(config: BillingGuardConfig) {
 
     const poolId = 'general';
     const estimatedCost = estimateCostMicro(req, safetyMultiplier);
+
+    // Identity trust check (Sprint 247, Task 3.2)
+    const trustConfig = config.identityTrust ?? DEFAULT_IDENTITY_TRUST;
+    if (trustConfig.enabled && config.getStoredAnchor) {
+      const hasAnchor = config.getStoredAnchor(accountId) !== null;
+      const check = evaluateIdentityTrust(
+        trustConfig,
+        estimatedCost,
+        hasAnchor,
+        config.isPurchaseRoute ?? false,
+      );
+
+      if (!check.allowed) {
+        logger.warn({
+          event: 'billing.identity.denied',
+          accountId,
+          reason: check.reason,
+          estimatedCostMicro: estimatedCost.toString(),
+        }, 'Identity anchor required for high-value operation');
+
+        res.status(403).json({
+          error: 'Identity Anchor Required',
+          code: check.reason,
+          message: 'An identity anchor is required for high-value operations.',
+        });
+        return;
+      }
+    }
 
     // Shadow mode: log and proceed
     if (mode === 'shadow') {

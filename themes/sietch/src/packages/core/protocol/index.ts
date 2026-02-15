@@ -77,3 +77,14 @@ export type {
 } from './atomic-counter.js';
 
 export { createAtomicCounter } from './atomic-counter.js';
+
+// Identity trust
+export type {
+  IdentityTrustConfig,
+  IdentityCheckResult,
+} from './identity-trust.js';
+
+export {
+  DEFAULT_IDENTITY_TRUST,
+  evaluateIdentityTrust,
+} from './identity-trust.js';

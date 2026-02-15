@@ -131,3 +131,72 @@ Calculate commons and community shares via integer division, then assign `founda
 
 - **Round-robin remainder:** Distribute remainder across pools in rotation. More "fair" but breaks zero-sum simplicity and requires tracking rotation state.
 - **Largest-remainder method:** Assign remainder to pool with largest fractional part. Correct but adds branching logic with minimal practical benefit at micro-USD scale.
+
+---
+
+## ADR-008: Identity Anchor Trust Model
+
+**Status:** Accepted
+**Date:** 2026-02-15
+**SDD ref:** &sect;2.4 Identity Anchors
+**Sprint ref:** 247 (Cycle 027, Task 3.3)
+
+### Context
+
+Agent wallets interact with the billing system for credit management. High-value operations require stronger identity verification than basic JWT authentication. A sybil-resistant mechanism is needed to tie agent wallets to on-chain NFT ownership.
+
+### Decision
+
+#### Derivation
+
+Identity anchors are derived deterministically from on-chain data:
+
+```
+anchor = SHA-256(chainId + contractAddress + tokenId + ownerAddress)
+```
+
+- **Deterministic:** Same inputs always produce the same anchor
+- **On-chain-verifiable:** All inputs are publicly available on-chain
+- **Collision-resistant:** SHA-256 provides 128-bit collision resistance
+
+#### Sybil Resistance
+
+One NFT = one anchor = one agent wallet.
+
+Enforced via:
+- `UNIQUE` constraint on `identity_anchor` in `agent_identity_anchors` table
+- `INSERT OR IGNORE` for idempotent creation (same account can re-register)
+- On-chain ownership can be re-verified at any time
+
+#### Four-Eyes Model
+
+Anchor rotation requires a different actor (JWT `sub`) than the original creator:
+- `rotated_by !== created_by` enforced at `POST /admin/billing/agents/:id/rotate-anchor`
+- Trust assumption: distinct JWT subjects correspond to distinct authorized entities
+- Rotation audit logs previous anchor hash (truncated to first 8 chars) for traceability
+
+#### Graduated Trust
+
+Operations below `high_value_threshold_micro` (default: 100,000,000 = $100 USD) proceed with basic auth only. Above threshold, identity anchor is required.
+
+Feature flag `enabled: false` by default for backward compatibility. Purchase endpoints (`/api/billing/credit-packs/*`) are exempt from anchor checks to prevent a deadlock where credits are needed to establish identity.
+
+### Attack Surface
+
+| Attack | Mitigation |
+|--------|-----------|
+| Anchor collision | SHA-256 pre-image resistance (2^128) |
+| Ownership transfer | Re-verification needed; rotation audit trail |
+| Key compromise | Rotation path with four-eyes enforcement |
+| Sybil via multiple NFTs | One NFT = one anchor; UNIQUE DB constraint |
+| Self-rotation bypass | `rotated_by !== created_by` check |
+
+### Consequences
+
+- **Positive:** Sybil-resistant identity binding for high-value operations; graduated trust allows low-value operations without friction; feature flag allows incremental rollout.
+- **Negative:** Requires NFT ownership as identity prerequisite; four-eyes model assumes JWT subject uniqueness.
+
+### Alternatives Considered
+
+- **Flat trust (no graduation):** Simpler, but anchor requirement on all operations creates friction for low-value usage. Graduated model matches risk profile.
+- **DID-based identity:** W3C Decentralized Identifiers provide richer identity. Over-engineered for current NFT-bound agent model. Migration path exists if needed.
