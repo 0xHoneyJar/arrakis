@@ -58,8 +58,17 @@ export {
   isTerminal,
 } from './state-machines.js';
 
-// Arithmetic helpers
+// Arithmetic helpers + branded types
+export type {
+  MicroUSD,
+  BasisPoints,
+  AccountId,
+} from './arithmetic.js';
+
 export {
+  microUSD,
+  basisPoints,
+  accountId,
   MICRO_USD_PER_DOLLAR,
   TOTAL_BPS,
   MAX_MICRO_USD,
@@ -77,6 +86,9 @@ export {
   bpsShare,
   assertBpsSum,
 } from './arithmetic.js';
+
+// State machine provenance
+export { VENDORED_FROM } from './state-machines.js';
 
 // Compatibility check
 export {
