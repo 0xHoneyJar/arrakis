@@ -16,6 +16,7 @@
 import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import { logger } from '../../../utils/logger.js';
+import { sqliteTimestamp } from './protocol/timestamps';
 
 // =============================================================================
 // Types
@@ -71,11 +72,16 @@ export class SettlementService {
   }
 
   /**
-   * Settle pending earnings older than 48h.
+   * Settle pending earnings whose hold period has elapsed.
    * Each earning gets a `settlement` ledger entry as the authoritative finality record.
    * Idempotent: uses `settlement:{earning.id}` as idempotency key.
+   *
+   * @param opts.asOf — Timestamp to evaluate settlement eligibility against.
+   *   Defaults to sqliteNow(). Pass a controlled timestamp for deterministic testing.
    */
-  settleEarnings(): SettlementResult {
+  settleEarnings(opts?: { asOf?: string }): SettlementResult {
+    const asOf = opts?.asOf ?? sqliteTimestamp();
+
     const result: SettlementResult = {
       processed: 0,
       settled: 0,
@@ -85,13 +91,23 @@ export class SettlementService {
     // Check if settled_at column exists, add it if not
     this.ensureSettlementColumns();
 
-    const pendingEarnings = this.db.prepare(`
-      SELECT * FROM referrer_earnings
-      WHERE settled_at IS NULL
-        AND created_at < datetime('now', '-${SETTLEMENT_HOLD_HOURS} hours')
-      ORDER BY created_at ASC
-      LIMIT ?
-    `).all(BATCH_SIZE) as EarningRow[];
+    // Prefer settle_after (pre-computed) over wall-clock calculation
+    const hasSettleAfter = this.hasColumn('settle_after');
+    const pendingEarnings = hasSettleAfter
+      ? this.db.prepare(`
+          SELECT * FROM referrer_earnings
+          WHERE settled_at IS NULL
+            AND settle_after <= ?
+          ORDER BY settle_after ASC
+          LIMIT ?
+        `).all(asOf, BATCH_SIZE) as EarningRow[]
+      : this.db.prepare(`
+          SELECT * FROM referrer_earnings
+          WHERE settled_at IS NULL
+            AND created_at < datetime(?, '-${SETTLEMENT_HOLD_HOURS} hours')
+          ORDER BY created_at ASC
+          LIMIT ?
+        `).all(asOf, BATCH_SIZE) as EarningRow[];
 
     if (pendingEarnings.length === 0) {
       logger.debug({ event: 'settlement.empty' }, 'No pending earnings to settle');
@@ -153,7 +169,7 @@ export class SettlementService {
           return { success: false, earningId, reason: 'Earning already settled — cannot clawback' };
         }
 
-        const now = new Date().toISOString();
+        const now = sqliteTimestamp();
 
         // Write compensating ledger entry (negative amount)
         const seqRow = this.db.prepare(
@@ -249,7 +265,7 @@ export class SettlementService {
   // ---------------------------------------------------------------------------
 
   private settleEarning(earning: EarningRow): void {
-    const now = new Date().toISOString();
+    const now = sqliteTimestamp();
 
     this.db.transaction(() => {
       // Get next entry_seq for UNIQUE constraint
@@ -281,6 +297,15 @@ export class SettlementService {
         UPDATE referrer_earnings SET settled_at = ? WHERE id = ?
       `).run(now, earning.id);
     })();
+  }
+
+  private hasColumn(name: string): boolean {
+    try {
+      const cols = this.db.prepare('PRAGMA table_info(referrer_earnings)').all() as Array<{ name: string }>;
+      return cols.some(c => c.name === name);
+    } catch {
+      return false;
+    }
   }
 
   /**

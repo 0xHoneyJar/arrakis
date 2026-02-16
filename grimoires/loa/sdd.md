@@ -380,7 +380,7 @@ interface IReferralService {
 
 **Modification:** `themes/sietch/src/packages/adapters/billing/RevenueDistributionService.ts`
 
-Extend `postDistribution()` to check for referrer attribution. **Entire distribution runs within a single SQLite `BEGIN IMMEDIATE` transaction** for atomicity. The distribution is a **conserved split of a single charge source** — `totalMicro` is debited exactly once from the charge-proceeds source and credited to up to **5 recipients** (referrer + commons + community + foundation net + treasury reserve) whose amounts sum to exactly `totalMicro`:
+Extend `postDistribution()` to check for referrer attribution. **Entire distribution runs within a single SQLite `BEGIN IMMEDIATE` transaction** ([ADR-015](decisions/adr-015-sqlite-locking-hierarchy.md)) for atomicity. The distribution is a **conserved split of a single charge source** — `totalMicro` is debited exactly once from the charge-proceeds source and credited to up to **5 recipients** (referrer + commons + community + foundation net + treasury reserve) whose amounts sum to exactly `totalMicro`:
 
 ```typescript
 async postDistribution(chargeId: string, totalMicro: bigint, opts: DistributionOpts): Promise<void> {
@@ -399,7 +399,7 @@ async postDistribution(chargeId: string, totalMicro: bigint, opts: DistributionO
     const remainder = totalMicro - referrerShareMicro;
     const commonsShare = bpsShare(remainder, config.commonsBps);
     const communityShare = bpsShare(remainder, config.communityBps);
-    const foundationGross = remainder - commonsShare - communityShare; // Absorbs rounding
+    const foundationGross = remainder - commonsShare - communityShare; // Absorbs rounding (ADR-010)
     // Treasury reserve comes OUT OF foundation's gross — not additive
     const treasuryReserve = referrerShareMicro; // 1:1 backing for referrer earning
     const foundationNet = foundationGross - treasuryReserve;
@@ -634,7 +634,7 @@ Only lots with a corresponding `settlement` ledger entry and `available_micro > 
 
 **Location:** `themes/sietch/src/packages/adapters/billing/SettlementService.ts`
 
-BullMQ cron job runs every hour. Transitions `referrer_earnings` from `pending` → `settled` after the configurable settlement delay (default: 48 hours). **Each settlement writes a ledger entry** to make the ledger the authoritative audit trail for settlement state:
+BullMQ cron job runs every hour. Transitions `referrer_earnings` from `pending` → `settled` after the configurable settlement delay (default: 48 hours, see [ADR-011](decisions/adr-011-settlement-hold-duration.md)). Uses pre-computed `settle_after` column ([ADR-013](decisions/adr-013-timestamp-format-convention.md)) rather than wall-clock math. **Each settlement writes a ledger entry** to make the ledger the authoritative audit trail for settlement state:
 
 ```typescript
 async settleEarnings(): Promise<number> {
@@ -1029,7 +1029,7 @@ Registration → Risk Score → Route
 
 ### 6.2 Settlement Finality
 
-Earnings go through a **single 48-hour settlement delay** (not a separate cooling-off period). The 48h window allows refund/clawback processing. After settlement, earnings are immediately withdrawable.
+Earnings go through a **single 48-hour settlement delay** (not a separate cooling-off period). The 48h window allows refund/clawback processing. After settlement, earnings are immediately withdrawable. See [ADR-011](decisions/adr-011-settlement-hold-duration.md) for duration rationale and crypto finality analysis.
 
 ```
 Inference finalized → Referrer earning created (status: 'pending', earning_lot_id set)
@@ -1186,9 +1186,24 @@ No new infrastructure dependencies. All runs on existing SQLite + Redis + BullMQ
 
 ---
 
-## 13. Phase Mapping
+## 13. Key Decisions (ADR Cross-References)
 
-### Phase 1A: Non-Withdrawable Earnings (Sprints 1-7)
+Architectural decisions underpinning this system are documented in `grimoires/loa/decisions/`:
+
+| ADR | Title | SDD Sections Affected |
+|-----|-------|-----------------------|
+| [ADR-010](decisions/adr-010-rounding-algorithm.md) | Largest-Remainder Rounding | §4.2 Revenue Distribution (conservation invariant, foundation absorbs dust) |
+| [ADR-011](decisions/adr-011-settlement-hold-duration.md) | 48-Hour Settlement Hold | §4.4 Settlement, §6.2 Settlement Finality (pre-computed `settle_after`) |
+| [ADR-012](decisions/adr-012-payment-provider-selection.md) | NOWPayments Provider Selection | §4.3 Creator Payouts, §6.3 Payout Security (`IPayoutProvider` port) |
+| [ADR-013](decisions/adr-013-timestamp-format-convention.md) | Timestamp Format Convention | §3.1 Tables, §4.4 Settlement (SQLite `YYYY-MM-DD HH:MM:SS`, ISO 8601 at API boundary only) |
+| [ADR-015](decisions/adr-015-sqlite-locking-hierarchy.md) | SQLite Locking Hierarchy | §4.2, §4.4, §11 (IMMEDIATE for money ops, DEFERRED for reads, busy_timeout) |
+| [Data Authority Map](decisions/data-authority-map.md) | System-of-Record Matrix | §3.1-3.3 Tables (primary vs derived, append-only enforcement) |
+
+---
+
+## 14. Phase Mapping
+
+### Phase 1A: Non-Withdrawable Earnings (Sprints 1-7, Global 257-263)
 
 | Sprint | Components |
 |--------|-----------|
@@ -1199,7 +1214,7 @@ No new infrastructure dependencies. All runs on existing SQLite + Redis + BullMQ
 | 6 | Creator dashboard API, SettlementService |
 | 7 | Integration testing, fraud pipeline validation |
 
-### Phase 1B: Payouts + Score (Sprints 8-13)
+### Phase 1B: Payouts + Score (Sprints 8-13, Global 264-269)
 
 | Sprint | Components |
 |--------|-----------|

@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import type { FraudCheckService } from './FraudCheckService.js';
 import { logger } from '../../../utils/logger.js';
+import { sqliteTimestamp } from './protocol/timestamps';
 
 // =============================================================================
 // Types
@@ -131,7 +132,7 @@ export class BonusProcessor {
       bonus.created_at,
     );
 
-    const now = new Date().toISOString();
+    const now = sqliteTimestamp();
 
     // Update bonus with fraud check results
     this.db.prepare(`

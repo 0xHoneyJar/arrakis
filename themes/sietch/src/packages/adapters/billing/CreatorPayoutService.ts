@@ -19,6 +19,7 @@ import type Database from 'better-sqlite3';
 import { logger } from '../../../utils/logger.js';
 import { PayoutStateMachine } from './PayoutStateMachine.js';
 import { SettlementService } from './SettlementService.js';
+import { validateEIP55Checksum } from './protocol/eip55.js';
 
 // =============================================================================
 // Types
@@ -44,6 +45,15 @@ export interface WithdrawableBalance {
   settledMicro: bigint;
   escrowMicro: bigint;
   withdrawableMicro: bigint;
+}
+
+export interface KycStatusResult {
+  currentLevel: KycLevel;
+  cumulativePayoutsMicro: bigint;
+  nextThreshold: number | null;
+  nextThresholdLevel: KycLevel | null;
+  percentToNextThreshold: number;
+  warning: string | null;
 }
 
 // =============================================================================
@@ -91,6 +101,11 @@ export class CreatorPayoutService {
     // Validate minimum
     if (amountMicro < MIN_PAYOUT_MICRO) {
       return { success: false, error: `Minimum payout is ${MIN_PAYOUT_MICRO / 1_000_000} USD` };
+    }
+
+    // Validate EIP-55 checksum on payout address
+    if (!validateEIP55Checksum(payoutAddress)) {
+      return { success: false, error: 'Invalid payout address: EIP-55 checksum validation failed' };
     }
 
     // Check KYC
@@ -212,6 +227,61 @@ export class CreatorPayoutService {
       // Column may not exist yet
       return 'none';
     }
+  }
+
+  /**
+   * Get KYC status with progressive disclosure warnings.
+   * Returns current level, progress toward next threshold, and warning when at 80%+.
+   */
+  getKycStatus(accountId: string): KycStatusResult {
+    const currentLevel = this.getKycLevel(accountId);
+
+    let cumulativePayoutsMicro = 0n;
+    try {
+      const row = this.db.prepare(`
+        SELECT COALESCE(SUM(amount_micro), 0) as total
+        FROM payout_requests
+        WHERE account_id = ? AND status = 'completed'
+      `).get(accountId) as { total: number };
+      cumulativePayoutsMicro = BigInt(row.total);
+    } catch {
+      // Table may not exist
+    }
+
+    const cumulative = Number(cumulativePayoutsMicro);
+
+    // Determine next threshold based on cumulative payouts
+    let nextThreshold: number | null = null;
+    let nextThresholdLevel: KycLevel | null = null;
+
+    if (cumulative < KYC_BASIC_THRESHOLD_MICRO) {
+      nextThreshold = KYC_BASIC_THRESHOLD_MICRO;
+      nextThresholdLevel = 'basic';
+    } else if (cumulative < KYC_ENHANCED_THRESHOLD_MICRO) {
+      nextThreshold = KYC_ENHANCED_THRESHOLD_MICRO;
+      nextThresholdLevel = 'enhanced';
+    }
+    // else: already past all thresholds
+
+    const percentToNextThreshold = nextThreshold
+      ? Math.min(Math.round((cumulative / nextThreshold) * 100), 100)
+      : 100;
+
+    // Warning triggers at 80% of next threshold
+    let warning: string | null = null;
+    if (nextThreshold && percentToNextThreshold >= 80) {
+      const thresholdUsd = nextThreshold / 1_000_000;
+      warning = `Verify your identity to increase your payout limit. You are approaching the $${thresholdUsd} threshold for ${nextThresholdLevel} verification.`;
+    }
+
+    return {
+      currentLevel,
+      cumulativePayoutsMicro,
+      nextThreshold,
+      nextThresholdLevel,
+      percentToNextThreshold,
+      warning,
+    };
   }
 
   /**

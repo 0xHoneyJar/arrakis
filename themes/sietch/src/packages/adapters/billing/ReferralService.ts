@@ -94,9 +94,9 @@ function generateCode(): string {
   return code;
 }
 
-function sqliteNow(): string {
-  return new Date().toISOString();
-}
+import { sqliteTimestamp } from './protocol/timestamps';
+
+const sqliteNow = sqliteTimestamp;
 
 function addMonths(date: Date, months: number): string {
   const d = new Date(date);

@@ -56,20 +56,12 @@ const REDIS_COMMAND_TIMEOUT_MS = 200;
 /** Redis key prefix for balance cache */
 const REDIS_BALANCE_PREFIX = 'billing:balance:';
 
-/**
- * SQLite-compatible timestamp (YYYY-MM-DD HH:MM:SS).
- * SQLite's datetime() returns this format; using ISO 8601 (with T and Z)
- * breaks string comparisons against datetime('now').
- */
-function sqliteNow(): string {
-  return new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
-}
+import { sqliteTimestamp, sqliteFutureTimestamp } from './protocol/timestamps';
 
-/** SQLite-compatible timestamp offset by N seconds from now. */
-function sqliteFuture(offsetSeconds: number): string {
-  return new Date(Date.now() + offsetSeconds * 1000)
-    .toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
-}
+/** @deprecated Use sqliteTimestamp() from protocol/timestamps.ts */
+const sqliteNow = sqliteTimestamp;
+/** @deprecated Use sqliteFutureTimestamp() from protocol/timestamps.ts */
+const sqliteFuture = (offsetSeconds: number) => sqliteFutureTimestamp(offsetSeconds);
 
 // =============================================================================
 // Error Classes

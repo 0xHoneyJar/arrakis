@@ -19,6 +19,7 @@ import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { logger } from '../../utils/logger.js';
 import type { SettlementService } from '../../packages/adapters/billing/SettlementService.js';
 import type { IReferralService } from '../../packages/core/ports/IReferralService.js';
+import type { CreatorPayoutService } from '../../packages/adapters/billing/CreatorPayoutService.js';
 import type Database from 'better-sqlite3';
 
 // =============================================================================
@@ -33,15 +34,18 @@ export const creatorDashboardRouter = Router();
 
 let settlementService: SettlementService | null = null;
 let referralService: IReferralService | null = null;
+let payoutService: CreatorPayoutService | null = null;
 let dashboardDb: Database.Database | null = null;
 
 export function setCreatorDashboardServices(services: {
   settlement: SettlementService;
   referral: IReferralService;
+  payout?: CreatorPayoutService;
   db: Database.Database;
 }): void {
   settlementService = services.settlement;
   referralService = services.referral;
+  payoutService = services.payout ?? null;
   dashboardDb = services.db;
 }
 
@@ -126,6 +130,38 @@ creatorDashboardRouter.get(
       phase: '1A',
       note: 'Payout functionality available in Phase 1B',
     });
+  }
+);
+
+/**
+ * GET /creator/kyc-status — KYC progressive disclosure status
+ */
+creatorDashboardRouter.get(
+  '/kyc-status',
+  requireAuth,
+  (req: AuthenticatedRequest, res: Response) => {
+    if (!payoutService) {
+      res.status(503).json({ error: 'Payout service not initialized' });
+      return;
+    }
+
+    const accountId = req.caller!.userId;
+
+    try {
+      const status = payoutService.getKycStatus(accountId);
+
+      res.json({
+        current_level: status.currentLevel,
+        cumulative_payouts_micro: status.cumulativePayoutsMicro.toString(),
+        next_threshold_micro: status.nextThreshold?.toString() ?? null,
+        next_threshold_level: status.nextThresholdLevel,
+        percent_to_next_threshold: status.percentToNextThreshold,
+        warning: status.warning,
+      });
+    } catch (err) {
+      logger.error({ err, accountId }, 'Failed to get KYC status');
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 );
 

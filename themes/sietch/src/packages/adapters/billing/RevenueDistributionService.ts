@@ -440,8 +440,8 @@ export class RevenueDistributionService {
         INSERT INTO referrer_earnings
           (referrer_account_id, referee_account_id, registration_id,
            charge_reservation_id, earning_lot_id, amount_micro,
-           referrer_bps, source_charge_micro)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           referrer_bps, source_charge_micro, settle_after)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+48 hours'))
       `).run(
         referrerAccountId, refereeAccountId, reg.id,
         chargeReservationId, earningLotId,

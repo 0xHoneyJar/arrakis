@@ -1,49 +1,102 @@
 /**
- * RevenueRulesAdapter — Revenue Rules Governance Implementation
+ * FraudRulesService — Fraud Rules Governance Implementation
  *
- * Implements IRevenueRulesService with SQLite storage, strict state machine
- * enforcement, mandatory cooldown, and comprehensive audit logging.
+ * Manages configurable fraud scoring weights and thresholds with
+ * the same governance lifecycle as RevenueRulesAdapter:
+ *   draft → pending_approval → cooling_down → active → superseded
  *
- * State machine: draft → pending_approval → cooling_down → active → superseded
- * Terminal states: rejected, superseded
+ * Weights stored as integer basis points (out of 10000).
+ * Four-eyes enforcement on approval.
  *
- * SDD refs: §1.4 CreditLedgerService
- * Sprint refs: Task 8.2
+ * SDD refs: §4.4 Fraud Rules Engine
+ * Sprint refs: Task 15.2
  *
- * @module packages/adapters/billing/RevenueRulesAdapter
+ * @module packages/adapters/billing/FraudRulesService
  */
 
 import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
-import type {
-  IRevenueRulesService,
-  RevenueRule,
-  RuleProposal,
-  RuleAuditEntry,
-  RuleStatus,
-} from '../../core/ports/IRevenueRulesService.js';
+import type { RuleStatus } from '../../core/ports/IRevenueRulesService.js';
 import { ALLOWED_TRANSITIONS } from '../../core/ports/IRevenueRulesService.js';
 import { InvalidStateError, FourEyesViolationError } from './CreditLedgerAdapter.js';
 import { logger } from '../../../utils/logger.js';
+import { sqliteTimestamp } from './protocol/timestamps';
 
 // =============================================================================
-// Constants
+// Types
 // =============================================================================
 
-/** Default cooldown duration in hours */
-const DEFAULT_COOLDOWN_HOURS = 48;
+export interface FraudRule {
+  id: string;
+  name: string;
+  status: RuleStatus;
+  ipClusterWeight: number;
+  uaFingerprintWeight: number;
+  velocityWeight: number;
+  activityWeight: number;
+  flagThreshold: number;
+  withholdThreshold: number;
+  proposedBy: string;
+  approvedBy: string | null;
+  proposedAt: string;
+  approvedAt: string | null;
+  activatesAt: string | null;
+  activatedAt: string | null;
+  supersededAt: string | null;
+  supersededBy: string | null;
+  notes: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FraudRuleProposal {
+  name: string;
+  ipClusterWeight: number;
+  uaFingerprintWeight: number;
+  velocityWeight: number;
+  activityWeight: number;
+  flagThreshold: number;
+  withholdThreshold: number;
+  proposedBy: string;
+  notes?: string;
+}
+
+export interface FraudRuleAuditEntry {
+  id: string;
+  ruleId: string;
+  action: string;
+  actor: string;
+  reason: string | null;
+  previousStatus: string | null;
+  newStatus: string;
+  createdAt: string;
+}
+
+/** Weights in normalized form (0.0–1.0) for FraudCheckService consumption */
+export interface FraudWeights {
+  ipCluster: number;
+  uaFingerprint: number;
+  velocity: number;
+  activityCheck: number;
+  flagThreshold: number;
+  withholdThreshold: number;
+}
 
 // =============================================================================
 // Row Types
 // =============================================================================
 
-interface RevenueRuleRow {
+interface FraudRuleRow {
   id: string;
   name: string;
   status: string;
-  commons_bps: number;
-  community_bps: number;
-  foundation_bps: number;
+  ip_cluster_weight: number;
+  ua_fingerprint_weight: number;
+  velocity_weight: number;
+  activity_weight: number;
+  flag_threshold: number;
+  withhold_threshold: number;
   proposed_by: string;
   approved_by: string | null;
   proposed_at: string;
@@ -53,6 +106,7 @@ interface RevenueRuleRow {
   superseded_at: string | null;
   superseded_by: string | null;
   notes: string | null;
+  version: number;
   created_at: string;
   updated_at: string;
 }
@@ -69,17 +123,26 @@ interface AuditRow {
 }
 
 // =============================================================================
+// Constants
+// =============================================================================
+
+const DEFAULT_COOLDOWN_HOURS = 168; // 7 days for fraud rule changes
+
+// =============================================================================
 // Row Mappers
 // =============================================================================
 
-function rowToRule(row: RevenueRuleRow): RevenueRule {
+function rowToRule(row: FraudRuleRow): FraudRule {
   return {
     id: row.id,
     name: row.name,
     status: row.status as RuleStatus,
-    commonsBps: row.commons_bps,
-    communityBps: row.community_bps,
-    foundationBps: row.foundation_bps,
+    ipClusterWeight: row.ip_cluster_weight,
+    uaFingerprintWeight: row.ua_fingerprint_weight,
+    velocityWeight: row.velocity_weight,
+    activityWeight: row.activity_weight,
+    flagThreshold: row.flag_threshold,
+    withholdThreshold: row.withhold_threshold,
     proposedBy: row.proposed_by,
     approvedBy: row.approved_by,
     proposedAt: row.proposed_at,
@@ -89,12 +152,13 @@ function rowToRule(row: RevenueRuleRow): RevenueRule {
     supersededAt: row.superseded_at,
     supersededBy: row.superseded_by,
     notes: row.notes,
+    version: row.version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function rowToAudit(row: AuditRow): RuleAuditEntry {
+function rowToAudit(row: AuditRow): FraudRuleAuditEntry {
   return {
     id: row.id,
     ruleId: row.rule_id,
@@ -107,15 +171,13 @@ function rowToAudit(row: AuditRow): RuleAuditEntry {
   };
 }
 
-import { sqliteTimestamp } from './protocol/timestamps';
-
 const sqliteNow = sqliteTimestamp;
 
 // =============================================================================
-// RevenueRulesAdapter
+// FraudRulesService
 // =============================================================================
 
-export class RevenueRulesAdapter implements IRevenueRulesService {
+export class FraudRulesService {
   private db: Database.Database;
 
   constructor(db: Database.Database) {
@@ -126,18 +188,21 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
   // Propose
   // ---------------------------------------------------------------------------
 
-  async proposeRule(proposal: RuleProposal): Promise<RevenueRule> {
+  async proposeRule(proposal: FraudRuleProposal): Promise<FraudRule> {
     const id = randomUUID();
     const now = sqliteNow();
 
     this.db.prepare(`
-      INSERT INTO revenue_rules
-        (id, name, status, commons_bps, community_bps, foundation_bps,
+      INSERT INTO fraud_rules
+        (id, name, status, ip_cluster_weight, ua_fingerprint_weight,
+         velocity_weight, activity_weight, flag_threshold, withhold_threshold,
          proposed_by, proposed_at, notes, created_at, updated_at)
-      VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, proposal.name,
-      proposal.commonsBps, proposal.communityBps, proposal.foundationBps,
+      proposal.ipClusterWeight, proposal.uaFingerprintWeight,
+      proposal.velocityWeight, proposal.activityWeight,
+      proposal.flagThreshold, proposal.withholdThreshold,
       proposal.proposedBy, now, proposal.notes ?? null, now, now,
     );
 
@@ -150,7 +215,7 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
   // Submit for Approval
   // ---------------------------------------------------------------------------
 
-  async submitForApproval(ruleId: string, actor: string): Promise<RevenueRule> {
+  async submitForApproval(ruleId: string, actor: string): Promise<FraudRule> {
     return this.transition(ruleId, 'pending_approval', actor, 'submitted');
   }
 
@@ -158,8 +223,8 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
   // Approve
   // ---------------------------------------------------------------------------
 
-  async approveRule(ruleId: string, approvedBy: string): Promise<RevenueRule> {
-    const cooldownHours = this.getCooldownHours();
+  async approveRule(ruleId: string, approvedBy: string): Promise<FraudRule> {
+    const cooldownHours = DEFAULT_COOLDOWN_HOURS;
     const now = sqliteNow();
 
     return this.db.transaction(() => {
@@ -172,7 +237,7 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
       }
 
       this.db.prepare(`
-        UPDATE revenue_rules
+        UPDATE fraud_rules
         SET status = 'cooling_down',
             approved_by = ?,
             approved_at = ?,
@@ -191,20 +256,19 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
   // Reject
   // ---------------------------------------------------------------------------
 
-  async rejectRule(ruleId: string, rejectedBy: string, reason: string): Promise<RevenueRule> {
+  async rejectRule(ruleId: string, rejectedBy: string, reason: string): Promise<FraudRule> {
     const now = sqliteNow();
 
     return this.db.transaction(() => {
       const rule = this.getRuleRow(ruleId);
       const currentStatus = rule.status as RuleStatus;
 
-      // Reject allowed from pending_approval or cooling_down
       if (currentStatus !== 'pending_approval' && currentStatus !== 'cooling_down') {
         throw new InvalidStateError(ruleId, currentStatus, 'reject');
       }
 
       this.db.prepare(`
-        UPDATE revenue_rules
+        UPDATE fraud_rules
         SET status = 'rejected', notes = COALESCE(notes || ' | ', '') || ?, updated_at = ?
         WHERE id = ?
       `).run(`Rejected: ${reason}`, now, ruleId);
@@ -219,33 +283,29 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
   // Override Cooldown (Emergency)
   // ---------------------------------------------------------------------------
 
-  async overrideCooldown(ruleId: string, actor: string, reason: string): Promise<RevenueRule> {
+  async overrideCooldown(ruleId: string, actor: string, reason: string): Promise<FraudRule> {
     const now = sqliteNow();
 
     return this.db.transaction(() => {
       const rule = this.getRuleRow(ruleId);
       this.assertTransition(rule.status as RuleStatus, 'active', ruleId);
 
-      // Supersede currently active rule
       this.supersedeActiveRule(ruleId, now);
 
       this.db.prepare(`
-        UPDATE revenue_rules
+        UPDATE fraud_rules
         SET status = 'active', activated_at = ?, updated_at = ?
         WHERE id = ?
       `).run(now, now, ruleId);
 
       this.logAudit(ruleId, 'cooldown_overridden', actor, reason, 'cooling_down', 'active');
 
-      // Urgent notification for emergency activation
-      this.createNotification(ruleId, 'emergency_activate', actor, 'urgent', rule);
-
       logger.warn({
-        event: 'billing.revenue_rules.cooldown_override',
+        event: 'billing.fraud_rules.cooldown_override',
         ruleId,
         actor,
         reason,
-      }, 'Revenue rule cooldown overridden — emergency activation');
+      }, 'Fraud rule cooldown overridden — emergency activation');
 
       return this.getRule(ruleId);
     })();
@@ -255,35 +315,69 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
   // Queries
   // ---------------------------------------------------------------------------
 
-  async getActiveRule(): Promise<RevenueRule | null> {
+  async getActiveRule(): Promise<FraudRule | null> {
     const row = this.db.prepare(
-      `SELECT * FROM revenue_rules WHERE status = 'active' LIMIT 1`
-    ).get() as RevenueRuleRow | undefined;
+      `SELECT * FROM fraud_rules WHERE status = 'active' LIMIT 1`
+    ).get() as FraudRuleRow | undefined;
 
     return row ? rowToRule(row) : null;
   }
 
-  async getPendingRules(): Promise<RevenueRule[]> {
+  /**
+   * Get active weights in normalized form (0.0–1.0) for FraudCheckService.
+   * Returns null if no active rule.
+   */
+  getActiveWeights(): FraudWeights | null {
+    try {
+      const row = this.db.prepare(
+        `SELECT ip_cluster_weight, ua_fingerprint_weight, velocity_weight,
+                activity_weight, flag_threshold, withhold_threshold
+         FROM fraud_rules WHERE status = 'active' LIMIT 1`
+      ).get() as {
+        ip_cluster_weight: number;
+        ua_fingerprint_weight: number;
+        velocity_weight: number;
+        activity_weight: number;
+        flag_threshold: number;
+        withhold_threshold: number;
+      } | undefined;
+
+      if (!row) return null;
+
+      return {
+        ipCluster: row.ip_cluster_weight / 10000,
+        uaFingerprint: row.ua_fingerprint_weight / 10000,
+        velocity: row.velocity_weight / 10000,
+        activityCheck: row.activity_weight / 10000,
+        flagThreshold: row.flag_threshold / 10000,
+        withholdThreshold: row.withhold_threshold / 10000,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async getPendingRules(): Promise<FraudRule[]> {
     const rows = this.db.prepare(
-      `SELECT * FROM revenue_rules
+      `SELECT * FROM fraud_rules
        WHERE status IN ('draft', 'pending_approval', 'cooling_down')
        ORDER BY created_at DESC`
-    ).all() as RevenueRuleRow[];
+    ).all() as FraudRuleRow[];
 
     return rows.map(rowToRule);
   }
 
-  async getRuleHistory(limit?: number): Promise<RevenueRule[]> {
+  async getRuleHistory(limit?: number): Promise<FraudRule[]> {
     const rows = this.db.prepare(
-      `SELECT * FROM revenue_rules ORDER BY created_at DESC LIMIT ?`
-    ).all(limit ?? 50) as RevenueRuleRow[];
+      `SELECT * FROM fraud_rules ORDER BY created_at DESC LIMIT ?`
+    ).all(limit ?? 50) as FraudRuleRow[];
 
     return rows.map(rowToRule);
   }
 
-  async getRuleAudit(ruleId: string): Promise<RuleAuditEntry[]> {
+  async getRuleAudit(ruleId: string): Promise<FraudRuleAuditEntry[]> {
     const rows = this.db.prepare(
-      `SELECT * FROM revenue_rule_audit_log
+      `SELECT * FROM fraud_rule_audit_log
        WHERE rule_id = ?
        ORDER BY created_at DESC`
     ).all(ruleId) as AuditRow[];
@@ -295,45 +389,39 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
   // Activation Job
   // ---------------------------------------------------------------------------
 
-  async activateReadyRules(): Promise<RevenueRule[]> {
-    const activated: RevenueRule[] = [];
+  async activateReadyRules(): Promise<FraudRule[]> {
+    const activated: FraudRule[] = [];
 
     return this.db.transaction(() => {
-      // Find rules whose cooldown has elapsed
       const ready = this.db.prepare(`
-        SELECT * FROM revenue_rules
+        SELECT * FROM fraud_rules
         WHERE status = 'cooling_down'
           AND activates_at <= datetime('now')
         ORDER BY activates_at ASC
-      `).all() as RevenueRuleRow[];
+      `).all() as FraudRuleRow[];
 
       for (const row of ready) {
         const now = sqliteNow();
 
-        // Predicate-guarded activation: only if no active rule OR supersede it
         this.supersedeActiveRule(row.id, now);
 
-        // Activate with predicate check
         const result = this.db.prepare(`
-          UPDATE revenue_rules
+          UPDATE fraud_rules
           SET status = 'active', activated_at = ?, updated_at = ?
           WHERE id = ? AND status = 'cooling_down'
-            AND NOT EXISTS (SELECT 1 FROM revenue_rules WHERE status = 'active')
+            AND NOT EXISTS (SELECT 1 FROM fraud_rules WHERE status = 'active')
         `).run(now, now, row.id);
 
         if (result.changes > 0) {
           this.logAudit(row.id, 'activated', 'system', null, 'cooling_down', 'active');
 
-          // Normal notification for scheduled activation
-          this.createNotification(row.id, 'activate', 'system', 'normal', row);
-
           logger.info({
-            event: 'billing.revenue_rules.activated',
+            event: 'billing.fraud_rules.activated',
             rule_id: row.id,
-            commons_bps: row.commons_bps,
-            community_bps: row.community_bps,
-            foundation_bps: row.foundation_bps,
-          }, `Revenue rule activated: ${row.name}`);
+            ip_cluster_weight: row.ip_cluster_weight,
+            velocity_weight: row.velocity_weight,
+            flag_threshold: row.flag_threshold,
+          }, `Fraud rule activated: ${row.name}`);
 
           activated.push(this.getRule(row.id));
         }
@@ -347,21 +435,21 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
   // Internal Helpers
   // ---------------------------------------------------------------------------
 
-  private getRule(ruleId: string): RevenueRule {
+  private getRule(ruleId: string): FraudRule {
     const row = this.db.prepare(
-      `SELECT * FROM revenue_rules WHERE id = ?`
-    ).get(ruleId) as RevenueRuleRow | undefined;
+      `SELECT * FROM fraud_rules WHERE id = ?`
+    ).get(ruleId) as FraudRuleRow | undefined;
 
-    if (!row) throw new Error(`Revenue rule ${ruleId} not found`);
+    if (!row) throw new Error(`Fraud rule ${ruleId} not found`);
     return rowToRule(row);
   }
 
-  private getRuleRow(ruleId: string): RevenueRuleRow {
+  private getRuleRow(ruleId: string): FraudRuleRow {
     const row = this.db.prepare(
-      `SELECT * FROM revenue_rules WHERE id = ?`
-    ).get(ruleId) as RevenueRuleRow | undefined;
+      `SELECT * FROM fraud_rules WHERE id = ?`
+    ).get(ruleId) as FraudRuleRow | undefined;
 
-    if (!row) throw new Error(`Revenue rule ${ruleId} not found`);
+    if (!row) throw new Error(`Fraud rule ${ruleId} not found`);
     return row;
   }
 
@@ -377,7 +465,7 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
     targetStatus: RuleStatus,
     actor: string,
     action: string,
-  ): RevenueRule {
+  ): FraudRule {
     const now = sqliteNow();
 
     return this.db.transaction(() => {
@@ -386,7 +474,7 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
       this.assertTransition(currentStatus, targetStatus, ruleId);
 
       this.db.prepare(`
-        UPDATE revenue_rules SET status = ?, updated_at = ? WHERE id = ?
+        UPDATE fraud_rules SET status = ?, updated_at = ? WHERE id = ?
       `).run(targetStatus, now, ruleId);
 
       this.logAudit(ruleId, action, actor, null, currentStatus, targetStatus);
@@ -397,12 +485,12 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
 
   private supersedeActiveRule(newRuleId: string, now: string): void {
     const active = this.db.prepare(
-      `SELECT id FROM revenue_rules WHERE status = 'active' LIMIT 1`
+      `SELECT id FROM fraud_rules WHERE status = 'active' LIMIT 1`
     ).get() as { id: string } | undefined;
 
     if (active) {
       this.db.prepare(`
-        UPDATE revenue_rules
+        UPDATE fraud_rules
         SET status = 'superseded', superseded_at = ?, superseded_by = ?, updated_at = ?
         WHERE id = ?
       `).run(now, newRuleId, now, active.id);
@@ -421,64 +509,9 @@ export class RevenueRulesAdapter implements IRevenueRulesService {
     newStatus: string,
   ): void {
     this.db.prepare(`
-      INSERT INTO revenue_rule_audit_log
+      INSERT INTO fraud_rule_audit_log
         (id, rule_id, action, actor, reason, previous_status, new_status, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `).run(randomUUID(), ruleId, action, actor, reason, previousStatus, newStatus);
-  }
-
-  /**
-   * Create a billing notification for governance events.
-   * Called on activate and emergency-activate transitions.
-   */
-  private createNotification(
-    ruleId: string,
-    transition: string,
-    actor: string,
-    urgency: 'normal' | 'urgent',
-    newRule: RevenueRuleRow,
-  ): void {
-    try {
-      // Get the old (superseded) rule's splits for comparison
-      const oldActive = this.db.prepare(
-        `SELECT commons_bps, community_bps, foundation_bps FROM revenue_rules
-         WHERE status = 'superseded' AND superseded_by = ? LIMIT 1`
-      ).get(ruleId) as { commons_bps: number; community_bps: number; foundation_bps: number } | undefined;
-
-      const oldSplits = oldActive
-        ? JSON.stringify({ commons_bps: oldActive.commons_bps, community_bps: oldActive.community_bps, foundation_bps: oldActive.foundation_bps })
-        : null;
-
-      const newSplits = JSON.stringify({
-        commons_bps: newRule.commons_bps,
-        community_bps: newRule.community_bps,
-        foundation_bps: newRule.foundation_bps,
-      });
-
-      this.db.prepare(`
-        INSERT INTO billing_notifications
-          (id, rule_id, transition, old_splits, new_splits, actor_id, urgency)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(randomUUID(), ruleId, transition, oldSplits, newSplits, actor, urgency);
-    } catch (err) {
-      // Notification failure must not break activation
-      logger.warn({ err, ruleId, transition }, 'Failed to create billing notification');
-    }
-  }
-
-  private getCooldownHours(): number {
-    try {
-      const row = this.db.prepare(
-        `SELECT value FROM billing_config WHERE key = 'revenue_rule_cooldown_hours'`
-      ).get() as { value: string } | undefined;
-
-      if (row) {
-        const hours = parseInt(row.value, 10);
-        if (hours > 0) return hours;
-      }
-    } catch {
-      // billing_config may not exist in test setup
-    }
-    return DEFAULT_COOLDOWN_HOURS;
   }
 }
