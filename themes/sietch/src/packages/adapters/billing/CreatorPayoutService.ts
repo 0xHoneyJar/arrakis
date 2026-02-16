@@ -20,6 +20,9 @@ import { logger } from '../../../utils/logger.js';
 import { PayoutStateMachine } from './PayoutStateMachine.js';
 import { SettlementService } from './SettlementService.js';
 import { validateEIP55Checksum } from './protocol/eip55.js';
+import type { IConstitutionalGovernanceService } from '../../core/ports/IConstitutionalGovernanceService.js';
+import type { EntityType } from '../../core/protocol/billing-types.js';
+import { CONFIG_FALLBACKS } from '../../core/protocol/config-schema.js';
 
 // =============================================================================
 // Types
@@ -32,6 +35,7 @@ export interface PayoutRequestInput {
   amountMicro: number;
   payoutAddress: string;
   currency?: string;
+  entityType?: EntityType;
 }
 
 export interface PayoutRequestResult {
@@ -60,21 +64,14 @@ export interface KycStatusResult {
 // Constants
 // =============================================================================
 
-/** Minimum payout amount (micro USD) — $1.00 */
-const MIN_PAYOUT_MICRO = 1_000_000;
+/**
+ * Payout parameters are now resolved from system_config via ConstitutionalGovernanceService.
+ * These constants serve as inline documentation of fallback values only.
+ * Actual values come from: governance.resolveInTransaction(tx, paramKey, entityType)
+ */
 
-/** KYC thresholds in micro USD */
-const KYC_BASIC_THRESHOLD_MICRO = 100_000_000;    // $100
-const KYC_ENHANCED_THRESHOLD_MICRO = 600_000_000;  // $600
-
-/** Rate limit: 1 payout per 24 hours */
-const RATE_LIMIT_HOURS = 24;
-
-/** Default fee (micro USD) — $0 for Phase 1B */
+/** Default fee (micro USD) — $0 for Phase 1B (not governance-controlled) */
 const DEFAULT_FEE_MICRO = 0;
-
-/** Fee cap: reject if fee > 20% of gross */
-const FEE_CAP_PERCENT = 20;
 
 // =============================================================================
 // CreatorPayoutService
@@ -84,11 +81,13 @@ export class CreatorPayoutService {
   private db: Database.Database;
   private stateMachine: PayoutStateMachine;
   private settlement: SettlementService;
+  private governance: IConstitutionalGovernanceService | null;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database.Database, governance?: IConstitutionalGovernanceService) {
     this.db = db;
     this.stateMachine = new PayoutStateMachine(db);
-    this.settlement = new SettlementService(db);
+    this.settlement = new SettlementService(db, governance);
+    this.governance = governance ?? null;
   }
 
   /**
@@ -96,11 +95,15 @@ export class CreatorPayoutService {
    * Creates payout request in pending state, then approves with escrow.
    */
   requestPayout(input: PayoutRequestInput): PayoutRequestResult {
-    const { accountId, amountMicro, payoutAddress, currency } = input;
+    const { accountId, amountMicro, payoutAddress, currency, entityType } = input;
+
+    // Resolve governance parameters for this entity type
+    const minPayoutMicro = this.resolveParam<number>('payout.min_micro', entityType);
+    const feeCapPercent = this.resolveParam<number>('payout.fee_cap_percent', entityType);
 
     // Validate minimum
-    if (amountMicro < MIN_PAYOUT_MICRO) {
-      return { success: false, error: `Minimum payout is ${MIN_PAYOUT_MICRO / 1_000_000} USD` };
+    if (amountMicro < minPayoutMicro) {
+      return { success: false, error: `Minimum payout is ${minPayoutMicro / 1_000_000} USD` };
     }
 
     // Validate EIP-55 checksum on payout address
@@ -109,7 +112,7 @@ export class CreatorPayoutService {
     }
 
     // Check KYC
-    const kycCheck = this.checkKycRequirement(accountId, amountMicro);
+    const kycCheck = this.checkKycRequirement(accountId, amountMicro, entityType);
     if (!kycCheck.allowed) {
       return {
         success: false,
@@ -119,8 +122,8 @@ export class CreatorPayoutService {
     }
 
     // Check rate limit
-    if (this.isRateLimited(accountId)) {
-      return { success: false, error: 'Rate limit exceeded: 1 payout per 24 hours' };
+    if (this.isRateLimited(accountId, entityType)) {
+      return { success: false, error: 'Rate limit exceeded: 1 payout per rate limit window' };
     }
 
     // Check balance
@@ -134,8 +137,8 @@ export class CreatorPayoutService {
 
     // Fee validation
     const feeMicro = DEFAULT_FEE_MICRO;
-    if (feeMicro > 0 && (feeMicro / amountMicro) * 100 > FEE_CAP_PERCENT) {
-      return { success: false, error: `Fee exceeds ${FEE_CAP_PERCENT}% cap` };
+    if (feeMicro > 0 && (feeMicro / amountMicro) * 100 > feeCapPercent) {
+      return { success: false, error: `Fee exceeds ${feeCapPercent}% cap` };
     }
 
     try {
@@ -250,15 +253,19 @@ export class CreatorPayoutService {
 
     const cumulative = Number(cumulativePayoutsMicro);
 
+    // Resolve KYC thresholds from constitutional governance
+    const kycBasicThreshold = this.resolveParam<number>('kyc.basic_threshold_micro');
+    const kycEnhancedThreshold = this.resolveParam<number>('kyc.enhanced_threshold_micro');
+
     // Determine next threshold based on cumulative payouts
     let nextThreshold: number | null = null;
     let nextThresholdLevel: KycLevel | null = null;
 
-    if (cumulative < KYC_BASIC_THRESHOLD_MICRO) {
-      nextThreshold = KYC_BASIC_THRESHOLD_MICRO;
+    if (cumulative < kycBasicThreshold) {
+      nextThreshold = kycBasicThreshold;
       nextThresholdLevel = 'basic';
-    } else if (cumulative < KYC_ENHANCED_THRESHOLD_MICRO) {
-      nextThreshold = KYC_ENHANCED_THRESHOLD_MICRO;
+    } else if (cumulative < kycEnhancedThreshold) {
+      nextThreshold = kycEnhancedThreshold;
       nextThresholdLevel = 'enhanced';
     }
     // else: already past all thresholds
@@ -309,7 +316,7 @@ export class CreatorPayoutService {
   // Private
   // ---------------------------------------------------------------------------
 
-  private checkKycRequirement(accountId: string, payoutAmountMicro: number): {
+  private checkKycRequirement(accountId: string, payoutAmountMicro: number, entityType?: EntityType): {
     allowed: boolean;
     requiredLevel: KycLevel;
   } {
@@ -329,10 +336,14 @@ export class CreatorPayoutService {
     const totalAfterPayout = cumulativeWithdrawn + BigInt(payoutAmountMicro);
     const currentKyc = this.getKycLevel(accountId);
 
+    // Resolve KYC thresholds from constitutional governance
+    const kycBasicThreshold = this.resolveParam<number>('kyc.basic_threshold_micro', entityType);
+    const kycEnhancedThreshold = this.resolveParam<number>('kyc.enhanced_threshold_micro', entityType);
+
     let requiredLevel: KycLevel;
-    if (totalAfterPayout > BigInt(KYC_ENHANCED_THRESHOLD_MICRO)) {
+    if (totalAfterPayout > BigInt(kycEnhancedThreshold)) {
       requiredLevel = 'enhanced';
-    } else if (totalAfterPayout > BigInt(KYC_BASIC_THRESHOLD_MICRO)) {
+    } else if (totalAfterPayout > BigInt(kycBasicThreshold)) {
       requiredLevel = 'basic';
     } else {
       requiredLevel = 'none';
@@ -348,18 +359,36 @@ export class CreatorPayoutService {
     };
   }
 
-  private isRateLimited(accountId: string): boolean {
+  private isRateLimited(accountId: string, entityType?: EntityType): boolean {
     try {
+      const rateLimitSeconds = this.resolveParam<number>('payout.rate_limit_seconds', entityType);
       const row = this.db.prepare(`
         SELECT COUNT(*) as count FROM payout_requests
         WHERE account_id = ?
-          AND requested_at > datetime('now', '-${RATE_LIMIT_HOURS} hours')
+          AND requested_at > datetime('now', '-' || ? || ' seconds')
           AND status != 'cancelled'
-      `).get(accountId) as { count: number };
+      `).get(accountId, rateLimitSeconds) as { count: number };
       return row.count > 0;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Resolve a governance parameter, falling back to compile-time constant.
+   */
+  private resolveParam<T>(paramKey: string, entityType?: EntityType): T {
+    if (this.governance) {
+      try {
+        const resolved = this.governance.resolveInTransaction<T>(
+          this.db, paramKey, entityType,
+        );
+        return resolved.value;
+      } catch {
+        // Governance table may not exist yet — use fallback
+      }
+    }
+    return CONFIG_FALLBACKS[paramKey] as T;
   }
 
   private getTreasuryVersion(): number {

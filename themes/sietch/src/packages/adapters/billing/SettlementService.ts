@@ -17,6 +17,9 @@ import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import { logger } from '../../../utils/logger.js';
 import { sqliteTimestamp } from './protocol/timestamps';
+import type { IConstitutionalGovernanceService } from '../../core/ports/IConstitutionalGovernanceService.js';
+import type { EntityType } from '../../core/protocol/billing-types.js';
+import { CONFIG_FALLBACKS } from '../../core/protocol/config-schema.js';
 
 // =============================================================================
 // Types
@@ -51,8 +54,12 @@ interface EarningRow {
 // Constants
 // =============================================================================
 
-/** Minimum age (hours) before an earning can be settled */
-const SETTLEMENT_HOLD_HOURS = 48;
+/**
+ * Legacy constant — now resolved from system_config via ConstitutionalGovernanceService.
+ * Kept only as inline documentation of the default value.
+ * Actual value comes from: resolve('settlement.hold_seconds', entityType)
+ */
+const SETTLEMENT_HOLD_SECONDS_FALLBACK = 172_800; // 48 hours
 
 /** Maximum earnings to process per batch */
 const BATCH_SIZE = 50;
@@ -66,9 +73,11 @@ const SETTLEMENT_POOL = 'referral:revenue_share';
 
 export class SettlementService {
   private db: Database.Database;
+  private governance: IConstitutionalGovernanceService | null;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database.Database, governance?: IConstitutionalGovernanceService) {
     this.db = db;
+    this.governance = governance ?? null;
   }
 
   /**
@@ -78,8 +87,10 @@ export class SettlementService {
    *
    * @param opts.asOf — Timestamp to evaluate settlement eligibility against.
    *   Defaults to sqliteNow(). Pass a controlled timestamp for deterministic testing.
+   * @param opts.entityType — Entity type for governance parameter resolution.
+   *   Agent earnings settle with 0-second hold; human earnings retain 48-hour hold.
    */
-  settleEarnings(opts?: { asOf?: string }): SettlementResult {
+  settleEarnings(opts?: { asOf?: string; entityType?: EntityType }): SettlementResult {
     const asOf = opts?.asOf ?? sqliteTimestamp();
 
     const result: SettlementResult = {
@@ -90,6 +101,9 @@ export class SettlementService {
 
     // Check if settled_at column exists, add it if not
     this.ensureSettlementColumns();
+
+    // Resolve settlement hold from constitutional governance (seconds)
+    const holdSeconds = this.resolveHoldSeconds(opts?.entityType);
 
     // Prefer settle_after (pre-computed) over wall-clock calculation
     const hasSettleAfter = this.hasColumn('settle_after');
@@ -104,10 +118,10 @@ export class SettlementService {
       : this.db.prepare(`
           SELECT * FROM referrer_earnings
           WHERE settled_at IS NULL
-            AND created_at < datetime(?, '-${SETTLEMENT_HOLD_HOURS} hours')
+            AND created_at < datetime(?, '-' || ? || ' seconds')
           ORDER BY created_at ASC
           LIMIT ?
-        `).all(asOf, BATCH_SIZE) as EarningRow[];
+        `).all(asOf, holdSeconds, BATCH_SIZE) as EarningRow[];
 
     if (pendingEarnings.length === 0) {
       logger.debug({ event: 'settlement.empty' }, 'No pending earnings to settle');
@@ -306,6 +320,24 @@ export class SettlementService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Resolve settlement hold period from constitutional governance.
+   * Falls back to compile-time constant if governance unavailable.
+   */
+  private resolveHoldSeconds(entityType?: EntityType): number {
+    if (this.governance) {
+      try {
+        const resolved = this.governance.resolveInTransaction<number>(
+          this.db, 'settlement.hold_seconds', entityType,
+        );
+        return resolved.value;
+      } catch {
+        // Governance table may not exist yet — use fallback
+      }
+    }
+    return (CONFIG_FALLBACKS['settlement.hold_seconds'] as number) ?? SETTLEMENT_HOLD_SECONDS_FALLBACK;
   }
 
   /**
