@@ -20,6 +20,7 @@ import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { logger } from '../../utils/logger.js';
 import type { IReferralService } from '../../packages/core/ports/IReferralService.js';
 import { ReferralError } from '../../packages/adapters/billing/ReferralService.js';
+import type { LeaderboardService, LeaderboardTimeframe } from '../../packages/adapters/billing/LeaderboardService.js';
 
 // =============================================================================
 // Router Setup
@@ -32,6 +33,7 @@ export const referralRouter = Router();
 // =============================================================================
 
 let referralService: IReferralService | null = null;
+let leaderboardService: LeaderboardService | null = null;
 
 /**
  * Set the referral service instance.
@@ -39,6 +41,10 @@ let referralService: IReferralService | null = null;
  */
 export function setReferralService(service: IReferralService): void {
   referralService = service;
+}
+
+export function setLeaderboardService(service: LeaderboardService): void {
+  leaderboardService = service;
 }
 
 function getService(): IReferralService {
@@ -271,6 +277,50 @@ referralRouter.get(
       active_referees: stats.activeReferees,
       total_earnings_micro: stats.totalEarningsMicro.toString(),
       pending_bonuses: stats.pendingBonuses,
+    });
+  }
+);
+
+/**
+ * GET /referrals/leaderboard — Public leaderboard rankings
+ */
+const VALID_TIMEFRAMES: LeaderboardTimeframe[] = ['daily', 'weekly', 'monthly', 'all_time'];
+
+referralRouter.get(
+  '/leaderboard',
+  (req: Request, res: Response) => {
+    if (!leaderboardService) {
+      res.status(503).json({ error: 'Leaderboard service not initialized' });
+      return;
+    }
+
+    const timeframe = (req.query.timeframe as string) ?? 'weekly';
+    if (!VALID_TIMEFRAMES.includes(timeframe as LeaderboardTimeframe)) {
+      res.status(400).json({
+        error: 'Invalid timeframe',
+        valid: VALID_TIMEFRAMES,
+      });
+      return;
+    }
+
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
+
+    const entries = leaderboardService.getLeaderboard(
+      timeframe as LeaderboardTimeframe,
+      { limit, offset },
+    );
+
+    res.json({
+      timeframe,
+      entries: entries.map(e => ({
+        rank: e.rank,
+        display_name: e.displayName,
+        referral_count: e.referralCount,
+        total_earnings_micro: e.totalEarningsMicro.toString(),
+      })),
+      limit,
+      offset,
     });
   }
 );
