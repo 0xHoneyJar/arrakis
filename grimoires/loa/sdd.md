@@ -1,25 +1,27 @@
-# SDD: The Kwisatz Haderach — Agent Economic Citizenship & Constitutional Governance
+# SDD: The Spacing Guild — Agent Economic Sovereignty & Peer Commerce
 
 **Version:** 1.0.0
 **Date:** 2026-02-16
 **Status:** Draft
-**PRD:** `grimoires/loa/prd.md` v1.0.0
-**Cycle:** cycle-030
+**PRD:** `grimoires/loa/prd.md` v1.0.0 (GPT-5.2 APPROVED iteration 2)
+**Cycle:** cycle-031
+**Predecessor:** cycle-030 SDD (archived: `grimoires/loa/archive/2026-02-16-kwisatz-haderach-complete/sdd.md`)
 
 ---
 
 ## 1. Executive Summary
 
-This SDD designs the technical architecture for making agents first-class economic citizens and establishing constitutional governance for system parameters. It extends the existing billing infrastructure (credit ledger, state machines, billing events, revenue rules, fraud/settlement services) with four new subsystems:
+This SDD designs the technical architecture for completing agent economic sovereignty. It extends the cycle-030 infrastructure (constitutional governance, agent budget engine, economic event outbox, reconciliation service) with five new subsystems:
 
-1. **Constitutional Governance** — `system_config` table with multi-sig approval, 7-day cooldown, entity-type overrides
-2. **Agent Budget Engine** — per-agent daily spending caps with circuit breaker, Redis advisory + SQLite authoritative
-3. **EconomicEvent Outbox** — unified `economic_events` append-only table for cross-system publication (outbox pattern)
-4. **ADR-008 Reconciliation** — design + test harness for credit ledger ↔ budget engine conservation
+1. **Peer Transfer Service** — atomic credit transfers between accounts with budget enforcement and conservation guarantees
+2. **TBA Binding & Deposit Bridge** — ERC-6551 Token-Bound Account binding with escrow-backed deposit bridging
+3. **Agent Governance Participation** — weighted agent proposals via a separate approval track with configurable quorum
+4. **Event Consolidation Adapter** — single-path migration from `BillingEventEmitter` to `EconomicEventEmitter`
+5. **Conservation Extensions** — two new reconciliation checks (transfer zero-sum, deposit bridge conservation)
 
-All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` precision). No new databases — extends SQLite (authoritative) + Redis (cache/acceleration). No existing interfaces are modified.
+All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` precision). No new databases — extends SQLite (authoritative) + Redis (cache/acceleration). No existing interfaces are broken — all new dependencies use optional constructor injection.
 
-> Grounded in: `ICreditLedgerService.ts`, `state-machines.ts`, `billing-events.ts`, `RevenueRulesAdapter.ts`, `AgentWalletPrototype.ts`, `CreditLedgerAdapter.ts`, `SettlementService.ts`, `CreatorPayoutService.ts`, `FraudRulesService.ts`, migrations 030-046.
+> Grounded in: `ICreditLedgerService.ts`, `IConstitutionalGovernanceService.ts`, `AgentProvenanceVerifier.ts`, `EconomicEventEmitter.ts`, `AgentAwareFinalizer.ts`, `AgentBudgetService.ts`, `ReconciliationService.ts`, `billing-types.ts`, `economic-events.ts`, `config-schema.ts`, `BillingEventEmitter.ts`, migrations 030-055.
 
 ---
 
@@ -28,49 +30,62 @@ All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` pre
 ### 2.1 Component Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        API Layer (Express)                           │
-│  /api/admin/config/*  /api/agent/*  /api/reconciliation/*            │
-└──────┬──────────────────────┬──────────────────────┬────────────────┘
-       │                      │                      │
-┌──────▼──────────┐  ┌────────▼──────────┐  ┌────────▼──────────┐
-│  Constitutional  │  │  AgentBudget      │  │  Reconciliation   │
-│  Governance      │  │  Service          │  │  Service          │
-│  Service         │  │                   │  │                   │
-└──────┬──────────┘  └────────┬──────────┘  └────────┬──────────┘
-       │                      │                      │
-┌──────▼──────────────────────▼──────────────────────▼──────────┐
-│                    Existing Billing Layer                       │
-│  CreditLedgerAdapter  │  RevenueDistributionSvc               │
-│  SettlementService    │  RevenueRulesAdapter                  │
-│  CreatorPayoutService │  FraudRulesService                    │
-│  AgentWalletPrototype │  BillingEventEmitter                  │
-└──────┬──────────────────────┬──────────────────────┬──────────┘
-       │                      │                      │
-┌──────▼──────┐  ┌────────────▼────────┐  ┌──────────▼──────────┐
-│   SQLite    │  │     Redis           │  │  EconomicEvent      │
-│ (authority) │  │   (cache/advisory)  │  │  Outbox Dispatcher  │
-└─────────────┘  └────────────────────┘  └─────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          API Layer (Express)                              │
+│  /api/transfer/*  /api/agent/tba/*  /api/agent/governance/*               │
+│  /api/admin/config/*  /api/reconciliation/*                               │
+└─────┬───────────────────┬───────────────────┬──────────────────┬─────────┘
+      │                   │                   │                  │
+┌─────▼──────────┐ ┌──────▼──────────┐ ┌──────▼──────────┐ ┌────▼────────────┐
+│  PeerTransfer  │ │  TbaDeposit     │ │  AgentGovern-   │ │  Reconciliation │
+│  Service       │ │  Bridge         │ │  anceService    │ │  Service (ext)  │
+│                │ │                 │ │                 │ │                 │
+│ - transfer()   │ │ - detectDeposit │ │ - proposeAs-    │ │ - 6 checks      │
+│ - getTransfer  │ │ - bridgeDeposit │ │   Agent()       │ │ - transfer cons │
+│ - listHistory  │ │ - verifyEscrow  │ │ - voteAsAgent() │ │ - deposit cons  │
+└─────┬──────────┘ └──────┬──────────┘ │ - computeWeight │ └────┬────────────┘
+      │                   │            └──────┬──────────┘      │
+┌─────▼───────────────────▼───────────────────▼─────────────────▼──────────┐
+│                      Existing Billing Layer (cycle-030)                    │
+│                                                                           │
+│  ICreditLedgerService  │  AgentBudgetService  │  AgentProvenanceVerifier  │
+│  (reserve/finalize/    │  (checkBudget/       │  (registerAgent/verify/   │
+│   mintLot)             │   recordFinalize)     │   bindTBA ← IMPLEMENT)   │
+│                        │                      │                           │
+│  SettlementService     │  ConstitutionalGov   │  EventConsolidation      │
+│  (unchanged)           │  Service (EXTENDED)   │  Adapter (NEW)           │
+└─────┬───────────────────┬──────────────────────┬─────────────────────────┘
+      │                   │                      │
+┌─────▼─────┐  ┌──────────▼────────┐  ┌──────────▼──────────────┐
+│  SQLite   │  │     Redis         │  │  EconomicEventEmitter   │
+│ (author.) │  │  (cache/advisory) │  │  (authoritative outbox) │
+└───────────┘  └───────────────────┘  └─────────────────────────┘
 ```
 
 ### 2.2 Extension Strategy
 
-**No existing interfaces are modified.** New services compose existing ports:
+**No existing interfaces are broken.** New services compose existing ports:
 
 | Existing Port | How Extended |
 |---------------|-------------|
-| `ICreditLedgerService` | Unchanged. Agent accounts already supported (`entity_type: 'agent'`). Budget cap checks wrap `reserve()` calls — no interface change. |
-| `IRevenueRulesService` | Unchanged. Revenue rules governance pattern cloned for constitutional governance. |
-| `BillingEvent` union type | Extended: new event types added to discriminated union (additive only). |
-| `StateMachineDefinition` | New `SYSTEM_CONFIG_MACHINE` defined using existing `StateMachineDefinition<S>` generic. |
-| `BillingEventEmitter` | New `EconomicEventEmitter` wraps existing emitter + writes to `economic_events` outbox table within same transaction. |
+| `ICreditLedgerService` | Unchanged. `PeerTransferService` composes `mintLot()` + new `transfer_out` entry type in same tx. |
+| `IConstitutionalGovernanceService` | Extended with `proposeAsAgent()`, `voteAsAgent()`, `computeAgentWeight()`. New methods — existing methods unchanged. |
+| `AgentProvenanceVerifier` | `bindTBA()` implemented (was `NotImplementedError`). `verifyProvenance()` enhanced to check TBA status. |
+| `AgentBudgetService` | Unchanged. `PeerTransferService` calls `checkBudget()` before transfer execution. |
+| `EconomicEventEmitter` | Unchanged. All new events emitted through existing `emitInTransaction()`. |
+| `BillingEventEmitter` | Wrapped by `EventConsolidationAdapter` for dual-write. Not modified directly. |
+| `ReconciliationService` | Extended with 2 new checks (transfer conservation, deposit bridge conservation). |
+| `billing-types.ts` | Extended: new `EntryType` values (`transfer_out`), new `SourceType` value (`tba_deposit`). Additive only. |
+| `economic-events.ts` | Extended: 10 new event types added to `ECONOMIC_EVENT_TYPES`. Additive only. |
+| `config-schema.ts` | Extended: 5 new parameters added to `CONFIG_SCHEMA` and `CONFIG_FALLBACKS`. |
 
 ### 2.3 Key Design Principles
 
-1. **Conservation invariant preserved**: All changes are additive — no new money creation paths, no invariant modifications.
-2. **Entity-type agnosticism maintained**: The credit ledger remains entity-type agnostic. Differentiation happens in the governance/policy layer above the ledger.
-3. **Compile-time fallback**: Every runtime-configurable parameter has a compile-time constant as last-resort default. If `system_config` lookup fails, the system operates with hardcoded values (identical to current behavior).
-4. **Synchronous outbox**: Event emission uses synchronous INSERT within the same SQLite transaction. Async dispatch happens after commit (outbox pattern).
+1. **Conservation invariant extended**: Transfer is zero-sum (sender deducted = recipient credited). Deposit bridge is backed by verifiable escrow. No new phantom money paths.
+2. **Entity-type agnosticism maintained**: The credit ledger remains entity-type agnostic. Transfer budget enforcement and governance weight computation happen in the policy layer above the ledger.
+3. **Compile-time fallback**: Every new configurable parameter has a `CONFIG_FALLBACKS` entry.
+4. **Single dual-write path**: Event consolidation uses one mechanism (application-level adapter), not a mix of app-level and DB triggers.
+5. **Composed atomic operations**: Transfer follows the `AgentAwareFinalizer` pattern — wrapping multiple adapter calls in a single `BEGIN IMMEDIATE` SQLite transaction.
 
 ---
 
@@ -78,1207 +93,910 @@ All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` pre
 
 ### 3.1 New Tables
 
-#### `system_config`
+#### 3.1.1 `transfers`
 
-Constitutional parameters with governance lifecycle.
+First-class transfer records for idempotency and auditability.
 
 ```sql
-CREATE TABLE system_config (
+-- Migration: 056_peer_transfers.ts
+CREATE TABLE transfers (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  param_key TEXT NOT NULL,
-  entity_type TEXT,           -- NULL = global default, 'agent'/'person'/etc = entity override
-  value_json TEXT NOT NULL,   -- JSON-encoded value (supports numbers, strings, objects)
-  config_version INTEGER NOT NULL DEFAULT 1,
-  active_from TEXT,           -- ISO 8601 timestamp when this config becomes active
-  status TEXT NOT NULL DEFAULT 'draft'
-    CHECK (status IN ('draft', 'pending_approval', 'cooling_down', 'active', 'superseded', 'rejected')),
-  proposed_by TEXT NOT NULL,
-  proposed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  approved_by TEXT,           -- JSON array of approver IDs (multi-sig)
-  approval_count INTEGER NOT NULL DEFAULT 0,
-  required_approvals INTEGER NOT NULL DEFAULT 2,
-  cooldown_ends_at TEXT,      -- Set when status transitions to 'cooling_down'
-  activated_at TEXT,
-  superseded_at TEXT,
-  superseded_by TEXT REFERENCES system_config(id),
-  metadata TEXT,              -- JSON: notes, justification
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
--- Only one active config per (param_key, entity_type) pair
-CREATE UNIQUE INDEX idx_system_config_active
-  ON system_config(param_key, entity_type) WHERE status = 'active';
-
--- Version uniqueness per (param_key, entity_type) — prevents concurrent version collision
-CREATE UNIQUE INDEX idx_system_config_version
-  ON system_config(param_key, entity_type, config_version);
-
--- Lookup active config: entity-specific first, then global fallback
-CREATE INDEX idx_system_config_lookup
-  ON system_config(param_key, status, entity_type);
-```
-
-#### `system_config_version_seq`
-
-Monotonic version counter per (param_key, entity_type) pair. Updated within `BEGIN IMMEDIATE` to prevent concurrent version allocation.
-
-```sql
-CREATE TABLE system_config_version_seq (
-  param_key TEXT NOT NULL,
-  entity_type TEXT,           -- NULL for global
-  current_version INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(param_key, entity_type)
-);
-```
-
-#### `system_config_audit`
-
-Append-only audit trail for all governance actions.
-
-```sql
-CREATE TABLE system_config_audit (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  config_id TEXT NOT NULL REFERENCES system_config(id),
-  action TEXT NOT NULL
-    CHECK (action IN ('proposed', 'approved', 'rejected', 'cooling_started', 'activated', 'superseded', 'emergency_override')),
-  actor TEXT NOT NULL,
-  previous_status TEXT,
-  new_status TEXT,
-  config_version INTEGER NOT NULL,
-  metadata TEXT,              -- JSON: approval reason, override justification
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-CREATE INDEX idx_config_audit_config ON system_config_audit(config_id);
-CREATE INDEX idx_config_audit_action ON system_config_audit(action, created_at);
-```
-
-#### `agent_spending_limits`
-
-Per-agent daily budget caps with circuit breaker state.
-
-```sql
-CREATE TABLE agent_spending_limits (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  daily_cap_micro BIGINT NOT NULL,
-  current_spend_micro BIGINT NOT NULL DEFAULT 0,
-  window_start TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  window_duration_seconds INTEGER NOT NULL DEFAULT 86400,  -- 24h
-  circuit_state TEXT NOT NULL DEFAULT 'closed'
-    CHECK (circuit_state IN ('closed', 'warning', 'open')),
+  idempotency_key TEXT NOT NULL UNIQUE,
+  from_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  to_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  amount_micro INTEGER NOT NULL CHECK (amount_micro > 0),
+  correlation_id TEXT NOT NULL,       -- Shared between debit/credit entries
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'completed', 'rejected')),
+  rejection_reason TEXT,              -- If rejected: 'budget_exceeded', 'provenance_failed', etc.
+  metadata TEXT,                      -- JSON: purpose, service payment ref, etc.
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE(account_id)
+  completed_at TEXT
 );
+
+-- Fast lookup by account (sender or recipient)
+CREATE INDEX idx_transfers_from ON transfers(from_account_id, created_at);
+CREATE INDEX idx_transfers_to ON transfers(to_account_id, created_at);
+
+-- Status queries (e.g., pending transfers for display)
+CREATE INDEX idx_transfers_status ON transfers(status, created_at);
 ```
 
-#### `agent_budget_finalizations`
+#### 3.1.2 `tba_deposits`
 
-Idempotency ledger for budget cap accounting. Each finalization is recorded exactly once.
-
-```sql
-CREATE TABLE agent_budget_finalizations (
-  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  reservation_id TEXT NOT NULL,
-  amount_micro BIGINT NOT NULL,
-  finalized_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  PRIMARY KEY (account_id, reservation_id)
-);
-```
-
-#### `agent_identity`
-
-Canonical identity anchor for agent provenance verification.
+On-chain deposit tracking for escrow reconciliation.
 
 ```sql
-CREATE TABLE agent_identity (
+-- Migration: 057_tba_deposits.ts
+CREATE TABLE tba_deposits (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  account_id TEXT NOT NULL UNIQUE REFERENCES credit_accounts(id),
+  agent_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
   chain_id INTEGER NOT NULL,
-  contract_address TEXT NOT NULL,
-  token_id TEXT NOT NULL,
-  tba_address TEXT,           -- Phase 2: ERC-6551 token-bound account address
-  creator_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  creator_signature TEXT,     -- Hex-encoded signature of agent config by creator wallet
-  verified_at TEXT,
+  tx_hash TEXT NOT NULL UNIQUE,         -- On-chain transaction hash (idempotency)
+  token_address TEXT NOT NULL,          -- Deposited token (e.g., USDC contract)
+  amount_raw TEXT NOT NULL,             -- Raw token amount (string for arbitrary precision)
+  amount_micro INTEGER NOT NULL,        -- Converted to micro-USD
+  lot_id TEXT REFERENCES credit_lots(id), -- Created credit lot
+  escrow_address TEXT NOT NULL,         -- Protocol-controlled escrow contract
+  block_number INTEGER NOT NULL,
+  finality_confirmed INTEGER NOT NULL DEFAULT 0, -- 0 = pending, 1 = confirmed
+  status TEXT NOT NULL DEFAULT 'detected'
+    CHECK (status IN ('detected', 'confirmed', 'bridged', 'failed')),
+  error_message TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE(chain_id, contract_address, token_id)
+  bridged_at TEXT
 );
-CREATE INDEX idx_agent_identity_creator ON agent_identity(creator_account_id);
+
+CREATE INDEX idx_tba_deposits_agent ON tba_deposits(agent_account_id, created_at);
+CREATE INDEX idx_tba_deposits_status ON tba_deposits(status);
 ```
 
-#### `agent_clawback_receivables`
+#### 3.1.3 `agent_governance_proposals`
 
-Tracks unpaid clawback remainders to preserve conservation when agent balance is insufficient for full clawback.
+Agent-track governance proposals with weighted voting.
 
 ```sql
-CREATE TABLE agent_clawback_receivables (
+-- Migration: 058_agent_governance.ts
+CREATE TABLE agent_governance_proposals (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  source_clawback_id TEXT NOT NULL,        -- Original clawback event correlation ID
-  original_amount_micro INTEGER NOT NULL,  -- Total remainder at time of shortfall
-  balance_micro INTEGER NOT NULL,          -- Current outstanding amount (decremented by drip recovery)
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  resolved_at TEXT,                        -- Set when balance_micro reaches 0
-  CHECK(original_amount_micro > 0),
-  CHECK(balance_micro >= 0)
-);
-CREATE INDEX idx_clawback_receivables_account
-  ON agent_clawback_receivables(account_id) WHERE balance_micro > 0;
-```
-
-#### `economic_events`
-
-Unified outbox table for cross-system event publication.
-
-```sql
-CREATE TABLE economic_events (
-  rowid INTEGER PRIMARY KEY AUTOINCREMENT,  -- Global ordering
-  event_id TEXT NOT NULL UNIQUE,            -- UUID
-  event_type TEXT NOT NULL,
-  entity_type TEXT NOT NULL,
-  entity_id TEXT NOT NULL,
-  correlation_id TEXT,                      -- Traces across operations
-  idempotency_key TEXT NOT NULL UNIQUE,     -- Deduplication
-  config_version INTEGER,                   -- system_config version used
-  payload TEXT NOT NULL,                    -- JSON event-specific data
-  -- Dispatch claim columns (prevents double-dispatch under concurrency)
-  claimed_by TEXT,                          -- Worker ID that claimed this event
-  claimed_at TEXT,                          -- When claimed (stale claim detection)
-  published_at TEXT,                        -- Set after successful external publish
+  param_key TEXT NOT NULL,
+  entity_type TEXT,                     -- NULL = global, 'agent' = agent-specific
+  proposed_value_json TEXT NOT NULL,
+  proposer_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  proposer_weight INTEGER NOT NULL,     -- Computed server-side at proposal time
+  total_weight INTEGER NOT NULL DEFAULT 0, -- Accumulated vote weight
+  required_weight INTEGER NOT NULL,     -- Quorum threshold (from governance.agent_quorum_weight)
+  status TEXT NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open', 'quorum_reached', 'activated', 'rejected', 'expired', 'admin_overridden')),
+  cooldown_ends_at TEXT,
+  activated_at TEXT,
+  expires_at TEXT NOT NULL,             -- Proposals expire if quorum not reached
+  config_id TEXT REFERENCES system_config(id), -- Created system_config entry on activation
+  metadata TEXT,                        -- JSON: justification, delegation refs
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
--- Dispatcher claims unpublished, unclaimed events atomically
-CREATE INDEX idx_economic_events_dispatchable
-  ON economic_events(rowid) WHERE published_at IS NULL AND claimed_by IS NULL;
+-- Only one open proposal per (param_key, entity_type)
+CREATE UNIQUE INDEX idx_agent_proposals_active
+  ON agent_governance_proposals(param_key, entity_type) WHERE status = 'open';
 
--- Stale claim detection (claimed but not published within timeout)
-CREATE INDEX idx_economic_events_stale_claims
-  ON economic_events(claimed_at) WHERE claimed_by IS NOT NULL AND published_at IS NULL;
-
--- Per-entity ordering queries
-CREATE INDEX idx_economic_events_entity
-  ON economic_events(entity_id, rowid);
+CREATE INDEX idx_agent_proposals_status ON agent_governance_proposals(status, expires_at);
 ```
 
-### 3.2 Schema Extensions to Existing Tables
+#### 3.1.4 `agent_governance_votes`
 
-#### `billing_events` — new event types
+Individual agent votes on proposals.
 
-Add to `BillingEvent` discriminated union (TypeScript only — SQLite stores as TEXT):
-- `AgentBudgetWarning` — agent hit 80% of daily cap
-- `AgentBudgetExhausted` — agent hit 100% of daily cap
-- `AgentSettlementInstant` — agent earning settled immediately (0h hold)
-- `ConfigProposed` — constitutional parameter change proposed
-- `ConfigApproved` — constitutional parameter change approved
-- `ConfigActivated` — constitutional parameter became active
+```sql
+CREATE TABLE agent_governance_votes (
+  proposal_id TEXT NOT NULL REFERENCES agent_governance_proposals(id),
+  voter_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  weight INTEGER NOT NULL,              -- Computed server-side
+  vote TEXT NOT NULL CHECK (vote IN ('support', 'oppose')),
+  delegation_ref TEXT,                  -- If voting via delegation, reference to delegation
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (proposal_id, voter_account_id)
+);
+```
 
-#### `credit_accounts` — no schema change
+### 3.2 Modified Tables
 
-Agent accounts already work. `entity_type: 'agent'` is already in the CHECK constraint (`030_credit_ledger.ts:27-29`). `AgentWalletPrototype.ts:172` already creates agent accounts via `getOrCreateAccount('agent', ...)`.
+#### `credit_lots` — New source_type
 
-### 3.3 Parameter Resolution
+```sql
+-- Add 'tba_deposit' to source_type CHECK constraint
+-- Migration 056 alters: CHECK (source_type IN ('deposit','grant','purchase','transfer_in','commons_dividend','tba_deposit'))
+```
 
-### 3.4 Parameter Schema Registry
+#### `credit_ledger` (ledger_entries) — New entry_types
 
-Every constitutional parameter has a strict typed schema defined in code. Proposals are validated against this schema **before** they can enter the governance lifecycle. This prevents runtime type errors in money-moving code paths.
+```sql
+-- Add 'transfer_out' and 'transfer_in' to entry_type CHECK constraint
+-- Migration 056 alters: existing CHECK + 'transfer_out', 'transfer_in'
+```
+
+#### `billing_events` — Deprecation marker
+
+```sql
+-- Migration 059_billing_events_deprecated.ts
+ALTER TABLE billing_events ADD COLUMN deprecated_at TEXT;
+-- No trigger. Dual-write handled at application level.
+```
+
+### 3.3 New Constitutional Parameters
 
 ```typescript
-// packages/core/protocol/config-schema.ts
+// Added to CONFIG_SCHEMA in config-schema.ts
+'transfer.max_single_micro':      { type: 'bigint_micro', min: 0n, description: 'Max single transfer amount' }
+'transfer.daily_limit_micro':     { type: 'bigint_micro', min: 0n, description: 'Max daily transfer volume per account' }
+'governance.agent_quorum_weight':  { type: 'integer', min: 1, max: 10000, description: 'Weight required for agent proposal activation' }
+'governance.agent_cooldown_seconds': { type: 'integer_seconds', min: 0, max: 604800, description: 'Agent proposal cooldown' }
+'governance.max_delegation_per_creator': { type: 'integer', min: 1, max: 1000, description: 'Max governance weight delegable per creator' }
 
-interface ParamSchema {
-  key: string;
-  type: 'integer' | 'bigint_micro' | 'integer_seconds' | 'integer_percent' | 'nullable';
-  min?: number;
-  max?: number;
-  description: string;
-}
-
-const CONFIG_SCHEMA: Record<string, ParamSchema> = {
-  'kyc.basic_threshold_micro':      { key: 'kyc.basic_threshold_micro',      type: 'bigint_micro',      min: 0, description: 'KYC basic tier threshold in micro-USD' },
-  'kyc.enhanced_threshold_micro':   { key: 'kyc.enhanced_threshold_micro',   type: 'bigint_micro',      min: 0, description: 'KYC enhanced tier threshold in micro-USD' },
-  'settlement.hold_seconds':        { key: 'settlement.hold_seconds',        type: 'integer_seconds',   min: 0, max: 604800, description: 'Settlement hold duration in seconds' },
-  'payout.min_micro':               { key: 'payout.min_micro',               type: 'bigint_micro',      min: 0, description: 'Minimum payout amount in micro-USD' },
-  'payout.rate_limit_seconds':      { key: 'payout.rate_limit_seconds',      type: 'integer_seconds',   min: 0, description: 'Minimum seconds between payouts per account' },
-  'payout.fee_cap_percent':         { key: 'payout.fee_cap_percent',         type: 'integer_percent',   min: 1, max: 100, description: 'Maximum fee as percentage of gross payout' },
-  'revenue_rule.cooldown_seconds':  { key: 'revenue_rule.cooldown_seconds',  type: 'integer_seconds',   min: 0, description: 'Revenue rule cooldown in seconds' },
-  'fraud_rule.cooldown_seconds':    { key: 'fraud_rule.cooldown_seconds',    type: 'integer_seconds',   min: 0, description: 'Fraud rule cooldown in seconds' },
-  'reservation.default_ttl_seconds':{ key: 'reservation.default_ttl_seconds',type: 'integer_seconds',   min: 30, max: 3600, description: 'Default reservation TTL in seconds' },
-  'referral.attribution_window_days':{ key: 'referral.attribution_window_days', type: 'integer',        min: 1, max: 730, description: 'Referral attribution window in days' },
-  'agent.drip_recovery_pct':         { key: 'agent.drip_recovery_pct',         type: 'integer_percent',   min: 1, max: 100, description: 'Percentage of each new agent earning applied to outstanding clawback receivable' },
-};
+// Added to CONFIG_FALLBACKS
+'transfer.max_single_micro':       100_000_000n,   // 100 USD
+'transfer.daily_limit_micro':      500_000_000n,   // 500 USD per day
+'governance.agent_quorum_weight':   100,            // 100 weight-points
+'governance.agent_cooldown_seconds': 86400,         // 24 hours (vs 7 days for admin)
+'governance.max_delegation_per_creator': 100         // Max 100 weight per creator
 ```
 
-**Key normalization changes from current codebase:**
-- `settlement.hold_hours` → `settlement.hold_seconds` (integer seconds, no floats)
-- `payout.rate_limit_hours` → `payout.rate_limit_seconds` (integer seconds — agent override: 8640 = 10 per 24h)
-- `revenue_rule.cooldown_hours` → `revenue_rule.cooldown_seconds` (integer seconds)
-- `fraud_rule.cooldown_hours` → `fraud_rule.cooldown_seconds` (integer seconds)
-- `referral.attribution_window_months` → `referral.attribution_window_days` (integer days)
+### 3.4 New Economic Event Types
 
-All durations are stored as **integer seconds or days** — no floating-point values in `value_json`. The `propose()` method validates the value against the schema and rejects proposals with invalid types or out-of-range values before they enter the governance lifecycle.
+```typescript
+// Added to ECONOMIC_EVENT_TYPES in economic-events.ts
+// Peer transfers
+'PeerTransferInitiated',    // Transfer record created, budget checked
+'PeerTransferCompleted',    // Both entries written, lots adjusted
+'PeerTransferRejected',     // Budget exceeded, provenance failed, etc.
 
-### 3.5 Parameter Resolution
+// TBA operations
+'TbaBound',                 // TBA address bound to agent identity
+'TbaDepositDetected',       // On-chain deposit observed
+'TbaDepositBridged',        // Deposit bridged to credit lot
+'TbaDepositFailed',         // Bridge failed (finality, validation, etc.)
 
-Runtime parameter lookup follows a three-tier resolution chain:
-
+// Agent governance
+'AgentProposalSubmitted',   // Agent created proposal
+'AgentProposalQuorumReached', // Total weight ≥ required weight
+'AgentProposalActivated',   // Cooldown complete, config active
+'AgentProposalRejected',    // Admin override or expiry
 ```
-1. entity-specific override  →  system_config WHERE param_key = ? AND entity_type = ? AND status = 'active'
-2. global default            →  system_config WHERE param_key = ? AND entity_type IS NULL AND status = 'active'
-3. compile-time fallback     →  hardcoded constant in source code (current behavior)
-```
 
-**For money-moving operations** (reserve, finalize, settlement, payout), parameter reads MUST occur within the SQLite transaction (`BEGIN IMMEDIATE` block). Redis is used only for non-transactional reads (dashboards, API queries, advisory cap checks).
-
-The `config_version` from the resolved config record is recorded in the operation's audit trail (ledger entry metadata or economic event payload).
+Total vocabulary: 29 (existing) + 10 (new) = 39 event types.
 
 ---
 
-## 4. Service Architecture
+## 4. Component Design
 
-### 4.1 ConstitutionalGovernanceService
+### 4.1 PeerTransferService
 
-**Location:** `themes/sietch/src/packages/adapters/billing/ConstitutionalGovernanceService.ts`
-**Port:** `themes/sietch/src/packages/core/ports/IConstitutionalGovernanceService.ts`
+**File**: `themes/sietch/src/packages/adapters/billing/PeerTransferService.ts`
+**Port**: `themes/sietch/src/packages/core/ports/IPeerTransferService.ts`
+
+#### 4.1.1 Interface
 
 ```typescript
-interface IConstitutionalGovernanceService {
-  // Parameter resolution (used by all services)
-  resolve<T>(paramKey: string, entityType?: EntityType): Promise<ResolvedParam<T>>;
-  resolveInTransaction<T>(tx: Transaction, paramKey: string, entityType?: EntityType): ResolvedParam<T>;
-
-  // Governance lifecycle
-  propose(paramKey: string, value: unknown, opts: ProposeOpts): Promise<SystemConfig>;
-  approve(configId: string, approverAdminId: string): Promise<SystemConfig>;
-  reject(configId: string, rejectorAdminId: string, reason: string): Promise<SystemConfig>;
-  activateExpiredCooldowns(): Promise<number>; // BullMQ cron
-
-  // Emergency override (requires 3+ approvals + immediate audit)
-  emergencyOverride(configId: string, approvers: string[], justification: string): Promise<SystemConfig>;
-
-  // Query
-  getActiveConfig(paramKey: string, entityType?: EntityType): Promise<SystemConfig | null>;
-  getConfigHistory(paramKey: string): Promise<SystemConfig[]>;
-  getPendingProposals(): Promise<SystemConfig[]>;
+interface TransferOptions {
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+  correlationId?: string;
 }
 
-interface ResolvedParam<T> {
-  value: T;
-  configVersion: number;
-  source: 'entity_override' | 'global_config' | 'compile_fallback';
-  configId: string | null;
+interface TransferResult {
+  transferId: string;
+  fromAccountId: string;
+  toAccountId: string;
+  amountMicro: bigint;
+  status: 'completed' | 'rejected';
+  rejectionReason?: string;
+  correlationId: string;
+  completedAt?: string;
 }
 
-interface ProposeOpts {
-  entityType?: EntityType;  // NULL = global, 'agent' = agent-specific override
-  proposerAdminId: string;
+interface IPeerTransferService {
+  transfer(fromAccountId: string, toAccountId: string, amountMicro: bigint, opts: TransferOptions): Promise<TransferResult>;
+  getTransfer(transferId: string): Promise<TransferResult | null>;
+  getTransferByIdempotencyKey(key: string): Promise<TransferResult | null>;
+  listTransfers(accountId: string, options?: { limit?: number; offset?: number; direction?: 'sent' | 'received' | 'all' }): Promise<TransferResult[]>;
+}
+```
+
+#### 4.1.2 Transfer Algorithm
+
+**Critical conservation design**: Transfers use a **lot-split** operation, not mint. The sender lot's `original_micro` is reduced by the transfer amount, and a new recipient lot is created with `original_micro` equal to that amount. This preserves total `original_micro` across all lots (zero-sum at the lot level, not just the ledger entry level).
+
+```
+transfer(fromAccountId, toAccountId, amountMicro, opts):
+  1. BEGIN IMMEDIATE transaction:
+
+     a. SELECT transfer by idempotency_key
+        → If exists and completed: COMMIT, return existing result (idempotent)
+        → If exists and rejected: COMMIT, return rejection (idempotent)
+        → If not exists: INSERT transfer record with status='pending'
+
+     b. Validate: fromAccountId ≠ toAccountId
+
+     c. Verify sender provenance (agent senders only):
+        → AgentProvenanceVerifier.verifyProvenance(fromAccountId)
+        → If agent: check budget via AgentBudgetService.checkBudget()
+        → If budget exceeded: UPDATE transfers SET status='rejected',
+          emit PeerTransferRejected via emitInTransaction, COMMIT, return
+
+     d. Check governance limits (in-transaction resolution):
+        → governance.resolveInTransaction(tx, 'transfer.max_single_micro', senderEntityType)
+        → governance.resolveInTransaction(tx, 'transfer.daily_limit_micro', senderEntityType)
+        → If exceeded: reject with reason, COMMIT, return
+
+     e. Select sender lots (FIFO: pool-restricted → expiring → oldest)
+        → If total available < amountMicro: reject INSUFFICIENT_BALANCE, COMMIT, return
+
+     f. LOT-SPLIT operation (conservation-preserving):
+        For each selected sender lot:
+          i.  Reduce lot's available_micro by split amount
+          ii. Reduce lot's original_micro by split amount
+          — Lot invariant preserved: (available-X) + reserved + consumed = (original-X)
+
+     g. Create recipient lot:
+        INSERT credit_lot: source_type='transfer_in', original_micro=amountMicro,
+          available_micro=amountMicro, reserved=0, consumed=0,
+          source_id=transfer_id (for traceability)
+        — Global lot conservation: sender original decreased, recipient original increased by same amount
+
+     h. INSERT ledger_entry: entry_type='transfer_out', amount_micro=-amountMicro,
+        correlation_id, idempotency_key=(transfer_id + '_out')
+     i. INSERT ledger_entry: entry_type='transfer_in', amount_micro=+amountMicro,
+        correlation_id, idempotency_key=(transfer_id + '_in')
+
+     j. If agent sender: budgetService.recordFinalizationInTransaction(tx, accountId, amountMicro)
+
+     k. UPDATE transfers SET status='completed', completed_at=now()
+
+     l. economicEventEmitter.emitInTransaction(tx, PeerTransferCompleted)
+
+  2. COMMIT
+
+  3. If agent sender: invalidate Redis budget cache (async, non-blocking)
+
+  4. Return TransferResult
+```
+
+**Why lot-split, not mint**: A naive `mintLot()` on the recipient creates new `original_micro` without destroying sender `original_micro`, inflating total supply. The lot-split approach reduces sender `original_micro` and creates recipient `original_micro` by the same amount — total `SUM(original_micro)` across all lots is unchanged by transfers.
+
+#### 4.1.3 Lot Selection Strategy
+
+FIFO (First-In-First-Out): oldest money moves first. This matches the existing `reserve()` lot selection in `ICreditLedgerService`:
+
+1. Filter lots by sender's account_id
+2. Exclude lots with pool restrictions that don't match (if applicable)
+3. Order by: expires_at ASC NULLS LAST, created_at ASC
+4. Iterate lots, deducting from `available_micro` until transfer amount is fully sourced
+5. If total available < transfer amount: reject with `INSUFFICIENT_BALANCE`
+
+#### 4.1.4 Constructor (DI)
+
+```typescript
+class PeerTransferService implements IPeerTransferService {
+  constructor(
+    private readonly db: Database.Database,
+    private readonly ledger: ICreditLedgerService,
+    private readonly budgetService?: AgentBudgetService,      // Optional
+    private readonly provenance?: AgentProvenanceVerifier,    // Optional
+    private readonly governance?: IConstitutionalGovernanceService, // Optional
+    private readonly eventEmitter?: IEconomicEventEmitter     // Optional
+  ) {}
+}
+```
+
+### 4.2 TBA Binding (AgentProvenanceVerifier Extension)
+
+**File**: `themes/sietch/src/packages/adapters/billing/AgentProvenanceVerifier.ts` (modified)
+
+#### 4.2.1 bindTBA Implementation
+
+```typescript
+bindTBA(accountId: string, tbaAddress: string): Promise<AgentIdentity> {
+  // 1. Validate address: 0x-prefixed, 40 hex characters
+  // 2. Normalize to EIP-55 checksum format for storage
+  // 3. Check agent_identity exists for accountId
+  // 4. Check tba_address is NULL (not already bound)
+  //    → If same address already bound: return existing (idempotent)
+  //    → If different address already bound: throw CONFLICT (409)
+  // 5. UPDATE agent_identity SET tba_address = normalizedAddress WHERE account_id = accountId
+  // 6. Emit TbaBound event via EconomicEventEmitter
+  // 7. Return updated AgentIdentity
+}
+```
+
+#### 4.2.2 EIP-55 Address Normalization
+
+```typescript
+function normalizeAddress(address: string): string {
+  // Accept: 0x + 40 hex chars (case-insensitive)
+  // Normalize: apply EIP-55 checksum encoding
+  // Return: checksummed address
+  // This is a storage normalization, not a validation gate
+}
+```
+
+### 4.3 TbaDepositBridge
+
+**File**: `themes/sietch/src/packages/adapters/billing/TbaDepositBridge.ts`
+**Port**: `themes/sietch/src/packages/core/ports/ITbaDepositBridge.ts`
+
+#### 4.3.1 Interface
+
+```typescript
+interface DepositDetection {
+  chainId: number;
+  txHash: string;
+  tokenAddress: string;
+  amountRaw: string;          // Raw token amount
+  fromAddress: string;        // TBA address
+  toAddress: string;          // Escrow address
+  blockNumber: number;
+}
+
+interface DepositBridgeResult {
+  depositId: string;
+  lotId: string;
+  amountMicro: bigint;
+  status: 'bridged' | 'failed';
+  error?: string;
+}
+
+interface ITbaDepositBridge {
+  detectAndBridge(detection: DepositDetection): Promise<DepositBridgeResult>;
+  getDeposit(txHash: string): Promise<TbaDeposit | null>;
+  listDeposits(agentAccountId: string, options?: { limit?: number }): Promise<TbaDeposit[]>;
+  verifyEscrowBalance(chainId: number): Promise<{ escrowBalance: bigint; creditedBalance: bigint; delta: bigint }>;
+}
+```
+
+#### 4.3.2 Bridge Algorithm
+
+```
+detectAndBridge(detection):
+  1. Validate detection.toAddress matches configured escrow address
+  2. Validate detection.chainId matches configured deployment chain
+  3. Validate detection.tokenAddress is in accepted token list
+
+  4. INSERT OR IGNORE into tba_deposits with tx_hash as unique key
+     → If already exists and bridged: return existing result (idempotent)
+     → If already exists and failed: allow retry
+
+  5. ON-CHAIN VERIFICATION (MANDATORY before any minting):
+     a. Fetch transaction receipt via RPC: eth_getTransactionReceipt(detection.txHash)
+     b. Verify receipt.status === 1 (success)
+     c. Verify receipt.blockNumber matches detection.blockNumber
+     d. Parse ERC-20 Transfer log from receipt.logs:
+        - Verify log topic matches Transfer(address,address,uint256)
+        - Verify log.from matches detection.fromAddress (TBA)
+        - Verify log.to matches configured escrow address
+        - Verify log.amount matches detection.amountRaw
+        - Verify log.address matches detection.tokenAddress
+     e. Verify finality: receipt.blockNumber + finality_depth ≤ current block
+        → If not confirmed: UPDATE status='detected', return pending
+     f. Persist hash of verified receipt + log index in tba_deposits.metadata
+        for audit trail
+
+  6. Convert amount: amountRaw → amountMicro (1 USDC = 1,000,000 micro-USD)
+
+  7. Find agent account via TBA address:
+     → SELECT account_id FROM agent_identity WHERE tba_address = detection.fromAddress
+     → If not found: reject (TBA not bound), emit TbaDepositFailed
+
+  8. BEGIN IMMEDIATE transaction:
+     a. ledger.mintLot(agentAccountId, amountMicro, 'tba_deposit', { sourceId: txHash })
+     b. UPDATE tba_deposits SET status='bridged', lot_id=lot.id, bridged_at=now(),
+        finality_confirmed=1
+     c. economicEventEmitter.emitInTransaction(tx, TbaDepositBridged)
+  9. COMMIT
+
+  10. Return DepositBridgeResult
+```
+
+**Security note**: On-chain verification (step 5) is mandatory. The bridge NEVER mints credits based solely on webhook/listener data. Even if the internal endpoint is compromised, fabricated detections without matching on-chain receipts are rejected. This is the equivalent of Stripe's "verify webhook signature before processing" pattern, but for on-chain data.
+
+#### 4.3.3 Escrow Configuration
+
+```typescript
+interface TbaDepositBridgeConfig {
+  escrowAddress: string;                // Protocol-controlled escrow contract
+  chainId: number;                      // Deployment chain
+  acceptedTokens: string[];             // Token contract addresses (USDC initially)
+  finalityDepth: number;                // Block confirmations required (default: 12)
+  pollingIntervalSeconds: number;       // How often to check for deposits (default: 60)
+  conversionRates: Record<string, bigint>; // Token address → micro-USD per raw unit
+}
+```
+
+### 4.4 AgentGovernanceService
+
+**File**: `themes/sietch/src/packages/adapters/billing/AgentGovernanceService.ts`
+**Port**: `themes/sietch/src/packages/core/ports/IAgentGovernanceService.ts`
+
+#### 4.4.1 Interface
+
+```typescript
+interface AgentProposalOptions {
+  agentAccountId: string;
+  delegationRef?: string;               // If voting via delegation
   justification?: string;
 }
-```
 
-**State machine:** Reuses `StateMachineDefinition<S>` pattern from `state-machines.ts`:
-
-```typescript
-export type SystemConfigState =
-  | 'draft'
-  | 'pending_approval'
-  | 'cooling_down'
-  | 'active'
-  | 'superseded'
-  | 'rejected';
-
-export const SYSTEM_CONFIG_MACHINE: StateMachineDefinition<SystemConfigState> = {
-  name: 'system_config',
-  initial: 'draft',
-  transitions: {
-    draft: ['pending_approval'],
-    pending_approval: ['cooling_down', 'rejected'],
-    cooling_down: ['active', 'rejected'],
-    active: ['superseded'],
-    superseded: [],
-    rejected: [],
-  },
-  terminal: ['superseded', 'rejected'],
-};
-```
-
-**Approval flow:**
-
-```
-Admin proposes parameter change → status: 'draft'
-  → First admin approves → status: 'pending_approval', approval_count: 1
-    → Second admin approves → status: 'cooling_down', cooldown_ends_at set (7 days)
-      → BullMQ cron detects cooldown expired → status: 'active'
-        → Previous active config for same (param_key, entity_type) → status: 'superseded'
-```
-
-**Multi-sig enforcement:** The `approved_by` JSON array stores approver IDs. The proposer cannot be among the approvers (four-eyes). Approval count must reach `required_approvals` (default: 2) before cooling can start.
-
-**Emergency override:** Requires 3+ admin approvals in a single call. Bypasses cooldown — config goes directly to `active`. An `emergency_override` audit entry is written with all approver IDs and justification. A notification event (`ConfigActivated` with `emergency: true`) is emitted immediately.
-
-### 4.2 AgentBudgetService
-
-**Location:** `themes/sietch/src/packages/adapters/billing/AgentBudgetService.ts`
-**Port:** `themes/sietch/src/packages/core/ports/IAgentBudgetService.ts`
-
-```typescript
-interface IAgentBudgetService {
-  // Cap management
-  setDailyCap(accountId: string, capMicro: bigint): Promise<AgentSpendingLimit>;
-  getDailyCap(accountId: string): Promise<AgentSpendingLimit | null>;
-
-  // Budget check (called before reserve())
-  checkBudget(accountId: string, amountMicro: bigint): Promise<BudgetCheckResult>;
-
-  // Budget update (called after finalize())
-  recordFinalization(accountId: string, reservationId: string, amountMicro: bigint): Promise<void>;
-
-  // Window reset (BullMQ cron)
-  resetExpiredWindows(): Promise<number>;
-
-  // Circuit breaker state
-  getCircuitState(accountId: string): Promise<CircuitState>;
-}
-
-interface BudgetCheckResult {
-  allowed: boolean;
-  currentSpendMicro: bigint;
-  dailyCapMicro: bigint;
-  remainingMicro: bigint;
-  circuitState: CircuitState;
-}
-
-type CircuitState = 'closed' | 'warning' | 'open';
-```
-
-**Cap accounting rules (from PRD FR-2):**
-
-The cap tracks **finalized spend only** — reservations are never counted toward the cap. Idempotency is enforced via the `agent_budget_finalizations` table (one row per `(account_id, reservation_id)` — `INSERT OR IGNORE` prevents double-counting across retries):
-
-```typescript
-/**
- * Called within the SAME SQLite transaction as the CreditLedgerAdapter.finalize() call.
- * The caller passes the active transaction handle to ensure atomicity.
- */
-async recordFinalizationInTransaction(
-  tx: Transaction, accountId: string, reservationId: string, amountMicro: bigint
-): Promise<void> {
-  const now = new Date().toISOString();
-
-  // Get spending limit for this agent
-  const limit = await tx.get(
-    'SELECT * FROM agent_spending_limits WHERE account_id = ?',
-    [accountId]
-  );
-  if (!limit) return; // No cap configured — no-op
-
-  // Idempotency: INSERT OR IGNORE into finalizations ledger
-  const inserted = await tx.run(
-    `INSERT OR IGNORE INTO agent_budget_finalizations (account_id, reservation_id, amount_micro, finalized_at)
-     VALUES (?, ?, ?, ?)`,
-    [accountId, reservationId, amountMicro.toString(), now]
-  );
-  if (inserted.changes === 0) return; // Already recorded — idempotent skip
-
-  // Check if window has expired → reset
-  const windowEnd = new Date(new Date(limit.window_start).getTime() + limit.window_duration_seconds * 1000);
-  let windowStart = limit.window_start;
-  if (new Date(now) > windowEnd) {
-    windowStart = now; // Window expired, reset start
-    // Recompute spend from finalizations in new window only
-    const windowSpend = await tx.get(
-      `SELECT COALESCE(SUM(amount_micro), 0) as total FROM agent_budget_finalizations
-       WHERE account_id = ? AND finalized_at >= ?`,
-      [accountId, now]
-    );
-    // New window — only this finalization counts
-  }
-
-  // Compute current spend from authoritative finalizations ledger
-  const spendResult = await tx.get(
-    `SELECT COALESCE(SUM(amount_micro), 0) as total FROM agent_budget_finalizations
-     WHERE account_id = ? AND finalized_at >= ?`,
-    [accountId, windowStart]
-  );
-  const newSpend = BigInt(spendResult.total);
-  const cap = BigInt(limit.daily_cap_micro);
-
-  // Determine circuit state
-  let circuitState: CircuitState = 'closed';
-  if (newSpend >= cap) {
-    circuitState = 'open';
-  } else if (newSpend >= (cap * 80n) / 100n) {
-    circuitState = 'warning';
-  }
-
-  // Atomic update of spending limit state
-  await tx.run(
-    `UPDATE agent_spending_limits
-     SET current_spend_micro = ?, circuit_state = ?, window_start = ?, updated_at = ?
-     WHERE account_id = ?`,
-    [newSpend.toString(), circuitState, windowStart, now, accountId]
-  );
-
-  // Emit events within transaction (outbox insert)
-  if (circuitState === 'warning') {
-    await this.eventEmitter.emitInTransaction(tx, {
-      eventType: 'AgentBudgetWarning',
-      entityType: 'agent', entityId: accountId,
-      idempotencyKey: `budget_warning:${accountId}:${reservationId}`,
-      payload: { accountId, currentSpendMicro: newSpend.toString(), dailyCapMicro: cap.toString() },
-    });
-  } else if (circuitState === 'open') {
-    await this.eventEmitter.emitInTransaction(tx, {
-      eventType: 'AgentBudgetExhausted',
-      entityType: 'agent', entityId: accountId,
-      idempotencyKey: `budget_exhausted:${accountId}:${reservationId}`,
-      payload: { accountId, currentSpendMicro: newSpend.toString(), dailyCapMicro: cap.toString() },
-    });
-  }
-}
-```
-
-**Budget check (advisory — called before `reserve()`):**
-
-```typescript
-async checkBudget(accountId: string, amountMicro: bigint): Promise<BudgetCheckResult> {
-  // Fast path: Redis advisory check (non-authoritative)
-  const cached = await this.redis.get(`agent_budget:${accountId}`);
-  if (cached) {
-    const { currentSpendMicro, dailyCapMicro, circuitState } = JSON.parse(cached);
-    if (circuitState === 'open') {
-      return { allowed: false, currentSpendMicro, dailyCapMicro, remainingMicro: 0n, circuitState };
-    }
-  }
-
-  // SQLite authoritative check (used if Redis miss or for final confirmation)
-  const limit = await this.db.get(
-    'SELECT * FROM agent_spending_limits WHERE account_id = ?',
-    [accountId]
-  );
-  if (!limit) return { allowed: true, currentSpendMicro: 0n, dailyCapMicro: 0n, remainingMicro: 0n, circuitState: 'closed' };
-
-  const cap = BigInt(limit.daily_cap_micro);
-  const spend = BigInt(limit.current_spend_micro);
-  const remaining = cap > spend ? cap - spend : 0n;
-
-  // Update Redis cache
-  await this.redis.setex(`agent_budget:${accountId}`, 60, JSON.stringify({
-    currentSpendMicro: spend.toString(),
-    dailyCapMicro: cap.toString(),
-    circuitState: limit.circuit_state,
-  }));
-
-  return {
-    allowed: limit.circuit_state !== 'open',
-    currentSpendMicro: spend,
-    dailyCapMicro: cap,
-    remainingMicro: remaining,
-    circuitState: limit.circuit_state as CircuitState,
-  };
-}
-```
-
-**Integration with existing reserve/finalize flow:**
-
-Budget enforcement operates at **two points** — advisory pre-check and authoritative finalize-time enforcement:
-
-1. **Pre-check (advisory)**: `AgentBudgetService.checkBudget()` is called before `reserve()` as a fast-path rejection. This is a performance optimization, not a safety guarantee.
-2. **Finalize-time (authoritative)**: `AgentBudgetService.recordFinalizationInTransaction()` is called **within the same SQLite `BEGIN IMMEDIATE` transaction** as `CreditLedgerAdapter.finalize()`. This is the safety guarantee — budget increment and finalize are atomic.
-
-All code paths that call `finalize()` for agent accounts MUST go through `AgentAwareFinalizer` — a single application service wrapper that enforces budget accounting:
-
-```typescript
-// AgentAwareFinalizer — the ONLY finalize entrypoint for agent accounts
-class AgentAwareFinalizer {
-  async finalize(reservationId: string, actualCostMicro: bigint, opts?: FinalizeOptions): Promise<FinalizeResult> {
-    return this.db.transaction('IMMEDIATE', async (tx) => {
-      // 1. Finalize reservation in ledger (within tx)
-      const result = await this.ledger.finalizeInTransaction(tx, reservationId, actualCostMicro, opts);
-
-      // 2. If agent account, apply authoritative budget accounting (within same tx)
-      const account = await tx.get('SELECT entity_type FROM credit_accounts WHERE id = ?', [result.accountId]);
-      if (account.entity_type === 'agent') {
-        await this.budgetService.recordFinalizationInTransaction(tx, result.accountId, reservationId, actualCostMicro);
-      }
-
-      return result;
-    });
-  }
-}
-```
-
-```
-Agent requests inference
-  → API/Gateway reads account entity_type
-  → If entity_type === 'agent':
-    → AgentBudgetService.checkBudget(accountId, estimatedCost) [advisory]
-      → If circuit_state === 'open': reject with 429
-      → If allowed: proceed to CreditLedgerAdapter.reserve()
-  → On finalize():
-    → AgentAwareFinalizer.finalize(reservationId, actualCost) [authoritative]
-      → Within single BEGIN IMMEDIATE transaction:
-        1. CreditLedgerAdapter.finalizeInTransaction(tx, ...)
-        2. AgentBudgetService.recordFinalizationInTransaction(tx, ...)
-      → If budget exceeded: finalize succeeds but circuit opens immediately
-        (next reserve() will be rejected)
-```
-
-### 4.3 EconomicEventEmitter
-
-**Location:** `themes/sietch/src/packages/adapters/billing/EconomicEventEmitter.ts`
-**Port:** `themes/sietch/src/packages/core/ports/IEconomicEventEmitter.ts`
-
-```typescript
-interface IEconomicEventEmitter {
-  /**
-   * Emit an economic event within the caller's SQLite transaction.
-   * The event is INSERTed into the `economic_events` table synchronously.
-   * External publication happens asynchronously after commit (outbox pattern).
-   *
-   * @param tx - The active SQLite transaction handle
-   * @param event - The event to emit
-   */
-  emitInTransaction(tx: Transaction, event: EconomicEventInput): Promise<void>;
-
-  /**
-   * Emit an event outside a transaction context (for non-financial events).
-   * Uses its own BEGIN IMMEDIATE transaction.
-   */
-  emit(eventType: string, payload: Record<string, unknown>): Promise<void>;
-}
-
-interface EconomicEventInput {
-  eventType: EconomicEventType;
-  entityType: string;
-  entityId: string;
-  correlationId?: string;
-  idempotencyKey: string;
-  configVersion?: number;
-  payload: Record<string, unknown>;
-}
-```
-
-**EconomicEvent union type** — extends existing `BillingEvent` for cross-system vocabulary:
-
-```typescript
-// packages/core/protocol/economic-events.ts
-
-export type EconomicEventType =
-  // From existing BillingEvent (bridged 1:1)
-  | 'LotMinted' | 'ReservationCreated' | 'ReservationFinalized' | 'ReservationReleased'
-  | 'ReferralRegistered' | 'BonusGranted' | 'BonusFlagged'
-  | 'EarningRecorded' | 'EarningSettled' | 'EarningClawedBack'
-  | 'PayoutRequested' | 'PayoutApproved' | 'PayoutCompleted' | 'PayoutFailed'
-  | 'RewardsDistributed' | 'ScoreImported'
-  // New for cycle-030
-  | 'AgentBudgetWarning' | 'AgentBudgetExhausted'
-  | 'AgentSettlementInstant'
-  | 'ConfigProposed' | 'ConfigApproved' | 'ConfigActivated'
-  | 'ReconciliationCompleted' | 'ReconciliationDivergence';
-
-/**
- * Base shape for all economic events in the outbox table.
- * Each event includes ordering (rowid), deduplication (idempotency_key),
- * tracing (correlation_id), and governance provenance (config_version).
- */
-export interface EconomicEvent {
-  eventId: string;           // UUID
-  eventType: EconomicEventType;
-  entityType: string;
-  entityId: string;
-  correlationId: string | null;
-  idempotencyKey: string;
-  configVersion: number | null;
-  payload: Record<string, unknown>;
-  createdAt: string;
-}
-```
-
-**Outbox dispatch pattern (with claim protocol to prevent double-dispatch):**
-
-```
-Within SQLite transaction (synchronous):
-  1. Source-of-truth write (ledger entry, config update, etc.)
-  2. INSERT INTO economic_events (synchronous, same transaction)
-  3. COMMIT
-
-After commit (asynchronous — claim-based dispatcher):
-  4. Claim batch atomically:
-     UPDATE economic_events
-       SET claimed_by = :worker_id, claimed_at = :now
-       WHERE rowid IN (
-         SELECT rowid FROM economic_events
-         WHERE published_at IS NULL AND claimed_by IS NULL
-         ORDER BY rowid LIMIT 100
-       )
-       RETURNING *;
-  5. Publish claimed events to external consumers (NATS, webhooks, etc.)
-  6. UPDATE economic_events SET published_at = :now WHERE rowid = :rowid AND claimed_by = :worker_id
-  7. Stale claim recovery (runs periodically):
-     UPDATE economic_events SET claimed_by = NULL, claimed_at = NULL
-       WHERE claimed_by IS NOT NULL AND published_at IS NULL
-       AND claimed_at < datetime('now', '-60 seconds');
-```
-
-**Claim guarantees:** The `UPDATE ... WHERE claimed_by IS NULL RETURNING *` is atomic under SQLite's single-writer model. Concurrent dispatcher workers never claim the same rows. Stale claims (worker crashed mid-publish) are recovered after 60s timeout and re-dispatched by another worker.
-
-**Ordering guarantees:** Events are ordered by `(entity_id, rowid)` for per-entity ordering, or `rowid` alone for global ordering. The SQLite auto-incrementing rowid provides total ordering within the single-writer database.
-
-**Delivery semantics:** At-least-once. The `idempotency_key` enables consumers to deduplicate. Events are NOT gap-free (failed transactions don't emit events since the whole transaction rolls back). The claim protocol minimizes duplicate dispatch to only crash-recovery scenarios (stale claim re-dispatch), not concurrent worker contention.
-
-### 4.4 AgentSettlementPolicy
-
-**Modification to:** `themes/sietch/src/packages/adapters/billing/SettlementService.ts`
-
-Agent earnings settle with a 0-hour hold (configurable via `system_config`). The existing `SettlementService` is modified to read the settlement hold parameter per entity type.
-
-**Critical: all writes within a single transaction.** The `tx` handle is threaded through every write — ledger entry, earning status update, and economic event emission all use the same `BEGIN IMMEDIATE` transaction. If any step fails, the entire transaction rolls back (no partial settlement).
-
-```typescript
-async settleEarnings(): Promise<number> {
-  const now = new Date().toISOString();
-  let settled = 0;
-
-  // Get all pending earnings grouped by entity type
-  const pending = await this.db.all(
-    `SELECT re.*, ca.entity_type
-     FROM referrer_earnings re
-     INNER JOIN credit_accounts ca ON ca.id = re.referrer_account_id
-     WHERE re.status = 'pending'`
-  );
-
-  for (const earning of pending) {
-    await this.db.transaction('IMMEDIATE', async (tx) => {
-      // Resolve settlement hold per entity type (reads within tx)
-      const holdParam = this.governance.resolveInTransaction(
-        tx, 'settlement.hold_seconds', earning.entity_type
-      );
-      const holdSeconds = holdParam.value; // Already integer seconds (no conversion needed)
-
-      // Check if hold has elapsed
-      const settleAfter = new Date(new Date(earning.created_at).getTime() + holdSeconds * 1000);
-      if (new Date(now) < settleAfter) return; // Still in hold period
-
-      // Write settlement ledger entry — WITHIN SAME TX
-      await this.ledger.postEntryInTransaction(tx, {
-        accountId: earning.referrer_account_id,
-        entryType: 'settlement',
-        amountMicro: earning.amount_micro,
-        lotId: earning.earning_lot_id,
-        idempotencyKey: `settlement:${earning.id}`,
-        metadata: JSON.stringify({
-          earning_id: earning.id,
-          config_version: holdParam.configVersion,
-        }),
-      });
-
-      // Update earning status — WITHIN SAME TX
-      await tx.run(
-        `UPDATE referrer_earnings SET status = 'settled', settlement_at = ? WHERE id = ? AND status = 'pending'`,
-        [now, earning.id]
-      );
-
-      // Emit economic event — WITHIN SAME TX (outbox insert)
-      const eventType = holdSeconds === 0 ? 'AgentSettlementInstant' : 'EarningSettled';
-      await this.eventEmitter.emitInTransaction(tx, {
-        eventType,
-        entityType: earning.entity_type,
-        entityId: earning.referrer_account_id,
-        correlationId: earning.id,
-        idempotencyKey: `settlement_event:${earning.id}`,
-        configVersion: holdParam.configVersion,
-        payload: {
-          earningId: earning.id,
-          amountMicro: earning.amount_micro.toString(),
-          holdSeconds,
-        },
-      });
-    });
-    settled++;
-  }
-  return settled;
-}
-```
-
-**Transaction threading requirement:** `ICreditLedgerService` MUST expose `postEntryInTransaction(tx, ...)` and `finalizeInTransaction(tx, ...)` overloads that accept an external transaction handle. All money-moving writes in this SDD use these overloads to guarantee atomicity across ledger entry + earning status + economic event emission.
-```
-
-**Agent clawback policy (from PRD FR-2b):**
-
-Agent earnings (even with 0-hour settlement hold) remain subject to:
-1. **Automated fraud rules**: If `FraudCheckService` flags the underlying transaction, the earning is withheld regardless of entity type.
-2. **Clawback**: If the source transaction is reversed (e.g., referee chargeback), the agent earning is clawed back via compensating ledger entry. Existing `clawbackEarning()` method works unchanged.
-3. **Non-negative balance with receivable tracking**: If a clawback would create a negative balance, the clawback is applied in two parts within the **same `BEGIN IMMEDIATE` transaction**:
-   - **Immediate clawback**: Applied up to available balance (debit agent account to zero).
-   - **Receivable entry**: The unpaid remainder is recorded as a `clawback_receivable` ledger entry against the agent's receivable sub-account (`{agentAccountId}:receivable`). This preserves conservation — the liability is not forgiven, it is tracked.
-   - **Economic events**: Both `agent_clawback_partial` (for the applied portion) and `agent_clawback_receivable_created` (for the remainder) are emitted within the same transaction.
-4. **Drip recovery**: Future agent earnings are intercepted by the `AgentAwareFinalizer`. Before crediting new earnings, it checks the agent's receivable balance. If non-zero, a portion (configurable via `system_config` key `agent.drip_recovery_pct`, default 50%) of each new earning is transferred from the earning to the receivable account via idempotent ledger entries keyed by `drip:{earningId}:{receivableId}`. When the receivable reaches zero, normal earning flow resumes.
-5. **Reconciliation**: The `ReconciliationService` includes `clawback_receivable` sub-accounts in its conservation check. The invariant is: `sum(all_account_balances) + sum(all_receivable_balances) = total_minted`. Receivable balances are always >= 0 (they represent money owed to the platform).
-
-### 4.5 AgentProvenanceVerifier
-
-**Location:** `themes/sietch/src/packages/adapters/billing/AgentProvenanceVerifier.ts`
-
-```typescript
-interface IAgentProvenanceVerifier {
-  // Register agent identity
-  registerAgent(opts: RegisterAgentOpts): Promise<AgentIdentity>;
-
-  // Verify agent provenance (called on agent account creation)
-  verifyProvenance(accountId: string): Promise<ProvenanceResult>;
-
-  // Resolve creator for an agent
-  getCreator(agentAccountId: string): Promise<CreditAccount>;
-
-  // Phase 2: Bind TBA address
-  bindTBA(accountId: string, tbaAddress: string): Promise<AgentIdentity>;
-}
-
-interface RegisterAgentOpts {
+interface AgentVoteOptions {
   agentAccountId: string;
-  creatorAccountId: string;
-  chainId: number;
-  contractAddress: string;
-  tokenId: string;
-  creatorSignature?: string;  // Hex-encoded signature of agent config
+  vote: 'support' | 'oppose';
+  delegationRef?: string;
 }
 
-interface ProvenanceResult {
-  verified: boolean;
-  creatorKYCLevel: 'none' | 'basic' | 'enhanced';
-  identityAnchor: { chainId: number; contractAddress: string; tokenId: string };
-}
-```
-
-**Beneficiary model:** Agents are controlled sub-ledgers of a KYC'd creator:
-- Agent earnings credit the agent's internal account (for spending on inference)
-- Surplus (earnings > spending) is transferable to the creator's account
-- Creator KYC level governs payout thresholds for agent-originating earnings
-- Agent cannot receive external payouts directly (Phase 1)
-
-### 4.6 ReconciliationService (ADR-008)
-
-**Location:** `themes/sietch/src/packages/adapters/billing/ReconciliationService.ts`
-
-```typescript
-interface IReconciliationService {
-  // Run periodic reconciliation check
-  reconcile(): Promise<ReconciliationResult>;
-
-  // Get reconciliation history
-  getHistory(limit?: number): Promise<ReconciliationResult[]>;
+interface AgentGovernanceWeightResult {
+  accountId: string;
+  weight: number;
+  source: 'delegation' | 'earned_reputation' | 'fixed_allocation';
+  details: Record<string, unknown>;
 }
 
-interface ReconciliationResult {
-  timestamp: string;
-  checks: ReconciliationCheck[];
-  status: 'passed' | 'divergence_detected';
-}
-
-interface ReconciliationCheck {
-  name: string;
-  expected: bigint;
-  actual: bigint;
-  divergenceMicro: bigint;
-  passed: boolean;
+interface IAgentGovernanceService {
+  proposeAsAgent(paramKey: string, value: unknown, opts: AgentProposalOptions): Promise<AgentGovernanceProposal>;
+  voteAsAgent(proposalId: string, opts: AgentVoteOptions): Promise<AgentGovernanceProposal>;
+  computeAgentWeight(agentAccountId: string): Promise<AgentGovernanceWeightResult>;
+  getProposal(proposalId: string): Promise<AgentGovernanceProposal | null>;
+  getActiveProposals(): Promise<AgentGovernanceProposal[]>;
+  activateExpiredCooldowns(): Promise<number>;  // Cron: activate proposals past cooldown
+  expireStaleProposals(): Promise<number>;       // Cron: expire proposals past deadline
 }
 ```
 
-**Reconciliation checks:**
+#### 4.4.2 Weight Computation
 
-1. **Internal conservation** (credit ledger only):
-   ```sql
-   -- For each account: available + reserved + consumed = total minted - expired
-   SELECT account_id,
-     SUM(available_micro + reserved_micro + consumed_micro) as lot_sum,
-     SUM(original_micro) as minted_sum
-   FROM credit_lots
-   GROUP BY account_id
-   HAVING lot_sum != minted_sum
-   ```
+Server-side only. Never client-supplied.
 
-   **Including clawback receivables:** Agent accounts may have associated receivable sub-accounts (`{accountId}:receivable`). The global conservation check must include these:
-   ```sql
-   -- Global conservation: all balances + all receivables = total minted
-   SELECT
-     (SELECT SUM(available_micro + reserved_micro + consumed_micro) FROM credit_lots) as total_lots,
-     (SELECT COALESCE(SUM(balance_micro), 0) FROM agent_clawback_receivables
-      WHERE balance_micro > 0) as total_receivables,
-     (SELECT SUM(original_micro) FROM credit_lots) as total_minted
-   -- Invariant: total_lots + total_receivables = total_minted
-   ```
+```
+computeAgentWeight(agentAccountId):
+  1. Resolve weight source: governance.resolve('governance.agent_weight_source')
+     → 'delegation' | 'earned_reputation' | 'fixed_allocation'
 
-2. **Cross-system bridge conservation** (credit ledger ↔ budget engine):
-   ```
-   sum(credit_ledger.reserved_micro WHERE status = 'pending') == sum(budget_engine.allocated_capacity)
-   ```
-   This check is design-only in Phase 1 (ADR-008). The test harness simulates the budget engine side.
+  2. Based on source:
+     a. DELEGATION:
+        - Find creator via AgentProvenanceVerifier.getCreator(agentAccountId)
+        - Query agent_governance_delegations for this agent
+        - Check creator's total delegated weight across all agents
+        - If total ≥ governance.max_delegation_per_creator: cap at remaining
+        - Return delegated weight
 
-3. **Agent spending vs cap** (agent budget engine):
-   ```sql
-   -- Verify cap counter matches actual finalized spend in window
-   SELECT asl.account_id, asl.current_spend_micro,
-     (SELECT COALESCE(SUM(actual_cost_micro), 0) FROM credit_reservations
-      WHERE account_id = asl.account_id AND status = 'finalized'
-      AND finalized_at >= asl.window_start) as actual_spend
-   FROM agent_spending_limits asl
-   WHERE asl.current_spend_micro != actual_spend
-   ```
+     b. EARNED_REPUTATION:
+        - Query EarningSettled events for agentAccountId within
+          governance.reputation_window_seconds
+        - Weight = sum(settled_earnings_micro) / governance.reputation_scale_factor
+        - Cap at governance.max_weight_per_agent
+        - Return earned weight
 
-**Reconciliation NEVER auto-corrects.** Divergence > threshold triggers an alert event (`ReconciliationDivergence`) and admin notification.
+     c. FIXED_ALLOCATION:
+        - Return governance.fixed_weight_per_agent (configurable parameter)
+```
 
-### 4.7 Parameter Migration Path
+#### 4.4.2a Delegation Table
 
-To replace hardcoded constants with runtime-configurable parameters, each service is modified to read from `ConstitutionalGovernanceService` instead of constants:
-
-```typescript
-// BEFORE (current code)
-const KYC_BASIC_THRESHOLD_MICRO = 100_000_000n;  // CreatorPayoutService.ts:67
-
-// AFTER (cycle-030)
-const kycThreshold = this.governance.resolveInTransaction(
-  tx, 'kyc.basic_threshold_micro', account.entityType
+```sql
+-- Added to Migration 058_agent_governance.ts
+CREATE TABLE agent_governance_delegations (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  creator_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  agent_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  weight INTEGER NOT NULL CHECK (weight > 0),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  revoked_at TEXT,
+  UNIQUE(creator_account_id, agent_account_id)  -- One delegation per creator-agent pair
 );
-// kycThreshold.value = 100000000 (from system_config or compile-time fallback)
-// kycThreshold.configVersion = 3 (recorded in audit trail)
-// kycThreshold.source = 'entity_override' | 'global_config' | 'compile_fallback'
+
+CREATE INDEX idx_delegations_creator ON agent_governance_delegations(creator_account_id)
+  WHERE revoked_at IS NULL;
+CREATE INDEX idx_delegations_agent ON agent_governance_delegations(agent_account_id)
+  WHERE revoked_at IS NULL;
 ```
 
-**Compile-time fallbacks (unchanged from current codebase):**
+#### 4.4.2b Additional Governance Config Parameters
 
-| Param Key | Fallback Value | Source File | Notes |
-|-----------|---------------|-------------|-------|
-| `kyc.basic_threshold_micro` | `100000000` | CreatorPayoutService.ts:67 | bigint_micro |
-| `kyc.enhanced_threshold_micro` | `600000000` | CreatorPayoutService.ts:68 | bigint_micro |
-| `settlement.hold_seconds` | `172800` | SettlementService.ts:55 | 48h in seconds |
-| `payout.min_micro` | `1000000` | CreatorPayoutService.ts:64 | bigint_micro |
-| `payout.rate_limit_seconds` | `86400` | CreatorPayoutService.ts:71 | 24h in seconds |
-| `payout.fee_cap_percent` | `20` | CreatorPayoutService.ts:77 | integer percent |
-| `revenue_rule.cooldown_seconds` | `172800` | RevenueRulesAdapter.ts:34 | 48h in seconds |
-| `fraud_rule.cooldown_seconds` | `604800` | FraudRulesService.ts:129 | 168h in seconds |
-| `reservation.default_ttl_seconds` | `300` | CreditLedgerAdapter.ts:48 | integer seconds |
-| `referral.attribution_window_days` | `365` | ReferralService | 12 months ≈ 365 days |
+```typescript
+// Added to CONFIG_SCHEMA (in addition to those in §3.3)
+'governance.agent_weight_source':       { type: 'nullable', description: 'Weight computation mode: delegation|earned_reputation|fixed_allocation' }
+'governance.fixed_weight_per_agent':    { type: 'integer', min: 1, max: 1000, description: 'Fixed weight per agent in fixed_allocation mode' }
+'governance.reputation_window_seconds': { type: 'integer_seconds', min: 86400, max: 31536000, description: 'Lookback window for earned reputation' }
+'governance.reputation_scale_factor':   { type: 'bigint_micro', min: 1n, description: 'Micro-USD per weight point' }
+'governance.max_weight_per_agent':      { type: 'integer', min: 1, max: 10000, description: 'Maximum weight per individual agent' }
 
-**Entity-type overrides seeded at migration time:**
+// Added to CONFIG_FALLBACKS
+'governance.agent_weight_source':       'fixed_allocation',  // Safest default
+'governance.fixed_weight_per_agent':    10,                  // 10 weight per agent
+'governance.reputation_window_seconds': 2592000,             // 30 days
+'governance.reputation_scale_factor':   10_000_000n,         // 10 USD per weight point
+'governance.max_weight_per_agent':      100                  // Cap at 100 per agent
+```
 
-| Param Key | Entity Type | Override Value | Notes |
-|-----------|-------------|----------------|-------|
-| `settlement.hold_seconds` | `agent` | `0` | Instant settlement |
-| `payout.min_micro` | `agent` | `10000` | $0.01 micro-transactions |
-| `payout.rate_limit_seconds` | `agent` | `8640` | ~10 per 24h |
+#### 4.4.3 Parameter Whitelist
+
+```typescript
+// Agents can only propose changes to these parameters
+const AGENT_PROPOSABLE_KEYS: string[] = [
+  'transfer.max_single_micro',
+  'transfer.daily_limit_micro',
+  'governance.agent_quorum_weight',
+  'governance.agent_cooldown_seconds',
+  'reservation.default_ttl_seconds',
+  'agent.drip_recovery_pct',
+];
+
+// Agents CANNOT propose changes to:
+// - kyc.* (security-critical)
+// - payout.* (financial operations)
+// - settlement.* (hold periods)
+// - fraud_rule.* (fraud detection)
+// These require admin governance or admin co-sponsorship
+```
+
+#### 4.4.4 Proposal Lifecycle
+
+```
+open → (votes accumulate) → quorum_reached → (cooldown) → activated
+open → (expiry deadline) → expired
+open/quorum_reached → (admin override) → admin_overridden
+quorum_reached → (admin rejection) → rejected
+```
+
+When a proposal is activated:
+1. Create a `system_config` entry via `IConstitutionalGovernanceService.propose()` + auto-approve
+2. The agent governance track feeds INTO the existing admin governance system
+3. Admin proposals always take precedence in case of conflict (FR-3.8)
+
+### 4.5 EventConsolidationAdapter
+
+**File**: `themes/sietch/src/packages/adapters/billing/EventConsolidationAdapter.ts`
+
+#### 4.5.1 Design
+
+Both `BillingEventEmitter.emit(event, { db })` and `EconomicEventEmitter.emitInTransaction(tx, event)` accept a database/transaction handle. The adapter ensures both writes occur within the **same SQLite transaction** by requiring the caller to pass a transaction context.
+
+```typescript
+class EventConsolidationAdapter {
+  constructor(
+    private readonly legacyEmitter: BillingEventEmitter,
+    private readonly economicEmitter: EconomicEventEmitter,
+    private readonly eventMapping: Map<string, EconomicEventType>
+  ) {}
+
+  // Transactional dual-write (REQUIRED path for atomic consistency)
+  emitInTransaction(tx: { prepare(sql: string): any }, event: BillingEvent): void {
+    // 1. Write to economic_events (authoritative) via economicEmitter
+    const economicEvent = this.mapToEconomicEvent(event);
+    if (economicEvent) {
+      this.economicEmitter.emitInTransaction(tx, economicEvent);
+    }
+    // 2. Write to billing_events (legacy compatibility) via legacyEmitter
+    this.legacyEmitter.emit(event, { db: tx as any });
+    // Both writes in the SAME SQLite transaction — atomic commit/rollback
+  }
+
+  // Standalone wrapper (creates its own transaction)
+  emit(event: BillingEvent): void {
+    // Creates a transaction wrapping both writes
+    this.db.transaction(() => {
+      this.emitInTransaction(this.db, event);
+    })();
+  }
+
+  // Delegate queries to legacy emitter (unchanged during transition)
+  getEventsForAggregate(...args): Array<BillingEvent> {
+    return this.legacyEmitter.getEventsForAggregate(...args);
+  }
+
+  getBalanceAtTime(...args): bigint {
+    return this.legacyEmitter.getBalanceAtTime(...args);
+  }
+}
+```
+
+**Atomicity guarantee**: Both `BillingEventEmitter.emit({ db: tx })` and `EconomicEventEmitter.emitInTransaction(tx)` write within the caller's transaction context. If either write fails, the entire transaction rolls back. No divergence between tables is possible within a single transaction.
+```
+
+#### 4.5.2 Event Type Mapping (ADR-009)
+
+Legacy BillingEvent types → EconomicEvent types:
+
+| BillingEvent type | EconomicEvent type | Notes |
+|-------------------|-------------------|-------|
+| `AccountCreated` | — | Not mapped (account creation is not an economic event) |
+| `LotMinted` | `LotMinted` | Direct mapping |
+| `LotExpired` | — | Not mapped (passive expiry, not an economic action) |
+| `ReservationCreated` | `ReservationCreated` | Direct mapping |
+| `ReservationFinalized` | `ReservationFinalized` | Direct mapping |
+| `ReservationReleased` | `ReservationReleased` | Direct mapping |
+| `ReferralRegistered` | `ReferralRegistered` | Direct mapping |
+| `BonusGranted` | `BonusGranted` | Direct mapping |
+| `BonusFlagged` | `BonusFlagged` | Direct mapping |
+| `BonusWithheld` | — | Not mapped (cycle-029 only, deprecated) |
+| `EarningRecorded` | `EarningRecorded` | Direct mapping |
+| `EarningSettled` | `EarningSettled` | Direct mapping |
+| `EarningClawedBack` | `EarningClawedBack` | Direct mapping |
+| `AgentSettlementInstant` | `AgentSettlementInstant` | Direct mapping |
+| `AgentClawbackPartial` | `AgentClawbackPartial` | Direct mapping |
+| `AgentClawbackReceivableCreated` | `AgentClawbackReceivableCreated` | Direct mapping |
+| `PayoutRequested` | `PayoutRequested` | Direct mapping |
+| `PayoutApproved` | `PayoutApproved` | Direct mapping |
+| `PayoutProcessing` | — | Not mapped (transient state, not in ECONOMIC_EVENT_TYPES) |
+| `PayoutCompleted` | `PayoutCompleted` | Direct mapping |
+| `PayoutFailed` | `PayoutFailed` | Direct mapping |
+| `RewardsDistributed` | `RewardsDistributed` | Direct mapping |
+| `ScoreImported` | `ScoreImported` | Direct mapping |
+| `WalletLinked` | — | Not mapped (identity event, not economic) |
+| `WalletUnlinked` | — | Not mapped (identity event, not economic) |
+| `AgentBudgetWarning` | `AgentBudgetWarning` | Direct mapping |
+| `AgentBudgetExhausted` | `AgentBudgetExhausted` | Direct mapping |
+
+**Summary**: 22 of 26 legacy event types map directly. 4 are not mapped (AccountCreated, LotExpired, BonusWithheld, PayoutProcessing, WalletLinked, WalletUnlinked) — these are either non-economic or deprecated.
+
+### 4.6 ReconciliationService Extensions
+
+**File**: `themes/sietch/src/packages/adapters/billing/ReconciliationService.ts` (modified)
+
+#### Check 5: Transfer Conservation
+
+```sql
+-- Ledger entry conservation: transfer_out + transfer_in = 0
+SELECT COALESCE(SUM(amount_micro), 0) AS total_out
+FROM credit_ledger WHERE entry_type = 'transfer_out';
+
+SELECT COALESCE(SUM(amount_micro), 0) AS total_in
+FROM credit_ledger WHERE entry_type = 'transfer_in';
+
+-- Conservation: total_out + total_in = 0
+
+-- Lot supply conservation: total original_micro unchanged by transfers
+-- Compare: SUM(original_micro) for transfer_in lots = ABS(total_out from ledger)
+SELECT COALESCE(SUM(original_micro), 0) AS total_lots_in
+FROM credit_lots WHERE source_type = 'transfer_in';
+
+-- Cross-check: total_lots_in = total_in (recipient lots match entry credits)
+-- AND: global SUM(original_micro) unchanged (lot-split preserves total supply)
+-- The lot-split operation reduces sender lot original_micro by the same amount
+-- as recipient lot original_micro is created, so total supply is invariant.
+```
+
+#### Check 6: TBA Deposit Bridge Conservation
+
+```sql
+-- Sum all bridged deposits (off-chain credits)
+SELECT COALESCE(SUM(amount_micro), 0) AS total_credited
+FROM tba_deposits WHERE status = 'bridged';
+
+-- Sum all deposit-sourced lots (should match)
+SELECT COALESCE(SUM(original_micro), 0) AS total_lots
+FROM credit_lots WHERE source_type = 'tba_deposit';
+
+-- Conservation: total_credited = total_lots
+-- Note: escrow balance >= total_credited (can only grow, non-redeemable)
+```
 
 ---
 
 ## 5. API Design
 
-### 5.1 Constitutional Governance Endpoints
+### 5.1 Transfer API
 
 ```
-POST   /api/admin/config/propose         Propose parameter change
-POST   /api/admin/config/:id/approve     Approve pending proposal
-POST   /api/admin/config/:id/reject      Reject pending proposal
-POST   /api/admin/config/:id/emergency   Emergency override (3+ admins)
-GET    /api/admin/config                  List active configuration
-GET    /api/admin/config/pending          List pending proposals
-GET    /api/admin/config/:key/history     Get parameter history
+POST /api/transfer
+  Auth: JWT (account_id claim must match fromAccountId)
+  Body: { fromAccountId, toAccountId, amountMicro, idempotencyKey, metadata? }
+  Response: { transfer: TransferResult }
+  Errors: 400 (invalid), 402 (budget exceeded), 403 (provenance), 409 (idempotency conflict)
+
+GET /api/transfer/:id
+  Auth: JWT (account_id claim must match sender or recipient)
+  Response: { transfer: TransferResult }
+
+GET /api/transfer?accountId=X&direction=sent|received|all&limit=20&offset=0
+  Auth: JWT (account_id claim must match accountId)
+  Response: { transfers: TransferResult[], total: number }
 ```
 
-#### `POST /api/admin/config/propose`
-
-**Auth:** Admin bearer token
-**Body:**
-```json
-{
-  "param_key": "settlement.hold_seconds",
-  "entity_type": "agent",
-  "value": 0,
-  "justification": "Agents don't need human dispute windows"
-}
-```
-**Response:** `201 Created`
-```json
-{
-  "id": "...",
-  "param_key": "settlement.hold_seconds",
-  "entity_type": "agent",
-  "value_json": "0",
-  "status": "draft",
-  "required_approvals": 2,
-  "approval_count": 0
-}
-```
-
-#### `POST /api/admin/config/:id/approve`
-
-**Auth:** Admin bearer token (different admin from proposer)
-**Response:** `200 OK`
-```json
-{
-  "id": "...",
-  "status": "cooling_down",
-  "approval_count": 2,
-  "cooldown_ends_at": "2026-02-23T00:00:00Z"
-}
-```
-**Errors:** `403` (self-approval), `409` (already approved by this admin), `400` (invalid state)
-
-### 5.2 Agent Budget Endpoints
+### 5.2 TBA API
 
 ```
-GET    /api/agent/:id/budget             Get agent budget status
-PUT    /api/agent/:id/budget/cap         Set daily spending cap
-GET    /api/agent/:id/identity           Get agent identity/provenance
+POST /api/agent/tba/bind
+  Auth: JWT (account_id claim must match agent or creator)
+  Body: { accountId, tbaAddress }
+  Response: { identity: AgentIdentity }
+  Errors: 400 (invalid address), 404 (no agent identity), 409 (already bound)
+
+GET /api/agent/tba/deposits?accountId=X&limit=20
+  Auth: JWT
+  Response: { deposits: TbaDeposit[] }
+
+POST /api/agent/tba/bridge   (Internal / webhook from on-chain listener)
+  Auth: Service-to-service JWT
+  Body: { chainId, txHash, tokenAddress, amountRaw, fromAddress, toAddress, blockNumber }
+  Response: { deposit: DepositBridgeResult }
 ```
 
-#### `GET /api/agent/:id/budget`
-
-**Response:** `200 OK`
-```json
-{
-  "account_id": "...",
-  "daily_cap_micro": 50000000,
-  "current_spend_micro": 12000000,
-  "remaining_micro": 38000000,
-  "circuit_state": "closed",
-  "window_resets_at": "2026-02-17T00:00:00Z"
-}
-```
-
-### 5.3 Reconciliation Endpoints
+### 5.3 Agent Governance API
 
 ```
-POST   /api/admin/reconciliation/run     Trigger manual reconciliation
-GET    /api/admin/reconciliation/history  Get reconciliation history
+POST /api/agent/governance/propose
+  Auth: JWT (agent account)
+  Body: { paramKey, value, justification? }
+  Response: { proposal: AgentGovernanceProposal }
+  Errors: 400 (not in whitelist), 403 (not agent), 409 (active proposal exists)
+
+POST /api/agent/governance/vote/:proposalId
+  Auth: JWT (agent account)
+  Body: { vote: 'support' | 'oppose' }
+  Response: { proposal: AgentGovernanceProposal }
+  Errors: 400 (invalid vote), 403 (not agent), 404 (proposal not found), 409 (already voted)
+
+GET /api/agent/governance/proposals?status=open&limit=20
+  Auth: JWT
+  Response: { proposals: AgentGovernanceProposal[] }
+
+GET /api/agent/governance/weight/:accountId
+  Auth: JWT
+  Response: { weight: AgentGovernanceWeightResult }
 ```
-
-### 5.4 Rate Limiting
-
-| Endpoint | Limit |
-|----------|-------|
-| `POST /api/admin/config/propose` | 10/hour per admin |
-| `POST /api/admin/config/:id/approve` | 50/hour per admin |
-| `POST /api/admin/config/:id/emergency` | 3/day per admin |
-| `GET /api/agent/:id/budget` | 60/minute per account |
 
 ---
 
 ## 6. Security Architecture
 
-### 6.1 Constitutional Governance Security
+### 6.1 Transfer Security
 
-- **Multi-sig**: Minimum 2 admin approvals; proposer cannot self-approve (four-eyes enforced via `approved_by` array check)
-- **Extended cooldown**: 7-day window between approval and activation for constitutional parameters (vs 48h for revenue rules)
-- **Emergency override**: Requires 3+ admin approvals + immediate audit notification. All approver IDs recorded in `system_config_audit` with `action: 'emergency_override'`
-- **Append-only audit**: Every governance action recorded in `system_config_audit` — no UPDATE or DELETE allowed on this table
-- **Config versioning**: Monotonically increasing `config_version` prevents stale reads. Money-moving operations record the version used
+| Threat | Mitigation |
+|--------|------------|
+| Self-transfer (balance inflation) | Reject fromAccountId = toAccountId |
+| Budget bypass | AgentBudgetService.checkBudget() before transfer, recordFinalization after |
+| Identity spoofing | JWT account_id claim must match sender |
+| Race condition on balance | BEGIN IMMEDIATE serializes concurrent transfers per account |
+| Double-spend via retries | transfers.idempotency_key UNIQUE constraint + status check |
+| Governance limit bypass | Constitutional governance resolves transfer limits per entity type |
 
-### 6.2 Agent Budget Security
+### 6.2 TBA Security
 
-- **Defense-in-depth**: Redis atomic counter (advisory, fast check) + SQLite authoritative counter (within same transaction as finalize)
-- **Idempotent cap updates**: `agent_budget_finalizations` table with `PRIMARY KEY (account_id, reservation_id)` and `INSERT OR IGNORE` prevents double-counting on retry — each reservation can only increment spend once
-- **Circuit breaker**: 80% warning → 100% hard stop. All `reserve()` calls for that agent are rejected until window resets
-- **No negative caps**: `current_spend_micro` is monotonically increasing within a window. Window reset is the only decrease
-- **Creator cannot override agent cap**: Cap changes require admin governance (prevents creator from removing safety limits)
+| Threat | Mitigation |
+|--------|------------|
+| Fake deposit (no on-chain tx) | Verify against actual on-chain data (block explorer / RPC) |
+| Double-bridging same deposit | tba_deposits.tx_hash UNIQUE constraint |
+| Binding wrong TBA to agent | Provenance verification + creator authentication |
+| Reorg causing bridged deposit to vanish | Finality depth (12 blocks) before bridging |
 
-### 6.3 Agent Provenance Security
+### 6.3 Governance Security
 
-- **Chain-of-custody**: Agent identity is verified via creator's wallet signature, not human identity documents
-- **Canonical anchor**: `(chain_id, contract_address, token_id)` is immutable after registration. Phase 2 `tba_address` is additive only
-- **Creator KYC cascades**: Agent payout thresholds are governed by the creator's KYC level, not the agent's
-- **No orphan agents**: Agent account creation requires a valid `creator_account_id` that exists in `credit_accounts`
-
-### 6.4 Economic Event Security
-
-- **Synchronous outbox**: Events are INSERTed within the same SQLite transaction as source-of-truth writes. No orphan events, no missed events
-- **Idempotency**: `idempotency_key` UNIQUE constraint prevents duplicate events on retry
-- **Append-only**: `economic_events` table has no UPDATE or DELETE in application code. `published_at` is the only mutable field (set by dispatcher after external publish)
-- **No data leakage**: Event payloads contain account IDs and amounts but no PII. Cross-system consumers authenticate via API keys
+| Threat | Mitigation |
+|--------|------------|
+| Governance capture via deposits | Credit balance/deposits CANNOT determine weight (FR-3.5) |
+| Sybil via agent spawning | Per-creator delegation cap (governance.max_delegation_per_creator) |
+| Security parameter manipulation | Whitelist: agents cannot propose kyc.*, payout.*, fraud_rule.* changes |
+| Admin override | Admin proposals always take precedence (FR-3.8) |
+| Weight fabrication | Weight computed server-side, never client-supplied |
 
 ---
 
 ## 7. Migration Plan
 
-### 7.1 New Migrations
+### 7.1 Migration Sequence
 
-| Migration | Tables/Changes |
-|-----------|---------------|
-| `047_system_config` | `system_config`, `system_config_audit`, seed default parameters, seed agent-specific overrides |
-| `048_agent_budget` | `agent_spending_limits`, `agent_budget_finalizations` |
-| `049_agent_identity` | `agent_identity`, `agent_clawback_receivables` |
-| `050_economic_events` | `economic_events` outbox table (with claim columns) |
+| Migration | File | Description |
+|-----------|------|-------------|
+| 056 | `056_peer_transfers.ts` | `transfers` table + `transfer_out`/`transfer_in` entry types + `tba_deposit` source type |
+| 057 | `057_tba_deposits.ts` | `tba_deposits` table for deposit tracking |
+| 058 | `058_agent_governance.ts` | `agent_governance_proposals` + `agent_governance_votes` tables |
+| 059 | `059_billing_events_deprecated.ts` | Add `deprecated_at` column to `billing_events` |
+| 060 | `060_governance_params_seed.ts` | Seed new CONFIG_SCHEMA params + CONFIG_FALLBACKS |
 
-### 7.2 Seed Data (Migration 047)
+### 7.2 Entry Type / Source Type Extensions
 
-```sql
--- Seed global defaults (matching current hardcoded values, normalized to integer seconds/days)
-INSERT INTO system_config (param_key, entity_type, value_json, status, config_version, proposed_by, activated_at)
-VALUES
-  ('kyc.basic_threshold_micro', NULL, '100000000', 'active', 1, 'migration', datetime('now')),
-  ('kyc.enhanced_threshold_micro', NULL, '600000000', 'active', 1, 'migration', datetime('now')),
-  ('settlement.hold_seconds', NULL, '172800', 'active', 1, 'migration', datetime('now')),
-  ('payout.min_micro', NULL, '1000000', 'active', 1, 'migration', datetime('now')),
-  ('payout.rate_limit_seconds', NULL, '86400', 'active', 1, 'migration', datetime('now')),
-  ('payout.fee_cap_percent', NULL, '20', 'active', 1, 'migration', datetime('now')),
-  ('revenue_rule.cooldown_seconds', NULL, '172800', 'active', 1, 'migration', datetime('now')),
-  ('fraud_rule.cooldown_seconds', NULL, '604800', 'active', 1, 'migration', datetime('now')),
-  ('reservation.default_ttl_seconds', NULL, '300', 'active', 1, 'migration', datetime('now')),
-  ('referral.attribution_window_days', NULL, '365', 'active', 1, 'migration', datetime('now'));
+**Decision: Application-level validation ONLY (no table rebuild).**
 
--- Seed version sequence counters
-INSERT INTO system_config_version_seq (param_key, entity_type, current_version)
-SELECT param_key, entity_type, 1 FROM system_config WHERE status = 'active';
+The existing codebase (migrations 030-055) defines CHECK constraints in the original CREATE TABLE statements, but the `CreditLedgerAdapter` performs application-level type validation before inserting. New entry types (`transfer_out`, `transfer_in`) and source types (`tba_deposit`) are validated at the application layer only.
 
--- Seed agent-specific overrides
-INSERT INTO system_config (param_key, entity_type, value_json, status, config_version, proposed_by, activated_at)
-VALUES
-  ('settlement.hold_seconds', 'agent', '0', 'active', 1, 'migration', datetime('now')),
-  ('payout.min_micro', 'agent', '10000', 'active', 1, 'migration', datetime('now')),
-  ('payout.rate_limit_seconds', 'agent', '8640', 'active', 1, 'migration', datetime('now')),
-  ('agent.drip_recovery_pct', 'agent', '50', 'active', 1, 'migration', datetime('now'));
+**Why not rebuild tables**: SQLite CHECK constraint modification requires CREATE-COPY-DROP-RENAME, which is risky for production data and requires recreating all indexes and foreign keys. The existing adapter already validates types before insert, so DB-level CHECK constraints are redundant.
 
--- Seed agent override version counters
-INSERT INTO system_config_version_seq (param_key, entity_type, current_version)
-VALUES
-  ('settlement.hold_seconds', 'agent', 1),
-  ('payout.min_micro', 'agent', 1),
-  ('payout.rate_limit_seconds', 'agent', 1),
-  ('agent.drip_recovery_pct', 'agent', 1);
+**Implementation**:
+1. Migration 056 does NOT alter existing table CHECK constraints
+2. `PeerTransferService` validates `transfer_out`/`transfer_in` before insert
+3. `TbaDepositBridge` validates `tba_deposit` before insert
+4. Add the new type values to TypeScript union types in `billing-types.ts` (compile-time safety)
+5. Existing CHECK constraints remain but are never the only gate — application validation is authoritative
+
+---
+
+## 8. Testing Strategy
+
+### 8.1 Unit Tests (per component)
+
+| Component | Test Count | Key Scenarios |
+|-----------|-----------|---------------|
+| PeerTransferService | ~25 | Happy path, budget rejection, provenance failure, idempotency, zero-sum verification, governance limits, FIFO lot selection |
+| TBA bindTBA() | ~8 | Valid bind, idempotent rebind, conflict detection, address normalization |
+| TbaDepositBridge | ~12 | Happy path, idempotent bridge, finality check, unknown TBA rejection, escrow verification |
+| AgentGovernanceService | ~15 | Propose, vote, quorum reached, cooldown activation, expiry, admin override, whitelist enforcement, weight computation |
+| EventConsolidationAdapter | ~10 | Dual-write, mapping correctness, unmapped types handled, transaction context |
+| ReconciliationService ext | ~8 | Transfer conservation pass/fail, deposit conservation pass/fail |
+
+### 8.2 Integration Tests
+
+| Scenario | Description |
+|----------|-------------|
+| Agent sovereignty proof (G-6) | Agent earns via referral → transfers to peer → proposes governance change → quorum → parameter activated. Full lifecycle in one test. |
+| Transfer conservation stress | 100 random transfers, verify reconciliation passes |
+| Deposit bridge E2E | Mock on-chain deposit → detect → bridge → verify lot + balance |
+| Event consolidation correctness | Emit via adapter, verify both billing_events and economic_events tables |
+
+---
+
+## 9. Technical Risks & Mitigation
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| SQLite contention on high-frequency transfers | Medium | BEGIN IMMEDIATE serializes per-file. For scale: batch transfers or use WAL mode. |
+| On-chain RPC reliability for deposit detection | Medium | Configurable polling with exponential backoff. Manual bridge endpoint as fallback. |
+| Agent governance quorum gaming | Low | Per-creator caps + whitelist limit blast radius. Admin override always available. |
+| Event consolidation data loss during transition | Medium | Dual-write ensures both tables receive events. No event is lost — worst case is duplicate. |
+| CHECK constraint migration complexity in SQLite | Low | Use application-level validation (existing pattern). |
+
+---
+
+## 10. File Manifest
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `core/ports/IPeerTransferService.ts` | Transfer service interface |
+| `core/ports/ITbaDepositBridge.ts` | Deposit bridge interface |
+| `core/ports/IAgentGovernanceService.ts` | Agent governance interface |
+| `adapters/billing/PeerTransferService.ts` | Transfer service implementation |
+| `adapters/billing/TbaDepositBridge.ts` | Deposit bridge implementation |
+| `adapters/billing/AgentGovernanceService.ts` | Agent governance implementation |
+| `adapters/billing/EventConsolidationAdapter.ts` | Dual-write migration adapter |
+| `adapters/billing/address-utils.ts` | EIP-55 address normalization |
+| `db/migrations/056_peer_transfers.ts` | Transfer tables + type extensions |
+| `db/migrations/057_tba_deposits.ts` | Deposit tracking table |
+| `db/migrations/058_agent_governance.ts` | Governance tables |
+| `db/migrations/059_billing_events_deprecated.ts` | Deprecation marker |
+| `db/migrations/060_governance_params_seed.ts` | New parameter seeds |
+| `api/routes/transfer.routes.ts` | Transfer API endpoints |
+| `api/routes/agent-tba.routes.ts` | TBA API endpoints |
+| `api/routes/agent-governance.routes.ts` | Governance API endpoints |
+| `grimoires/loa/decisions/adr-009-event-consolidation.md` | Event consolidation ADR |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `AgentProvenanceVerifier.ts` | Implement `bindTBA()` (was `NotImplementedError`) |
+| `ReconciliationService.ts` | Add checks 5 (transfer conservation) and 6 (deposit bridge conservation) |
+| `billing-types.ts` | Add `transfer_out` to EntryType, `tba_deposit` to SourceType |
+| `economic-events.ts` | Add 10 new event types |
+| `config-schema.ts` | Add 5 new parameters to CONFIG_SCHEMA and CONFIG_FALLBACKS |
+| DI/wiring files | Wire new services into Express app |
+
+---
+
+## 11. Dependency Graph
+
+```
+Sprint ordering based on dependencies:
+
+  Event Consolidation (FR-4)  ←── foundation, must come first
+       │
+       ├── Peer Transfer (FR-1) ←── depends on event emission + entry types
+       │        │
+       │        ├── TBA Binding (FR-2.1-2.3) ←── independent of transfers
+       │        │        │
+       │        │        └── TBA Deposit Bridge (FR-2.4-2.5) ←── depends on binding
+       │        │
+       │        └── Agent Governance (FR-3) ←── depends on transfer limits being configurable
+       │
+       └── Conservation Extensions (FR-5) ←── depends on all above being implemented
 ```
 
-### 7.3 Backward Compatibility
-
-- All existing tests (439+) continue passing unchanged
-- Services that don't read from `system_config` continue using compile-time constants
-- `system_config` seed data matches current hardcoded values exactly
-- Migration is purely additive — no existing column changes, no constraint modifications
-
----
-
-## 8. Queue Architecture
-
-### 8.1 New BullMQ Queues
-
-| Queue | Purpose | Concurrency | Schedule |
-|-------|---------|-------------|----------|
-| `config-activation` | Activate configs after cooldown expiry | 1 | Cron: every hour |
-| `budget-window-reset` | Reset expired agent spending windows | 1 | Cron: every hour |
-| `economic-event-dispatch` | Publish outbox events to external consumers | 3 | Poll: every 10s |
-| `reconciliation` | Run cross-system reconciliation checks | 1 | Cron: every 6 hours |
-
-### 8.2 Modified Existing Queues
-
-| Queue | Modification |
-|-------|-------------|
-| `settlement-check` | Modified to read settlement hold per entity type from `system_config` |
-
----
-
-## 9. Observability
-
-### 9.1 Metrics
-
-| Metric | Type | Alert |
-|--------|------|-------|
-| `config.proposals.created` | Counter | Monitoring only |
-| `config.proposals.activated` | Counter | Monitoring only |
-| `config.emergency_overrides` | Counter | Any = alert (exceptional) |
-| `agent.budget.warnings` | Counter | >10/hour = alert |
-| `agent.budget.exhausted` | Counter | >5/hour = alert (runaway pattern) |
-| `agent.budget.utilization_pct` | Histogram | p90 >90% = alert |
-| `agent.settlement.instant_count` | Counter | Monitoring only |
-| `economic_events.emitted` | Counter | Monitoring only |
-| `economic_events.dispatch_lag_ms` | Histogram | p99 >5000ms = alert |
-| `economic_events.unpublished_count` | Gauge | >1000 = alert (dispatcher stuck) |
-| `reconciliation.divergence_count` | Counter | Any >0 = critical alert |
-| `reconciliation.check_duration_ms` | Histogram | p99 >30s = warning |
-
-### 9.2 Audit Trail
-
-All governance actions append to `system_config_audit` (immutable, append-only). Additional audit:
-- `economic_events` — unified financial event trail
-- `agent_spending_limits` — cap counter state (mutable but version-tracked)
-- Existing: `credit_ledger`, `revenue_rule_audit_log`, `referral_attribution_log`
-
----
-
-## 10. Performance Targets
-
-| Operation | Target | Strategy |
-|-----------|--------|----------|
-| Parameter resolution (money-moving) | <2ms p99 | SQLite indexed lookup within transaction |
-| Parameter resolution (dashboard) | <1ms p99 | Redis cache (60s TTL) |
-| Agent budget check | <5ms p99 | Redis advisory + SQLite fallback |
-| Agent budget finalization update | <3ms p99 | Single UPDATE within existing finalize transaction |
-| Economic event emission | <2ms overhead | Single INSERT within existing transaction |
-| Economic event dispatch (outbox) | <100ms per batch | Poll + batch publish |
-| Reconciliation check | <30s for 10K accounts | Aggregate SQL queries |
-| Config activation (cooldown expiry) | <100ms per config | Cron hourly, single UPDATE |
-| Agent settlement (instant) | <100ms p99 | Same as existing settlement, hold = 0 |
-
----
-
-## 11. Technical Risks & Mitigations
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Constitutional migration breaks parameter reads | Medium | High | Compile-time fallback: if `system_config` lookup returns null, use hardcoded constant. Migration seeds values identical to current constants. Feature flag: `SYSTEM_CONFIG_ENABLED=false` falls back to all compile-time. |
-| Agent budget cap race condition (concurrent finalize) | Low | Medium | SQLite single-writer prevents concurrent writes to `agent_spending_limits`. Redis advisory is eventually-consistent (acceptable — authoritative check is in SQLite transaction). Idempotent via `agent_budget_finalizations` PK `(account_id, reservation_id)` with `INSERT OR IGNORE`. |
-| Economic event outbox grows unbounded | Low | Low | Async dispatcher runs every 10s. Retention: published events archived after 30 days. Index on `published_at IS NULL` ensures fast poll. |
-| Config version monotonicity breaks on edge case | Low | Medium | `config_version` is per-`(param_key, entity_type)` — allocated via `system_config_version_seq` counter table under `BEGIN IMMEDIATE`, with `UNIQUE(param_key, entity_type, config_version)` DB-enforced constraint. No `MAX+1` races possible. |
-| Cross-system reconciliation reveals inconsistencies at launch | Medium | Medium | ADR-008 is design-only in Phase 1. Test harness simulates budget engine. Reconciliation is alert-only (never auto-corrects). |
-
----
-
-## 12. Dependencies
-
-| Dependency | Version | Purpose |
-|-----------|---------|---------|
-| `better-sqlite3` | existing | SQLite database (already in codebase) |
-| `ioredis` | existing | Redis client (already in codebase) |
-| `bullmq` | existing | Queue management (already in codebase) |
-| `uuid` | existing | Event ID generation (already in codebase) |
-
-**No new infrastructure dependencies.** All runs on existing SQLite + Redis + BullMQ stack.
-
----
-
-## 13. Key Decisions (ADR Cross-References)
-
-| ADR | Title | SDD Sections Affected |
-|-----|-------|-----------------------|
-| [ADR-008](decisions/adr-008-cross-system-reconciliation.md) | Cross-System Balance Reconciliation | §4.6 ReconciliationService (design-only in Phase 1) |
-| [ADR-010](decisions/adr-010-rounding-algorithm.md) | Largest-Remainder Rounding | §4.2 Budget cap (BigInt arithmetic, no rounding issues) |
-| [ADR-013](decisions/adr-013-timestamp-format-convention.md) | Timestamp Format Convention | §3.1 Tables (ISO 8601 format) |
-| [ADR-015](decisions/adr-015-sqlite-locking-hierarchy.md) | SQLite Locking Hierarchy | §4.1-4.4 (BEGIN IMMEDIATE for money ops) |
-| NEW: ADR-016 | Constitutional vs Statutory Parameter Taxonomy | §3.3 Parameter Resolution, §4.1 Governance |
-| NEW: ADR-017 | Outbox Pattern for Economic Events | §3.1 economic_events, §4.3 EconomicEventEmitter |
-
----
-
-## 14. Phase Mapping
-
-### Phase 1: Constitutional Foundation (Sprints 1-9, Global 275-283)
-
-| Sprint | Components |
-|--------|-----------|
-| 1-2 | Migration 047, ConstitutionalGovernanceService, system_config state machine, parameter resolution with compile-time fallback |
-| 3-4 | Entity-specific overrides, modify SettlementService + CreatorPayoutService + FraudRulesService to read from system_config, AgentSettlementPolicy |
-| 5-6 | Migration 048-049, AgentBudgetService + circuit breaker, AgentProvenanceVerifier, agent_identity table |
-| 7 | Migration 050, EconomicEventEmitter (outbox), EconomicEvent union type, event emission from credit ledger operations |
-| 8 | ADR-008 design document, ReconciliationService + test harness, reconciliation cron |
-| 9 | Cross-sprint coherence review stage, E2E testing, integration validation |
-
-### Phase 2: Agent Sovereignty (Future Cycle)
-
-| Sprint | Components |
-|--------|-----------|
-| 1-2 | ERC-6551 TBA binding: `tba_address` column, on-chain verification, `agent_identity` Phase 2 fields |
-| 3-4 | Agent self-authorization: TBA-signed reserve/finalize, referral code generation, budget-cap-bounded autonomy |
-| 5 | Agent economic self-sustainability dashboard, surplus transfer to creator account |
-
----
-
-*Generated with Loa Framework `/architect`*
-*Grounded in: existing billing infrastructure (migrations 030-046), `ICreditLedgerService`, `state-machines.ts`, `billing-events.ts`, `RevenueRulesAdapter`, `AgentWalletPrototype`, `CreditLedgerAdapter`, `SettlementService`, `CreatorPayoutService`, `FraudRulesService`*
+Suggested sprint ordering: Event Consolidation → Peer Transfers → TBA Binding → Deposit Bridge → Agent Governance → Conservation Extensions → E2E Sovereignty Proof

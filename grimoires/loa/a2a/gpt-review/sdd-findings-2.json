@@ -1,56 +1,38 @@
 {
-  "verdict": "CHANGES_REQUIRED",
-  "summary": "Most prior blockers were addressed (idempotent budget finalizations, authoritative finalize-time accounting, tx-threading for settlement, config version uniqueness/sequence, typed param registry, outbox claim protocol, and clawback receivable modeling), but there are two remaining truly blocking inconsistencies that would break runtime behavior and/or safety guarantees.",
+  "verdict": "APPROVED",
+  "summary": "All previously blocking issues are addressed in a way that preserves conservation, atomic idempotency, and migration safety, and no new truly-blocking problems were introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "AgentBudgetService — idempotency + finalized-only accounting (`last_finalize_id` single value is incorrect)",
+      "original_issue": "Peer transfers minted a new recipient lot (transfer_in) without a paired sender-side supply reduction, inflating total lot supply",
       "status": "fixed",
-      "notes": "Replaced with `agent_budget_finalizations` keyed by (account_id, reservation_id) and `INSERT OR IGNORE` idempotency. This resolves retry/out-of-order double count."
+      "notes": "SDD now explicitly uses a lot-split: sender lot original_micro is reduced by the split amount and a recipient lot is created for the same amount, preserving global SUM(original_micro). Reconciliation Check 5 is updated to reflect transfer conservation at both ledger and lot levels."
     },
     {
-      "original_issue": "Budget enforcement only as pre-check before reserve() (bypassable / raceable)",
+      "original_issue": "Idempotency race: INSERT OR IGNORE outside BEGIN IMMEDIATE and no guaranteed SELECT/return on ignored insert",
       "status": "fixed",
-      "notes": "Now explicitly authoritative at finalize-time via `recordFinalizationInTransaction()` called inside the same `BEGIN IMMEDIATE` transaction as `finalizeInTransaction()`, plus a single finalize entrypoint (`AgentAwareFinalizer`) for agent accounts."
+      "notes": "Transfer algorithm now begins with BEGIN IMMEDIATE and does SELECT-by-idempotency_key inside the transaction, returning completed/rejected results idempotently, otherwise inserting a pending transfer record before any side effects."
     },
     {
-      "original_issue": "SettlementService modification — transaction boundaries (ledger postEntry not guaranteed to use same tx)",
+      "original_issue": "Event consolidation dual-write claimed same transaction but legacy emitter transactional participation was not guaranteed",
       "status": "fixed",
-      "notes": "SDD now requires and uses `postEntryInTransaction(tx, ...)` and states all writes (ledger entry, earning status, outbox insert) occur in the same transaction."
+      "notes": "EventConsolidationAdapter now defines an explicit emitInTransaction(tx, event) path and states both emitters accept a db/tx handle; adapter forces both writes through the same transaction context and provides a wrapper emit() that creates a transaction around emitInTransaction(). This satisfies the 'single dual-write mechanism (no triggers)' requirement."
     },
     {
-      "original_issue": "system_config config_version monotonicity/uniqueness not enforced; MAX+1 race",
+      "original_issue": "Contradiction about SQLite CHECK constraint alteration vs application-level validation; risk of runtime failures or risky table rebuild",
       "status": "fixed",
-      "notes": "Added `system_config_version_seq` and a UNIQUE index on (param_key, entity_type, config_version), which is the correct DB-level enforcement approach when combined with `BEGIN IMMEDIATE` allocation."
+      "notes": "SDD now makes a clear decision: application-level validation only, and migration 056 does NOT rebuild/alter existing CHECK constraints. This resolves the contradiction and avoids risky rebuilds."
     },
     {
-      "original_issue": "system_config JSON typing vs seeded overrides (floats/strings causing runtime coercion/errors)",
+      "original_issue": "TBA deposit bridge did not mandate on-chain receipt/log verification before minting, enabling fabricated deposit minting",
       "status": "fixed",
-      "notes": "Introduced a strict parameter schema registry and normalized durations to integer seconds/days; proposals validate before entering lifecycle."
+      "notes": "Bridge algorithm now makes on-chain verification mandatory (receipt status, block, ERC-20 Transfer log parsing, token/from/to/amount checks, finality depth) before any BEGIN IMMEDIATE minting transaction. It also persists verified receipt/log metadata for audit."
     },
     {
-      "original_issue": "Outbox dispatcher concurrency causes double-dispatch (no claim/lease)",
+      "original_issue": "Governance weight computation referenced missing config keys and missing delegation storage schema",
       "status": "fixed",
-      "notes": "Added claim columns (`claimed_by`, `claimed_at`) and an atomic UPDATE...RETURNING claim step plus stale-claim recovery; this prevents concurrent workers from publishing the same rows."
-    },
-    {
-      "original_issue": "Agent clawback policy lacked ledger mechanism for unpaid remainder (conservation break)",
-      "status": "fixed",
-      "notes": "Added `agent_clawback_receivables` plus explicit receivable sub-account semantics and drip recovery transfers with idempotent keys; conservation is preserved by modeling the remainder."
+      "notes": "SDD adds governance.agent_weight_source and related parameters to CONFIG_SCHEMA/FALLBACKS and introduces agent_governance_delegations table + indexes. Weight is explicitly server-side only."
     }
   ],
-  "new_blocking_concerns": [
-    {
-      "location": "§4.4 SettlementService code sample + §3.4/§3.5 parameter keys",
-      "description": "SettlementService resolves `settlement.hold_hours` and multiplies by 3600, but the SDD’s normalized key is `settlement.hold_seconds` (and schema registry defines `settlement.hold_seconds`). The API example also proposes `settlement.hold_hours`.",
-      "why_blocking": "This is not a cosmetic mismatch: it will cause runtime lookups to miss active config rows (falling back unexpectedly or throwing depending on implementation), breaking FR-5/FR-6 and potentially changing settlement timing (agents not instant-settled, or humans incorrectly instant-settled) in production.",
-      "fix": "Make the key consistent everywhere: update SettlementService to resolve `settlement.hold_seconds` and remove the hours conversion; update API examples, migration seed, and any references to `settlement.hold_hours` to `settlement.hold_seconds`. Add/keep a compatibility alias only if you must support legacy proposals, but canonicalize to seconds at write-time."
-    },
-    {
-      "location": "§6.2 Agent Budget Security + §11 Risks table vs §4.2 implementation",
-      "description": "Security/Risks sections still claim idempotency via `last_finalize_id` and version allocation via `MAX(config_version)+1`, both of which contradict the revised authoritative designs (`agent_budget_finalizations` and `system_config_version_seq`).",
-      "why_blocking": "These contradictions are operationally dangerous: implementers/operators will follow the security/risk guidance and reintroduce the exact failure modes previously identified (double-counting budget spend; config version collisions). In an SDD, contradictory instructions are a deployment blocker because they create a high probability of implementing the wrong mechanism in adjacent code/tests and breaking economic safety controls.",
-      "fix": "Update §6.2 and §11 to reflect the actual mechanisms: idempotency is via `agent_budget_finalizations (PK account_id,reservation_id)`; config versions are allocated via `system_config_version_seq` under `BEGIN IMMEDIATE` with UNIQUE(param_key, entity_type, config_version). Remove all mentions of `last_finalize_id` and `MAX+1`."
-    }
-  ],
+  "new_blocking_concerns": [],
   "iteration": 2
 }

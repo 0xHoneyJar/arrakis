@@ -1,48 +1,42 @@
 {
   "verdict": "CHANGES_REQUIRED",
-  "summary": "This plan is close, but several dependency and schema/AC mismatches will cause implementation to fail (migration conflicts, outbox-before-emission ordering, and missing persistence for reconciliation results).",
+  "summary": "This plan is close, but it has a few concrete blockers (event type count mismatch, migration ordering inconsistency, and missing/incorrect dependencies around config seeding and event emission) that could cause implementation or CI to fail mid-cycle.",
   "blocking_issues": [
     {
-      "location": "Sprint 4 / Task 4.4 (agent_clawback_receivables migration)",
-      "issue": "Clawback receivable table is planned as a “047 addendum or included in 047 if not yet merged”, but Sprint 5+ assumes migration ordering is strictly monotonic (047→048→049→050).",
-      "why_blocking": "In practice this creates a high risk of migration collision/renumbering or non-monotonic application across environments. If 047 is already shipped, you cannot safely “include in 047”; if you add an unnumbered addendum, you break the stated ordering and can strand deployments with missing tables.",
-      "fix": "Create a dedicated new migration (e.g., 051_agent_clawback_receivables.ts) and update the dependency graph + ordering section. Update Task 4.4 acceptance criteria to reference that new migration file explicitly and remove the conditional language."
+      "location": "Sprint 1 / Task 1.2 (economic-events.ts)",
+      "issue": "Acceptance criteria says “10 new event types” but the description lists 11 event types (includes AgentProposalRejected in addition to the 10 named).",
+      "why_blocking": "This will cause immediate confusion and likely a failing test/compile expectation (vocabulary count 39 vs 40) and downstream tasks depending on the union will diverge.",
+      "fix": "Decide the authoritative list and make it consistent everywhere: update Task 1.2 to either (a) add 11 types and update counts (29+11=40), or (b) remove the extra type from the list and keep 10. Also ensure Sprint 6/8 governance flows emit/expect the same set."
     },
     {
-      "location": "Sprint 4 / Task 4.4 and Sprint 9 / Task 9.2 (conservation formulas)",
-      "issue": "Acceptance criteria mixes clawback receivables into credit-lot conservation equations without defining how receivables relate to minted/reserved/consumed lots (double-count risk).",
-      "why_blocking": "Engineers won’t be able to implement reconciliation checks consistently: if receivables are treated as “assets” alongside lots, you must specify whether they are derived from lots (reclassification) or represent negative balance/IOU. As written, the equations can be contradictory and will fail tests once implemented.",
-      "fix": "In Sprint 4, add explicit ledger semantics: when creating a receivable, what ledger entries (if any) are posted and how does it affect lots? In Sprint 9.2, rewrite reconciliation invariants to match those semantics (e.g., either (A) receivable is off-ledger and conservation is lots-only, with a separate invariant for receivable balances, or (B) receivable is represented by specific ledger accounts/entries and included formally). Update AC to one unambiguous set of equations."
+      "location": "Appendix B (Migration ordering) + Sprint sequencing",
+      "issue": "Migration ordering is stated as 056 → 057 → 058 → 059 → 060, but Sprint 1 defines 059 and claims it can run in any order; also the ordering list contradicts the sprint execution order (Sprint 1 runs before Sprint 2).",
+      "why_blocking": "If your migration runner enforces numeric ordering (common), 059 will run after 056–058 regardless of sprint, which can break Sprint 1 assumptions/tests that expect deprecated_at to exist right after Sprint 1. Conversely, if you run “only this sprint’s migrations”, you risk environments diverging from CI/prod ordering.",
+      "fix": "Make migration execution strategy explicit and align acceptance criteria: (1) state that all migrations run strictly by number in all envs, and adjust Sprint 1 tests to not assume 059 has run yet; or (2) renumber 059 to be earlier than 056 if Sprint 1 truly requires it; or (3) remove any Sprint 1 dependency on 059 and treat it as non-blocking additive migration."
     },
     {
-      "location": "Sprint 6 / Task 6.1 (events emitted within same transaction as finalization)",
-      "issue": "Task 6.1 requires outbox inserts for AgentBudgetWarning/Exhausted “within same transaction as finalization”, but the outbox table and emitter are not created until Sprint 8.",
-      "why_blocking": "You cannot implement or test “outbox insert” semantics before the table/port exists. This will either block Sprint 6 or force a rework later, breaking the single-session constraint.",
-      "fix": "Either (1) move Sprint 8 ahead of Sprint 6 (or split outbox migration+emitter earlier), or (2) change Sprint 6 AC to emit via an in-memory/no-op interface and add a Sprint 8 task to backfill wiring + tests. Prefer (1): make Sprint 8 a prerequisite for any task that requires transactional outbox writes."
+      "location": "Sprint 3 / Task 3.3 vs Sprint 6 / Task 6.2 (config params + seeding)",
+      "issue": "Sprint 3 adds transfer governance params to CONFIG_SCHEMA/FALLBACKS, while Sprint 6 migration 060 also claims to add/seed those same transfer params as part of “10 parameters total”.",
+      "why_blocking": "This creates a real risk of duplicate definitions, conflicting defaults, or migration/test failures depending on how CONFIG_SCHEMA is validated and how seeding handles existing keys. It also muddles the dependency: Sprint 3 needs the params available before Sprint 6 exists.",
+      "fix": "Choose one source of truth and sequence it: either (A) move transfer.* param additions entirely into Sprint 3 (schema + fallbacks) and have migration 060 seed only governance.* params not needed earlier; or (B) move all param additions + seeding into Sprint 3 (create a new migration earlier than 060) so Sprint 3 can rely on seeded values. Update Task 6.2 acceptance criteria to exclude transfer.* if already introduced."
     },
     {
-      "location": "Sprint 8 / Task 8.4 (claim protocol SQL)",
-      "issue": "Acceptance criteria uses `UPDATE ... LIMIT 100 RETURNING *` for SQLite claim batching; this is not reliably supported across SQLite versions/configurations in the way implied.",
-      "why_blocking": "If the repo’s SQLite version (or driver) doesn’t support UPDATE…RETURNING or LIMIT on UPDATE as used, the dispatcher cannot be implemented as specified and will fail at runtime or in CI.",
-      "fix": "Change AC to a SQLite-compatible two-step claim: (a) select candidate rowids (ORDER BY rowid LIMIT 100), (b) update by rowid with a guard `WHERE claimed_by IS NULL AND published_at IS NULL`, then (c) re-select claimed rows by `claimed_by`. Add a test that proves no double-claim under concurrency."
+      "location": "Sprint 4 / Task 4.2 (bindTBA emits TbaBound event) and Sprint 5 / Task 5.3 (deposit bridge emits TbaDeposit* events)",
+      "issue": "Tasks say they emit events “via EconomicEventEmitter”, but Sprint 1 establishes EventConsolidationAdapter as the dual-write authoritative path and later tasks (Sprint 3.4) explicitly require using emitInTransaction(). Sprint 4/5 acceptance criteria do not require the adapter/transactional emission.",
+      "why_blocking": "You can end up with partial event coverage (only economic_events or only billing_events) and Sprint 8.4 dual-write correctness will fail. Also, non-transactional emission can create orphan events if DB writes roll back.",
+      "fix": "Make on-adapter, in-transaction emission mandatory in Sprint 4/5 acceptance criteria: require EventConsolidationAdapter.emitInTransaction(tx, ...) for TbaBound and all deposit bridge events, and ensure the bind/bridge operations run inside a DB transaction that includes both state change + event emission."
     },
     {
-      "location": "Sprint 9 / Task 9.2 (Reconciliation results stored for history queries)",
-      "issue": "Task 9.2 requires reconciliation results to be stored for history queries, but there is no migration/task creating a `reconciliation_runs` (or similar) table.",
-      "why_blocking": "Sprint 9.3 adds `GET /history` endpoint; without a persistence schema, implementation will stall or devolve into ad-hoc storage, failing acceptance criteria.",
-      "fix": "Add a migration in Sprint 9 (or earlier) to create `reconciliation_runs` table (id, started_at, finished_at, status, summary_json, divergence_json, created_at). Update Task 9.2/9.3 AC and tests to assert rows are written and retrievable."
+      "location": "Sprint 2 / Task 2.3 (lot-split algorithm) acceptance criteria",
+      "issue": "It requires reducing sender lot original_micro and available_micro, but does not specify how reserved/consumed are handled (or that they must remain unchanged) and simultaneously asserts an invariant involving reserved/consumed.",
+      "why_blocking": "If reserved/consumed exist in the schema (they’re referenced), an implementer can easily violate invariants or accidentally allow available to go negative during multi-lot splits. This is conservation-critical and will surface as reconciliation failures in Sprint 7/8.",
+      "fix": "Tighten acceptance criteria to be mechanically testable: explicitly state reserved_micro and consumed_micro are unchanged by transfer; enforce available_micro never negative; and define the exact invariant per lot before/after split. Add a unit test that includes non-zero reserved/consumed lots (if supported) or explicitly state they are always zero in this system."
     },
     {
-      "location": "Sprint 2 / Task 2.2 vs Sprint 1 / Task 1.1 (state machine vs schema)",
-      "issue": "Service AC references `pending_approval` transitions, but Task 2.2 propose() inserts status `'draft'` and there is no explicit task to transition draft→pending_approval (nor an endpoint) before approvals occur.",
-      "why_blocking": "Approval flow tests (“propose -> approve -> approve -> cooling_down”) will fail if approve() only works on pending_approval but propose() leaves drafts. The plan doesn’t specify how/when a proposal becomes pending.",
-      "fix": "Add explicit behavior: either propose() creates `pending_approval` directly (skipping draft), or add a `submit()` method/endpoint to move draft→pending_approval. Update Task 2.1 interface and Task 2.5 endpoints accordingly, and add unit tests for the transition."
-    },
-    {
-      "location": "Sprint 5 / Task 5.3 (authoritative spend computation)",
-      "issue": "AC says `recordFinalizationInTransaction` “computes new spend from authoritative finalizations ledger” but the only authoritative table defined is `agent_budget_finalizations`; there is no defined query/windowing rule for computing spend and no index/task to support it.",
-      "why_blocking": "Without a precise computation rule (time window boundaries, inclusion criteria, handling of retries/partial finalizations), implementations will diverge and tests will be flaky—especially around window resets and concurrency.",
-      "fix": "Specify exact spend computation in AC: e.g., `SUM(amount_micro) FROM agent_budget_finalizations WHERE account_id=? AND finalized_at >= window_start AND finalized_at < window_start+duration`. Add an index on (account_id, finalized_at). Add tests around boundary times."
+      "location": "Sprint 8 / Task 8.1 (E2E sovereignty proof) acceptance criteria",
+      "issue": "It asserts “All economic events present in outbox with correct types and ordering”, but the sprint plan does not include any task that builds/extends an outbox adapter or defines the ordering key/contract for outbox consumption in this cycle (beyond EventConsolidationAdapter dual-write).",
+      "why_blocking": "If the outbox mechanism is not already present and compatible with the new event types, this E2E test will be impossible to implement or will fail nondeterministically on ordering.",
+      "fix": "Add an explicit task (likely Sprint 1 or Sprint 8) to confirm/extend the outbox pipeline for the new EconomicEventType vocabulary and define ordering (e.g., monotonic id/created_at within a transaction). If outbox already exists from prior cycles, add acceptance criteria referencing the existing component and add a small integration test that proves new event types are exported."
     }
   ],
   "question": "",

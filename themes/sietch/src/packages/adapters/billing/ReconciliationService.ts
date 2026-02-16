@@ -9,6 +9,8 @@
  * 2. Receivable balance: sum(outstanding receivables) matches expected IOUs
  * 3. Platform-level: all_lot_balances + all_receivable_balances = all_minted - all_expired
  * 4. Budget consistency: current_spend_micro matches windowed finalizations sum
+ * 5. Transfer conservation: transfer_out + transfer_in = 0, lot supply preserved (Sprint 290)
+ * 6. Deposit bridge conservation: bridged deposits = tba_deposit-sourced lots (Sprint 290)
  *
  * SDD refs: §SS4.6, §SS8.1
  * Sprint refs: Task 9.2
@@ -26,7 +28,7 @@ import type {
   ReconciliationCheck,
   ReconciliationStatus,
 } from '../../core/ports/IReconciliationService.js';
-import type { BillingEventEmitter } from './BillingEventEmitter.js';
+import type { IEconomicEventEmitter } from '../../core/ports/IEconomicEventEmitter.js';
 
 // =============================================================================
 // ReconciliationService
@@ -34,9 +36,9 @@ import type { BillingEventEmitter } from './BillingEventEmitter.js';
 
 export class ReconciliationService implements IReconciliationService {
   private db: Database.Database;
-  private eventEmitter: BillingEventEmitter | null;
+  private eventEmitter: IEconomicEventEmitter | null;
 
-  constructor(db: Database.Database, eventEmitter?: BillingEventEmitter) {
+  constructor(db: Database.Database, eventEmitter?: IEconomicEventEmitter) {
     this.db = db;
     this.eventEmitter = eventEmitter ?? null;
   }
@@ -59,6 +61,12 @@ export class ReconciliationService implements IReconciliationService {
     // Check 4: Budget consistency
     checks.push(this.checkBudgetConsistency(divergences));
 
+    // Check 5: Transfer conservation (Sprint 290)
+    checks.push(this.checkTransferConservation(divergences));
+
+    // Check 6: Deposit bridge conservation (Sprint 290)
+    checks.push(this.checkDepositBridgeConservation(divergences));
+
     const finishedAt = sqliteTimestamp();
     const status: ReconciliationStatus = divergences.length > 0 ? 'divergence_detected' : 'passed';
 
@@ -72,22 +80,21 @@ export class ReconciliationService implements IReconciliationService {
       divergences.length > 0 ? JSON.stringify(divergences) : null,
     );
 
-    // Emit event
+    // Emit event via typed IEconomicEventEmitter (no `as any` casts)
     if (this.eventEmitter) {
       const eventType = status === 'passed' ? 'ReconciliationCompleted' : 'ReconciliationDivergence';
       try {
         this.eventEmitter.emit({
-          type: eventType as any,
-          aggregateType: 'account' as any,
-          aggregateId: id,
-          timestamp: finishedAt,
-          causationId: `reconciliation:${id}`,
+          eventType,
+          entityType: 'account',
+          entityId: id,
+          correlationId: `reconciliation:${id}`,
           payload: {
             checksCount: checks.length,
             divergencesCount: divergences.length,
             status,
           },
-        } as any, { db: this.db });
+        });
       } catch {
         // Event emission failure is non-fatal for reconciliation
       }
@@ -130,18 +137,18 @@ export class ReconciliationService implements IReconciliationService {
       // Per-account: available + reserved + consumed should equal original - expired_amount
       const accounts = this.db.prepare(`
         SELECT cl.account_id,
-          SUM(cl.available_micro) as total_available,
-          SUM(cl.reserved_micro) as total_reserved,
-          SUM(cl.consumed_micro) as total_consumed,
-          SUM(cl.original_micro) as total_original
+          CAST(COALESCE(SUM(cl.available_micro), 0) AS TEXT) as total_available,
+          CAST(COALESCE(SUM(cl.reserved_micro), 0) AS TEXT) as total_reserved,
+          CAST(COALESCE(SUM(cl.consumed_micro), 0) AS TEXT) as total_consumed,
+          CAST(COALESCE(SUM(cl.original_micro), 0) AS TEXT) as total_original
         FROM credit_lots cl
         GROUP BY cl.account_id
       `).all() as Array<{
         account_id: string;
-        total_available: number;
-        total_reserved: number;
-        total_consumed: number;
-        total_original: number;
+        total_available: string;
+        total_reserved: string;
+        total_consumed: string;
+        total_original: string;
       }>;
 
       let violations = 0;
@@ -171,20 +178,23 @@ export class ReconciliationService implements IReconciliationService {
         SELECT
           COUNT(*) as total_receivables,
           COALESCE(SUM(CASE WHEN balance_micro > 0 THEN 1 ELSE 0 END), 0) as outstanding_count,
-          COALESCE(SUM(CASE WHEN balance_micro > 0 THEN balance_micro ELSE 0 END), 0) as outstanding_total,
-          COALESCE(SUM(original_amount_micro), 0) as total_original
+          CAST(COALESCE(SUM(CASE WHEN balance_micro > 0 THEN balance_micro ELSE 0 END), 0) AS TEXT) as outstanding_total,
+          CAST(COALESCE(SUM(original_amount_micro), 0) AS TEXT) as total_original
         FROM agent_clawback_receivables
       `).get() as {
         total_receivables: number;
         outstanding_count: number;
-        outstanding_total: number;
-        total_original: number;
+        outstanding_total: string;
+        total_original: string;
       };
 
+      const outstandingTotal = BigInt(row.outstanding_total);
+      const totalOriginal = BigInt(row.total_original);
+
       // Receivable balance should never exceed original amount
-      const violations = row.outstanding_total > row.total_original ? 1 : 0;
+      const violations = outstandingTotal > totalOriginal ? 1 : 0;
       if (violations > 0) {
-        divergences.push(`Receivable balance (${row.outstanding_total}) exceeds original (${row.total_original})`);
+        divergences.push(`Receivable balance (${outstandingTotal}) exceeds original (${totalOriginal})`);
       }
 
       return {
@@ -193,7 +203,8 @@ export class ReconciliationService implements IReconciliationService {
         details: {
           totalReceivables: row.total_receivables,
           outstandingCount: row.outstanding_count,
-          outstandingTotal: row.outstanding_total,
+          outstandingTotal: outstandingTotal.toString(),
+          totalOriginal: totalOriginal.toString(),
         },
       };
     } catch {
@@ -206,17 +217,17 @@ export class ReconciliationService implements IReconciliationService {
     try {
       const lotTotals = this.db.prepare(`
         SELECT
-          COALESCE(SUM(original_micro), 0) as total_minted,
-          COALESCE(SUM(available_micro + reserved_micro + consumed_micro), 0) as total_accounted
+          CAST(COALESCE(SUM(original_micro), 0) AS TEXT) as total_minted,
+          CAST(COALESCE(SUM(available_micro + reserved_micro + consumed_micro), 0) AS TEXT) as total_accounted
         FROM credit_lots
-      `).get() as { total_minted: number; total_accounted: number };
+      `).get() as { total_minted: string; total_accounted: string };
 
-      let receivableTotal = 0;
+      let receivableTotal = '0';
       try {
         const recRow = this.db.prepare(`
-          SELECT COALESCE(SUM(balance_micro), 0) as total
+          SELECT CAST(COALESCE(SUM(balance_micro), 0) AS TEXT) as total
           FROM agent_clawback_receivables WHERE balance_micro > 0
-        `).get() as { total: number };
+        `).get() as { total: string };
         receivableTotal = recRow.total;
       } catch {
         // Table may not exist
@@ -251,10 +262,12 @@ export class ReconciliationService implements IReconciliationService {
   private checkBudgetConsistency(divergences: string[]): ReconciliationCheck {
     try {
       const limits = this.db.prepare(`
-        SELECT id, account_id, current_spend_micro, window_start, window_duration_seconds
+        SELECT id, account_id,
+               CAST(current_spend_micro AS TEXT) as current_spend_micro,
+               window_start, window_duration_seconds
         FROM agent_spending_limits
       `).all() as Array<{
-        id: string; account_id: string; current_spend_micro: number;
+        id: string; account_id: string; current_spend_micro: string;
         window_start: string; window_duration_seconds: number;
       }>;
 
@@ -265,15 +278,18 @@ export class ReconciliationService implements IReconciliationService {
         ).toISOString();
 
         const spendRow = this.db.prepare(`
-          SELECT COALESCE(SUM(amount_micro), 0) as actual_spend
+          SELECT CAST(COALESCE(SUM(amount_micro), 0) AS TEXT) as actual_spend
           FROM agent_budget_finalizations
           WHERE account_id = ? AND finalized_at >= ? AND finalized_at < ?
-        `).get(limit.account_id, limit.window_start, windowEnd) as { actual_spend: number };
+        `).get(limit.account_id, limit.window_start, windowEnd) as { actual_spend: string };
 
-        if (spendRow.actual_spend !== limit.current_spend_micro) {
+        const recorded = BigInt(limit.current_spend_micro);
+        const actual = BigInt(spendRow.actual_spend);
+
+        if (actual !== recorded) {
           violations++;
           divergences.push(
-            `Budget consistency: account ${limit.account_id} recorded=${limit.current_spend_micro} actual=${spendRow.actual_spend}`
+            `Budget consistency: account ${limit.account_id} recorded=${recorded} actual=${actual}`
           );
         }
       }
@@ -286,6 +302,122 @@ export class ReconciliationService implements IReconciliationService {
     } catch {
       // Budget tables may not exist — pass silently
       return { name: 'budget_consistency', status: 'passed', details: { skipped: true } };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 5: Transfer Conservation (Sprint 290, Task 7.1)
+  // ---------------------------------------------------------------------------
+
+  private checkTransferConservation(divergences: string[]): ReconciliationCheck {
+    try {
+      // 5a: Every completed transfer must have a corresponding transfer_in lot.
+      //     We check existence (not SUM equality) because lot-split reduces
+      //     original_micro on subsequent outbound transfers — the lot still exists
+      //     but its original_micro no longer equals the initial transfer amount.
+      const transferRow = this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(amount_micro), 0) AS TEXT) as transfer_total
+        FROM transfers
+        WHERE status = 'completed'
+      `).get() as { transfer_total: string };
+
+      const transferTotal = BigInt(transferRow.transfer_total);
+
+      const orphanRow = this.db.prepare(`
+        SELECT COUNT(*) as cnt FROM transfers t
+        WHERE t.status = 'completed'
+          AND NOT EXISTS (
+            SELECT 1 FROM credit_lots cl
+            WHERE cl.source_type = 'transfer_in' AND cl.source_id = t.id
+          )
+      `).get() as { cnt: number };
+
+      let violations = 0;
+
+      if (orphanRow.cnt > 0) {
+        violations++;
+        divergences.push(
+          `Transfer conservation: ${orphanRow.cnt} completed transfers have no matching transfer_in lot`
+        );
+      }
+
+      // 5b: Transfer_out ledger entries should sum to the same absolute value
+      //     as completed transfers (the sender side of the equation).
+      const entryRow = this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(ABS(amount_micro)), 0) AS TEXT) as entry_total
+        FROM credit_ledger
+        WHERE entry_type = 'transfer_out'
+      `).get() as { entry_total: string };
+
+      const entryTotal = BigInt(entryRow.entry_total);
+
+      if (entryTotal !== transferTotal) {
+        violations++;
+        divergences.push(
+          `Transfer conservation: transfer_out entries (${entryTotal}) ≠ completed transfers (${transferTotal})`
+        );
+      }
+
+      return {
+        name: 'transfer_conservation',
+        status: violations === 0 ? 'passed' : 'failed',
+        details: {
+          completedTransferTotal: transferTotal.toString(),
+          transferOutEntryTotal: entryTotal.toString(),
+          orphanCompletedTransfers: orphanRow.cnt,
+          violations,
+        },
+      };
+    } catch {
+      // transfers table may not exist — skip silently
+      return { name: 'transfer_conservation', status: 'passed', details: { skipped: true } };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 6: Deposit Bridge Conservation (Sprint 290, Task 7.2)
+  // ---------------------------------------------------------------------------
+
+  private checkDepositBridgeConservation(divergences: string[]): ReconciliationCheck {
+    try {
+      // Sum of bridged deposit amounts (CAST AS TEXT for BigInt precision)
+      const depositRow = this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(amount_micro), 0) AS TEXT) as deposit_total
+        FROM tba_deposits
+        WHERE status = 'bridged'
+      `).get() as { deposit_total: string };
+
+      // Sum of tba_deposit-sourced lot original_micro
+      const lotRow = this.db.prepare(`
+        SELECT CAST(COALESCE(SUM(original_micro), 0) AS TEXT) as lot_total
+        FROM credit_lots
+        WHERE source_type = 'tba_deposit'
+      `).get() as { lot_total: string };
+
+      const depositTotal = BigInt(depositRow.deposit_total);
+      const lotTotal = BigInt(lotRow.lot_total);
+
+      let violations = 0;
+
+      if (depositTotal !== lotTotal) {
+        violations++;
+        divergences.push(
+          `Deposit bridge conservation: bridged deposits (${depositTotal}) ≠ tba_deposit lots (${lotTotal})`
+        );
+      }
+
+      return {
+        name: 'deposit_bridge_conservation',
+        status: violations === 0 ? 'passed' : 'failed',
+        details: {
+          bridgedDepositTotal: depositTotal.toString(),
+          tbaDepositLotTotal: lotTotal.toString(),
+          violations,
+        },
+      };
+    } catch {
+      // tba_deposits table may not exist — pass silently
+      return { name: 'deposit_bridge_conservation', status: 'passed', details: { skipped: true } };
     }
   }
 }

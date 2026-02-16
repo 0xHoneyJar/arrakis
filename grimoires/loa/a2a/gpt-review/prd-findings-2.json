@@ -1,50 +1,53 @@
 {
-  "verdict": "CHANGES_REQUIRED",
-  "summary": "Most prior blocking issues are fixed (bridge semantics, event ordering/atomicity, KYC/beneficiary model, cap semantics, config consistency, identity anchor), but one fix introduces a truly blocking contradiction: FR-8 requires synchronous in-transaction event emission while the Risks section reintroduces async/fire-and-forget emission, which would break the ordering/atomicity guarantees the rest of the PRD now depends on.",
+  "verdict": "APPROVED",
+  "summary": "All previously blocking issues were addressed with concrete, implementable specs (bridge backing model, distinct entry types, transfer/idempotency boundary, governance anti-capture, single dual-write path, explicit event inventory requirement, and relaxed checksum validation) and no new truly blocking problems were introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "Cross-system conservation check mixed money vs budget capacity without a defined bridge instrument/semantics (FR-10 + §9.3)",
+      "original_issue": "Deposit bridge minted off-chain credits without specifying backing/escrow, denomination, verification, and redemption model (conservation risk)",
       "status": "fixed",
-      "notes": "ADR-008/FR-9 now explicitly defines the bridge as credit-ledger reservations (capacity = locked credits 1:1), authority boundaries, and reconciliation checks that compare locked credits to allocated capacity; FR-10 now reconciles conserved quantities within the credit ledger and separately checks the bridge equality."
+      "notes": "FR-2.4 now defines accepted token (USDC), 1:1 conversion to micro-USD, verified deposit criteria (escrow target, finality depth, chainId), protocol-controlled escrow model, and explicitly states non-redeemable deposits this cycle. FR-5.2 reconciles against escrow holdings so credits cannot exceed backing."
     },
     {
-      "original_issue": "Monotonic per-entity sequence_number requirement incompatible with async emission and multi-writer reality (FR-7/FR-8)",
+      "original_issue": "Conflation of peer transfers with external deposits via `source_type: 'transfer_in'`",
       "status": "fixed",
-      "notes": "Per-entity monotonic sequence_number is removed; ordering is defined via SQLite rowid. FR-8 now states events are inserted synchronously within the same SQLite transaction as the source-of-truth write, restoring achievable ordering/atomicity."
+      "notes": "FR-1.2 reserves `transfer_in/transfer_out` exclusively for peer transfers and FR-2.4 introduces distinct `source_type: 'tba_deposit'` for bridged deposits."
     },
     {
-      "original_issue": "Agents don’t need KYC conflicted with creator KYC and payout/settlement beneficiary ambiguity (FR-1/FR-3)",
+      "original_issue": "Atomic transfer requirement not mapped to lot reserve/finalize model; risk of invariant breaks under retries/concurrency",
       "status": "fixed",
-      "notes": "FR-3 defines the beneficiary model: agent is a controlled sub-ledger of a KYC’d creator; payout destination is always the creator’s verified wallet; agent is not an independent beneficiary in Phase 1."
+      "notes": "FR-1.1 specifies transfer as a composed lot operation under a single `BEGIN IMMEDIATE` transaction with deterministic lot selection/reservation and same-tx finalization, eliminating ambiguous two-phase behavior."
     },
     {
-      "original_issue": "Budget cap semantics undefined with reserve/finalize/release/TTL and concurrency (FR-2)",
+      "original_issue": "Idempotency boundary unclear for multi-row transfer (paired entries + lot mutations + events), risking partial duplication",
       "status": "fixed",
-      "notes": "FR-2 now defines cap accounting on finalized spend only, idempotent updates keyed by reservation_id, and atomic cap counter updates in the same SQLite transaction as finalize()."
+      "notes": "FR-1.8 introduces a first-class `transfers` table keyed by `idempotency_key` with UNIQUE constraint, plus uniqueness on `(transfer_id, entry_type)` and outbox emission tied to `transfer_id` in the same transaction."
     },
     {
-      "original_issue": "Constitutional parameters + Redis caching risk inconsistent enforcement across nodes; missing versioning/activation semantics (FR-4/5/6 + NFR)",
+      "original_issue": "Governance weight derived from credit balance + deposit minting enables governance capture (Sybil/economic capture)",
       "status": "fixed",
-      "notes": "NFR now requires SQLite reads within the transaction for money-moving operations, Redis only for non-transactional reads, plus config_version and active_from, and recording config_version in audit trail; emergency override requires 3+ approvals with audit notification."
+      "notes": "FR-3.5 explicitly forbids credit balance/TBA deposits as direct weight sources and constrains weight to delegation (with per-KYC creator caps), time-weighted earned reputation, or fixed allocation; FR-3.6 adds proposable-key whitelist to limit blast radius."
     },
     {
-      "original_issue": "“Instant settlement” and “agents can’t dispute” ignored clawback/withhold flows and could create negative balances/invariant breaks (FR-1 + settlement policy)",
+      "original_issue": "Contradiction: API allowed client-supplied weight vs security requirement that weight is server-computed",
       "status": "fixed",
-      "notes": "FR-2b clarifies instant settlement = no human dispute window, not no clawback; defines fraud withhold, clawback handling, non-negative agent balances, and deficit recovery from future earnings."
+      "notes": "FR-3.2 now states `opts` includes agentAccountId (optionally delegation reference) and weight is computed server-side; NFR-2 aligns."
     },
     {
-      "original_issue": "Phase 1 provenance verification keyed to token_id conflicted with Phase 2 TBA binding; identity anchor mismatch risk (FR-11 vs FR-3)",
+      "original_issue": "Two dual-write mechanisms (app adapter + DB trigger) risk duplicates/inconsistent ordering",
       "status": "fixed",
-      "notes": "FR-3 establishes canonical identity anchor (chain_id, contract_address, token_id) for Phase 1 with optional tba_address added in Phase 2, explicitly additive."
+      "notes": "FR-4.2 selects a single application-level adapter and explicitly forbids DB triggers; dual-write is in the same transaction with EconomicEventEmitter as authoritative."
+    },
+    {
+      "original_issue": "Event vocabulary consolidation claimed but legacy BillingEventEmitter event types not enumerated/mapped",
+      "status": "fixed",
+      "notes": "FR-4.5 requires an explicit inventory and mapping in ADR-009, including all BillingEventEmitter event types plus new ones, with payload compatibility rules."
+    },
+    {
+      "original_issue": "EIP-55 checksum requirement would cause false rejections; should accept any valid 20-byte hex and normalize",
+      "status": "fixed",
+      "notes": "NFR-2 now accepts any valid hex address and normalizes to checksum for storage/display; binding security relies on provenance, not checksum formatting."
     }
   ],
-  "new_blocking_concerns": [
-    {
-      "location": "Section 8 Risks & Dependencies — row 'Event emission doubles write latency' vs FR-8",
-      "description": "The PRD now contains mutually exclusive requirements: FR-8 mandates synchronous in-transaction event emission to guarantee 'no orphan events' and rowid-based ordering, but the Risks section states 'Async event emission (fire-and-forget to append-only table); sync write to ledger is source of truth'.",
-      "why_blocking": "If implemented as async/fire-and-forget, the system can emit events for failed transactions, miss events for committed writes, or reorder events relative to ledger commits—breaking the integration contract for loa-finn, undermining reconciliation (FR-9/FR-10), and invalidating the ordering guarantees in FR-7. This reintroduces the exact atomicity/ordering failure mode that was previously blocking.",
-      "fix": "Make the document consistent by removing/rewriting the Risks mitigation to match FR-8: event INSERT must be in the same SQLite transaction as the ledger write (outbox-style). If you want async publication, specify: synchronous DB insert into economic_events (outbox) + async dispatcher that reads/publishes after commit. Do not describe async insertion into economic_events."
-    }
-  ],
+  "new_blocking_concerns": [],
   "iteration": 2
 }

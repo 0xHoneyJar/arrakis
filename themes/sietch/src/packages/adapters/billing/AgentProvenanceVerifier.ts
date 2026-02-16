@@ -13,6 +13,8 @@
 import type Database from 'better-sqlite3';
 import { logger } from '../../../utils/logger.js';
 import { sqliteTimestamp } from './protocol/timestamps.js';
+import { isValidAddress, normalizeAddress } from './address-utils.js';
+import type { IEconomicEventEmitter } from '../../core/ports/IEconomicEventEmitter.js';
 import type {
   IAgentProvenanceVerifier,
   RegisterAgentOpts,
@@ -27,9 +29,11 @@ import type { CreditAccount } from '../../core/ports/ICreditLedgerService.js';
 
 export class AgentProvenanceVerifier implements IAgentProvenanceVerifier {
   private db: Database.Database;
+  private eventEmitter: IEconomicEventEmitter | null;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database.Database, eventEmitter?: IEconomicEventEmitter) {
     this.db = db;
+    this.eventEmitter = eventEmitter ?? null;
   }
 
   async registerAgent(opts: RegisterAgentOpts): Promise<AgentIdentity> {
@@ -151,11 +155,87 @@ export class AgentProvenanceVerifier implements IAgentProvenanceVerifier {
     };
   }
 
-  async bindTBA(_accountId: string, _tbaAddress: string): Promise<AgentIdentity> {
-    throw Object.assign(
-      new Error('Phase 2: ERC-6551 TBA binding not yet implemented'),
-      { code: 'NOT_IMPLEMENTED', statusCode: 501 },
-    );
+  async bindTBA(accountId: string, tbaAddress: string): Promise<AgentIdentity> {
+    // Validate address format
+    if (!isValidAddress(tbaAddress)) {
+      throw Object.assign(
+        new Error(`Invalid TBA address: ${tbaAddress}`),
+        { code: 'VALIDATION_ERROR', statusCode: 400 },
+      );
+    }
+
+    // Normalize to EIP-55 checksum format (storage normalization, not validation gate)
+    const normalizedAddress = normalizeAddress(tbaAddress);
+
+    return this.db.transaction(() => {
+      const now = sqliteTimestamp();
+
+      // Check agent identity exists
+      const existing = this.db.prepare(
+        `SELECT * FROM agent_identity WHERE account_id = ?`
+      ).get(accountId) as any;
+
+      if (!existing) {
+        throw Object.assign(
+          new Error(`No identity found for agent account: ${accountId}`),
+          { code: 'NOT_FOUND', statusCode: 404 },
+        );
+      }
+
+      // Idempotent: same address already bound → return existing
+      if (existing.tba_address === normalizedAddress) {
+        return this.mapRow(existing);
+      }
+
+      // Conflict: different address already bound
+      if (existing.tba_address !== null) {
+        throw Object.assign(
+          new Error(`Agent ${accountId} already bound to TBA ${existing.tba_address}`),
+          { code: 'CONFLICT', statusCode: 409 },
+        );
+      }
+
+      // Bind: UPDATE with normalized address
+      this.db.prepare(
+        `UPDATE agent_identity SET tba_address = ? WHERE account_id = ?`
+      ).run(normalizedAddress, accountId);
+
+      // Emit TbaBound event within the same transaction (dual-write)
+      if (this.eventEmitter) {
+        try {
+          this.eventEmitter.emitInTransaction(this.db, {
+            eventType: 'TbaBound',
+            entityType: 'account',
+            entityId: accountId,
+            correlationId: `tba:bind:${accountId}`,
+            idempotencyKey: `tba:bind:${accountId}:${normalizedAddress}`,
+            payload: {
+              accountId,
+              tbaAddress: normalizedAddress,
+              chainId: existing.chain_id,
+              contractAddress: existing.contract_address,
+              tokenId: existing.token_id,
+              timestamp: now,
+            },
+          });
+        } catch {
+          logger.warn({ event: 'agent.tba_bind.event_failed', accountId }, 'TbaBound event emission failed');
+        }
+      }
+
+      logger.info({
+        event: 'agent.tba_bound',
+        accountId,
+        tbaAddress: normalizedAddress,
+      }, 'TBA bound to agent identity');
+
+      // Return updated identity
+      const updated = this.db.prepare(
+        `SELECT * FROM agent_identity WHERE account_id = ?`
+      ).get(accountId) as any;
+
+      return this.mapRow(updated);
+    })();
   }
 
   private mapRow(row: any): AgentIdentity {

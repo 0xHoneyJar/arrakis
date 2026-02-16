@@ -83,7 +83,7 @@ export type BillingMode = 'shadow' | 'soft' | 'live';
 export type EntityType = 'agent' | 'person' | 'community' | 'mod' | 'protocol' | 'foundation' | 'commons';
 
 /** Credit lot source types */
-export type SourceType = 'deposit' | 'grant' | 'purchase' | 'transfer_in' | 'commons_dividend';
+export type SourceType = 'deposit' | 'grant' | 'purchase' | 'transfer_in' | 'commons_dividend' | 'tba_deposit';
 
 /** Ledger entry types */
 export type EntryType =
@@ -91,7 +91,8 @@ export type EntryType =
   | 'grant' | 'shadow_charge' | 'shadow_reserve' | 'shadow_finalize'
   | 'commons_contribution' | 'revenue_share'
   | 'marketplace_sale' | 'marketplace_purchase'
-  | 'escrow' | 'escrow_release';
+  | 'escrow' | 'escrow_release'
+  | 'transfer_out';
 
 // =============================================================================
 // Constitutional Governance Types (Cycle 030)

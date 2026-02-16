@@ -50,6 +50,20 @@ export const ECONOMIC_EVENT_TYPES = [
   // Reconciliation operations
   'ReconciliationCompleted',
   'ReconciliationDivergence',
+  // Peer transfer operations (cycle-031)
+  'PeerTransferInitiated',
+  'PeerTransferCompleted',
+  'PeerTransferRejected',
+  // TBA binding & deposit operations (cycle-031)
+  'TbaBound',
+  'TbaDepositDetected',
+  'TbaDepositBridged',
+  'TbaDepositFailed',
+  // Agent governance participation (cycle-031)
+  'AgentProposalSubmitted',
+  'AgentProposalQuorumReached',
+  'AgentProposalActivated',
+  'AgentProposalRejected',
 ] as const;
 
 export type EconomicEventType = (typeof ECONOMIC_EVENT_TYPES)[number];

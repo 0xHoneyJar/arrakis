@@ -111,16 +111,16 @@ Directory structure:
 
 - **DELETE** `/sandbox/:sandboxId/reset` (`themes/sietch/src/api/middleware/auth.ts:417`)
 - **GET** `/.well-known/jwks.json` (`themes/sietch/src/api/routes/agents.routes.ts:142`)
+- **GET** `/:id/identity` (`themes/sietch/src/api/routes/agent-identity.routes.ts:99`)
+- **GET** `/:id/provenance` (`themes/sietch/src/api/routes/agent-identity.routes.ts:82`)
 - **GET** `/admin/stats` (`themes/sietch/src/api/middleware.ts:397`)
 - **GET** `/api/agents/health` (`themes/sietch/src/api/routes/agents.routes.ts:193`)
-- **GET** `/api/agents/models` (`themes/sietch/src/api/routes/agents.routes.ts:336`)
 - **GET** `/config` (`themes/sietch/src/api/middleware/dashboardAuth.ts:125`)
 - **GET** `/protected` (`themes/sietch/src/api/middleware/auth.ts:176`)
 - **PATCH** `/:userId/thresholds` (`themes/sietch/src/api/middleware/auth.ts:382`)
-- **POST** `/api/agents/invoke` (`themes/sietch/src/api/routes/agents.routes.ts:211`)
-- **POST** `/api/agents/stream` (`themes/sietch/src/api/routes/agents.routes.ts:243`)
 - **POST** `/config` (`themes/sietch/src/api/middleware/dashboardAuth.ts:217`)
 - **POST** `/endpoint` (`themes/sietch/src/api/middleware/rate-limit.ts:367`)
+- **POST** `/register` (`themes/sietch/src/api/routes/agent-identity.routes.ts:37`)
 
 ### CLI Commands
 
@@ -176,13 +176,13 @@ packages/cli/src/commands/sandbox/index.ts:185:    .command('status <name>')
 | `docs/` | 29 | Documentation | \u2014 |
 | `drizzle/` | 1 | Drizzle | \u2014 |
 | `evals/` | 122 | Benchmarking and regression framework for the Loa agent development system. Ensures framework changes don't degrade agent behavior through | [evals/README.md](evals/README.md) |
-| `grimoires/` | 1016 | Home to all grimoire directories for the Loa | [grimoires/README.md](grimoires/README.md) |
+| `grimoires/` | 1023 | Home to all grimoire directories for the Loa | [grimoires/README.md](grimoires/README.md) |
 | `infrastructure/` | 181 | This directory contains the Infrastructure as Code (IaC) for Arrakis, using Terraform to provision AWS | [infrastructure/README.md](infrastructure/README.md) |
 | `packages/` | 57581 | Shared libraries and utilities for the Arrakis | [packages/README.md](packages/README.md) |
 | `scripts/` | 10 | Utility scripts | \u2014 |
 | `sites/` | 28151 | Web properties for the Arrakis | [sites/README.md](sites/README.md) |
 | `tests/` | 83 | Test suites | \u2014 |
-| `themes/` | 65920 | Theme-specific backend services for Arrakis | [themes/README.md](themes/README.md) |
+| `themes/` | 65947 | Theme-specific backend services for Arrakis | [themes/README.md](themes/README.md) |
 
 ## Verification
 <!-- provenance: CODE-FACTUAL -->
@@ -235,15 +235,15 @@ npx drizzle-kit push
 npm run dev
 ```
 <!-- ground-truth-meta
-head_sha: ecf5eec8067a22b7b49c41102751357036614748
-generated_at: 2026-02-16T05:15:51Z
+head_sha: db656ede1431c98426a1aa09b3c3ab8c14854162
+generated_at: 2026-02-16T07:49:12Z
 generator: butterfreezone-gen v1.0.0
 sections:
   agent_context: 5b965bac0f10efb688ec656ae4f3cb27f8e4182b7fc7e9d0c9450e99e5512680
   capabilities: 7ac5066c6290b2bd238aba0cebe80e6c24d2c32ecc6b066842a065eb8c2300c1
   architecture: fcb6c51c96067ef45a3bb82065af7ec05c0d3105a4096632801512adf5d576d2
-  interfaces: eac4f85e91f7b478a9060e501714c068cd5cc105802fc05d1ff5631ca71fadbc
-  module_map: bc5a983969774f3e3d5479b68789f0f61ae906182c479b828e31f6a437c877c5
+  interfaces: d6dc2fbdbb399bc7920d06a1a407460f5486d81b27139b4385e85569f8c932f9
+  module_map: 9661a7cfb9c921635a57e7d40289a777240c81e03787470926bba638153eb444
   verification: 1e7814207f724f1e5323ade2599ff083cf54b6a6ffe7f42a2211e65149b17c18
   agents: ca263d1e05fd123434a21ef574fc8d76b559d22060719640a1f060527ef6a0b6
   ecosystem: 29fc390a2a77ec8d5bdbe657182dd47a2a5cd0c0c36c74c763c9e65cfad170e3

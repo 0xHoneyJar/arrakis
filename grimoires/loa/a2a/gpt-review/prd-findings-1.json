@@ -1,50 +1,62 @@
 {
   "verdict": "CHANGES_REQUIRED",
-  "summary": "As written, this PRD risks breaking the conservation invariant and/or building an unreconcilable dual-ledger system because it doesn’t define a single source of truth and atomicity boundaries for “earn → budget → spend,” and it introduces event/sequence guarantees that can’t be met with the proposed async emission and multi-writer reality.",
+  "summary": "As written, this PRD would likely ship a system that either breaks conservation (via deposits) or is vulnerable to governance capture, and it contains a few internal contradictions that will block correct implementation.",
   "blocking_issues": [
     {
-      "location": "FR-10 Reconciliation Test Harness + Section 9.3 “conservation across systems”",
-      "issue": "The PRD asserts a cross-system conservation check (earned - spent = net) without defining the bridging instrument and accounting semantics between the credit ledger (money) and budget engine (authorization).",
-      "why_blocking": "If the budget engine is “spending capacity” (not money), then “spent” in the budget engine is not necessarily a debit of earned funds unless there is an explicit, conserved transfer/lock/burn/mint mechanism. Without a defined bridge (e.g., credit-ledger reservation that mints budget capacity 1:1, or budget spend that finalizes a credit-ledger reservation), the reconciliation will either fail in real operation or force engineers to invent inconsistent semantics that violate the invariant.",
-      "fix": "Define the canonical bridge and invariants explicitly in ADR-008 and reference it in FR-10: (a) what event causes budget capacity to be created (e.g., CreditLedger ReservationCreated/Finalized), (b) whether capacity is strictly 1:1 backed by locked credits, (c) what constitutes “spent” (finalized reservation vs. budget consumption), (d) how refunds/releases map, and (e) which system is authoritative for each quantity. Update FR-10 to reconcile conserved quantities (e.g., locked_credits + available_credits + spent_credits) rather than mixing “earned funds” with “capacity” unless they are formally coupled."
+      "location": "FR-2.4 (TbaDepositBridge) + G-5 (conservation invariant) + FR-5.2 (TBA deposit bridge conservation)",
+      "issue": "The deposit bridge mints off-chain credit lots from on-chain deposits without specifying the backing/escrow model, asset denomination, or how on-chain value is conserved against off-chain liabilities.",
+      "why_blocking": "Minting credits from deposits is money creation unless the protocol also escrows/locks the on-chain asset under protocol control and defines a 1:1 conversion rate and redemption/burn path. Without a defined backing model, FR-5.2 is not implementable in a way that guarantees conservation, and reconciliation cannot prove anything beyond “we saw a tx hash.”",
+      "fix": "Specify the bridge as a double-entry liability issuance backed by verifiable escrow: (1) which token(s) are accepted (e.g., USDC on Berachain), (2) exact conversion rule to micro-USD (including decimals and FX/oracle policy), (3) what constitutes a “verified deposit” (to which contract/address, finality depth, chainId), (4) where funds are held (protocol-controlled escrow vs agent-controlled TBA) and why that is sufficient, and (5) the corresponding redemption/withdrawal flow (burn lots / reduce liability) or explicitly state deposits are non-redeemable and therefore not “conserved value,” only “accounting credits.” Update FR-5.2 to reconcile against escrow balances, not just observed deposits."
     },
     {
-      "location": "FR-8 Event Emission from Existing Operations + FR-7 sequence_number requirement",
-      "issue": "The PRD requires `sequence_number` to be monotonically increasing per entity while also stating event emission can be async/fire-and-forget and additive to existing writes.",
-      "why_blocking": "With async emission, retries, concurrent operations, and potential multi-process writers, you cannot guarantee per-entity monotonic sequence numbers without making event append part of the same transactional boundary (or introducing a dedicated sequencer). If consumers rely on sequence_number for ordering/replay, you’ll get gaps, reordering, or duplicates—breaking cross-system integration and reconciliation.",
-      "fix": "Either (1) make economic_events append part of the same DB transaction as the source-of-truth write and generate per-entity sequence via a transactional counter, or (2) drop the monotonic-per-entity requirement and instead specify ordering via (entity_id, sqlite rowid) / (global event_id + occurred_at) plus idempotency keys, or (3) introduce a single-writer/event-outbox pattern with deterministic ordering guarantees. Explicitly specify idempotency and exactly-once vs at-least-once delivery expectations."
+      "location": "FR-2.4 (mintLot with source_type: 'transfer_in') vs FR-1.5 (transfer_in/out entry types) and Problem Statement #1 (transfer_in exists but no transfer_out)",
+      "issue": "The PRD reuses `source_type: 'transfer_in'` for TBA deposits, conflating peer transfers with external deposits.",
+      "why_blocking": "This will break auditability and the new reconciliation check semantics: transfer_in/out are supposed to be zero-sum internal movements, while deposits are external inflows. Using the same source type makes it easy to accidentally “pass” transfer conservation while actually minting from deposits, or to misclassify deposits as peer transfers in reporting and limits.",
+      "fix": "Introduce distinct source/entry types for deposits (e.g., `tba_deposit_in` or `external_deposit_in`) and reserve `transfer_in/transfer_out` strictly for internal peer transfers. Update FR-5.1 to only include peer transfer types, and FR-5.2 to only include deposit types."
     },
     {
-      "location": "FR-1 Agent Entity-Specific Parameters + FR-3 Provenance Verification",
-      "issue": "“Agents don’t need KYC” conflicts with “Creator account has passed appropriate KYC level for their own earnings” and with payout/settlement flows that may pay the agent directly.",
-      "why_blocking": "If an agent can receive payouts (or route value) without KYC, but the creator is KYC’d, you must define whether the agent is a sub-account of the creator (regulated beneficiary = creator) or an independent beneficiary (regulated beneficiary = agent/TBA). Without this, engineers can implement a bypass that is non-compliant or blocks legitimate flows, and it will also affect fee caps, clawbacks, and dispute/hold logic.",
-      "fix": "Define the legal/economic beneficiary model for agent accounts in Phase 1: either (A) agent is always a controlled sub-ledger of a KYC’d creator (payout destination = creator; agent only accrues internal credits/spending), or (B) agent can be a payout beneficiary with alternative compliance requirements. Encode this into system_config/entity policy and into payout routing rules."
+      "location": "FR-1.2 (zero-sum) + FR-1.1 (atomically deduct/credit) + existing lot-based ledger model (reserve/finalize/release/mintLot)",
+      "issue": "The PRD requires a `transfer()` that atomically deducts and credits but does not specify how this maps onto the existing lot-based reserve/finalize model (and whether transfers are reversible, pending, or final).",
+      "why_blocking": "If the ledger is lot-based with reservation semantics, a naive “deduct/credit” can violate invariants under concurrency, partial failures, or idempotent retries (e.g., sender lot selection changes between retries). Without specifying whether transfer is a two-phase operation (reserve lots then finalize) and how correlation/idempotency ties to lot selection, implementers can build a transfer that passes unit tests but fails reconciliation under real retry/concurrency patterns.",
+      "fix": "Define transfer as a composed ledger operation: (a) reserve sender lots deterministically under `BEGIN IMMEDIATE`, (b) create paired entries with a shared correlation_id, (c) finalize both sides in the same SQLite transaction, and (d) define retry behavior: idempotency key must map to a stable transfer record that includes chosen lots (or a deterministic selection rule) so retries cannot select different lots."
     },
     {
-      "location": "FR-2 Agent Budget Caps and Circuit Breaker + Integration with reserve()/finalize() semantics",
-      "issue": "Budget caps are specified as rejecting `reserve()` at 100% but the PRD doesn’t define how this interacts with existing reservation TTL, partial finalization, releases, or concurrent reservations.",
-      "why_blocking": "Without a precise definition of what counts toward the 24h cap (reserved amount, finalized amount, or both), you can easily create either (a) a bypass (reserve many small amounts then finalize later), (b) deadlocks (cap hit due to outstanding reserves that later release), or (c) invariant breaks if releases aren’t reflected in the cap accounting. This will cause runaway spending or false positives—core to the PRD’s safety claims.",
-      "fix": "Specify cap accounting rules: choose one conserved measure (typically finalized spend) and define treatment of reservations (count at reserve-time with release decrement, or count only at finalize-time). Require idempotent cap updates tied to reservation_id and enforce atomicity with the ledger transaction (or a single authoritative counter in SQLite). Add explicit rules for TTL expiry and release events to decrement cap usage if reserve-time counting is used."
+      "location": "FR-1.8 (idempotency on ledger entries) + FR-1.5 (paired entries) + NFR-2 (BEGIN IMMEDIATE) + Event emission (FR-1.6)",
+      "issue": "Idempotency is specified at the entry level, but transfers are multi-row (at least two entries + possibly lot mutations + events). The PRD does not define the idempotency boundary or uniqueness constraints needed to prevent partial duplication.",
+      "why_blocking": "If only individual inserts are idempotent, a retry can create one side of the pair (e.g., transfer_in) without the other, or emit duplicate events, breaking zero-sum and/or downstream consumers. This is a classic failure mode in financial systems.",
+      "fix": "Introduce a first-class `transfers` table (or equivalent) keyed by `idempotency_key` with a unique constraint, storing from/to/amount/status/correlation_id. In a single `BEGIN IMMEDIATE` transaction: `INSERT OR IGNORE` transfer record, check status, then insert both ledger entries with a uniqueness constraint on (transfer_id, direction) or (correlation_id, entry_type), and emit events via outbox tied to the same transfer_id."
     },
     {
-      "location": "FR-4/FR-5/FR-6 Constitutional governance + NFR caching (Redis 60s TTL) + emergency override",
-      "issue": "Runtime-configurable constitutional parameters with Redis caching and SQLite fallback can lead to inconsistent enforcement across nodes, especially for safety-critical limits (holds, caps, fee caps), and the PRD doesn’t define consistency requirements or rollout semantics.",
-      "why_blocking": "If two workers read different config versions (due to cache TTL, race, or partial activation), you can violate invariants and governance intent (e.g., one node applies 0h hold for agents while another applies 48h; or fee caps differ). This is especially dangerous for settlement/payout rules and can break the 439+ tests nondeterministically.",
-      "fix": "Define config consistency model: e.g., config is read from SQLite within the transaction for any money-moving operation; Redis is only a read-through cache with version pinning; activation includes an `active_from` timestamp and a monotonically increasing config_version; operations must record the config_version used. Specify that emergency overrides still produce an immutable audit event and require deterministic application across all workers."
+      "location": "FR-3.5 (weight derived from credit balance) + FR-2 (deposit bridge mints credits) + Risk 8.1 (Sybil mitigation) + FR-3.8 (admin precedence)",
+      "issue": "Governance weight based on credit balance becomes trivially purchasable if deposits mint credits, enabling governance capture by any actor who can deposit funds (or by a creator concentrating funds across many agents).",
+      "why_blocking": "This undermines the stated Sybil mitigation and can cause the governance system to fail its purpose (agents/humans can buy parameter control). Admin precedence does not solve capture; it just re-centralizes and negates Principle 3 in practice.",
+      "fix": "Constrain agent governance weight to a non-purchasable or capped source: e.g., (1) delegation-only from KYC’d creators with per-creator caps, (2) time-weighted earned reputation not directly convertible from deposits, or (3) stake that is locked with unbonding + slashing and explicit caps. If credit balance remains a source, specify caps, lockup, and anti-concentration rules, and explicitly define whether bridged deposits count toward weight."
     },
     {
-      "location": "FR-1 “instant settlement” + Section 2/4.2 claims “agents can’t dispute”",
-      "issue": "Assuming “no dispute” for agents ignores fraud/clawback and error correction flows already present (EarningClawedBack, BonusFlagged) and creates a contradiction with needing deterministic validation.",
-      "why_blocking": "Instant settlement without a defined clawback/withhold policy for agents can create irreversible payouts/spend that later must be clawed back, potentially violating conservation or creating negative balances. If the system already supports flagged/withheld states, agent policy must be explicitly defined rather than “no dispute.”",
-      "fix": "Define agent settlement policy as “no human dispute window” but still subject to automated fraud/withhold/clawback rules. Specify whether agents can go negative, whether spending is allowed against unsettled/withheld earnings, and how clawbacks propagate to budget capacity (must be part of ADR-008)."
+      "location": "FR-3.2 (opts includes weight) vs NFR-2 (weight computed server-side, never client-supplied)",
+      "issue": "Direct contradiction: FR-3.2 implies caller supplies `weight`, while NFR-2 forbids client-supplied weight.",
+      "why_blocking": "Implementers will either violate security (accept client weight) or violate the FR API contract. Either way, governance will be wrong or insecure.",
+      "fix": "Change FR-3.2 so `opts` includes only `agentAccountId` (and maybe a delegation reference), and the service computes weight internally based on `governance.agent_weight_source`. Update acceptance criteria to assert server-side computation."
     },
     {
-      "location": "FR-11 Phase 2 TBA binding + Phase 1 provenance verification (FR-3)",
-      "issue": "Phase 1 requires provenance verification via finnNFT token ID, but Phase 2 introduces TBA binding; the PRD doesn’t define how Phase 1 links an agent to a token without the on-chain binding mechanism.",
-      "why_blocking": "Teams can implement incompatible identity keys (token_id vs tba_address vs internal agent_id), causing migration pain and broken provenance checks later. This is a classic “identity anchor” mismatch that breaks authorization and reconciliation.",
-      "fix": "Define a stable agent identity anchor now: e.g., (chain_id, contract_address, token_id) as the canonical agent identity in Phase 1, with optional tba_address added in Phase 2. Require all events and tables to carry this canonical identity (or a resolvable mapping) so Phase 2 is additive."
+      "location": "FR-4.2 (migration adapter dual-write) + FR-4.4 (DB trigger copies billing_events inserts to economic_events)",
+      "issue": "Two independent dual-write mechanisms are specified (application-level forwarder and DB trigger), which can cause duplicate economic_events or inconsistent ordering.",
+      "why_blocking": "Duplicate events will break consumers, reconciliation, and any exactly-once assumptions in outbox processing. Ordering differences can also cause hard-to-debug state divergence.",
+      "fix": "Pick exactly one dual-write strategy for the transition: either (A) application-level dual-write via a single outbox path (preferred for idempotency control), or (B) DB trigger-based replication. If using triggers, specify a unique constraint/idempotency key on economic_events to prevent duplicates and define how event_type/payload mapping occurs."
+    },
+    {
+      "location": "FR-4.5 (extend ECONOMIC_EVENT_TYPES with all event types currently only in BillingEventEmitter) + Appendix B (lists only 10 new events) + Goal G-4 (single event system)",
+      "issue": "The PRD claims full vocabulary consolidation but does not enumerate the legacy BillingEventEmitter event types that must be migrated, nor the schema mapping between billing_events and economic_events.",
+      "why_blocking": "Without an explicit mapping list, teams will miss event types, leading to silent loss of observability/backward compatibility and breaking existing consumers—exactly the failure mode this cycle is trying to prevent.",
+      "fix": "Add an explicit inventory: list every existing BillingEventEmitter event type and its target EconomicEvent type (or deprecation). Define payload schema compatibility rules and required fields so consumers can rely on stable contracts during the transition."
+    },
+    {
+      "location": "NFR-2 (EIP-55 checksum required) + FR-2.2 (basic hex validation) + Berachain ecosystem context",
+      "issue": "Requiring EIP-55 checksummed addresses is not reliably compatible with all upstream sources and does not add meaningful security if you already authenticate binding via provenance; it can also cause false rejections and operational failure.",
+      "why_blocking": "If upstream systems provide lowercase addresses (common), binding will fail and block all on-chain identity features (G-2). This is a practical ship-stopper in integrations.",
+      "fix": "Accept any valid 20-byte hex address, normalize to checksum for storage/display, and only enforce checksum on UI boundaries if desired. Keep provenance/authentication as the security control, not checksum formatting."
     }
   ],
-  "question": "",
+  "question": null,
   "iteration": 1
 }
