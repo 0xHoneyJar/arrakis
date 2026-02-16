@@ -90,6 +90,23 @@ export {
 // State machine provenance
 export { VENDORED_FROM } from './state-machines.js';
 
+// Conservation properties
+export type {
+  ConservationErrorCode,
+  ReconciliationFailureCode,
+  ConservationProperty,
+  EnforcementMechanism,
+  PropertyUniverse,
+  PropertyKind,
+} from './conservation-properties.js';
+
+export {
+  CONSERVATION_PROPERTIES,
+  ConservationViolationError,
+  getProperty,
+  getPropertiesByEnforcement,
+} from './conservation-properties.js';
+
 // Compatibility check
 export {
   PROTOCOL_VERSION,
