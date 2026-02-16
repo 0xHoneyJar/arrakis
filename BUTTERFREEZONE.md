@@ -1,76 +1,52 @@
 <!-- AGENT-CONTEXT
 name: arrakis
 type: framework
-purpose: Engagement intelligence platform for Web3 communities.
-key_files: [CLAUDE.md, .claude/loa/CLAUDE.loa.md, .loa.config.yaml, .claude/scripts/, .claude/skills/, package.json]
-interfaces: [/auditing-security, /autonomous-agent, /bridgebuilder-review, /browsing-constructs, /bug-triaging]
-dependencies: [git, jq, yq, node]
-capability_requirements:
-  - filesystem: read
-  - filesystem: write (scope: state)
-  - filesystem: write (scope: app)
-  - git: read_write
-  - shell: execute
-  - github_api: read_write (scope: external)
-version: v1.39.1
-trust_level: L2-verified
+purpose: No description available
+key_files: [.claude/loa/CLAUDE.loa.md, .loa.config.yaml, .claude/scripts/, package.json]
+version: v1.32.0
+trust_level: grounded
 -->
 
 # arrakis
 
 <!-- provenance: DERIVED -->
-Engagement intelligence platform for Web3 communities.
-
-The framework provides 29 specialized skills, built with TypeScript/JavaScript, Python, Shell.
+No description available
 
 ## Key Capabilities
 <!-- provenance: DERIVED -->
-The project exposes 15 key entry points across its public API surface.
-
-### .claude/adapters
-
-- **_build_provider_config** — Build ProviderConfig from merged hounfour config. (`.claude/adapters/cheval.py:149`)
-- **_error_json** — Format error as JSON for stderr (SDD §4.2.2 Error Taxonomy). (`.claude/adapters/cheval.py:74`)
-- **_load_persona** — Load persona.md for the given agent with optional system merge (SDD §4.3.2). (`.claude/adapters/cheval.py:93`)
-- **cmd_invoke** — Main invocation: resolve agent → call provider → return response. (`.claude/adapters/cheval.py:177`)
-- **cmd_print_config** — Print effective merged config with source annotations. (`.claude/adapters/cheval.py:326`)
-- **cmd_validate_bindings** — Validate all agent bindings. (`.claude/adapters/cheval.py:337`)
-- **main** — CLI entry point. (`.claude/adapters/cheval.py:351`)
-
-### .claude/adapters/loa_cheval/config
-
-- **LazyValue** — Deferred interpolation token. (`.claude/adapters/loa_cheval/config/interpolation.py:41`)
-- **_check_env_allowed** — Check if env var name is in the allowlist. (`.claude/adapters/loa_cheval/config/interpolation.py:122`)
-- **_check_file_allowed** — Validate and resolve a file path for secret reading. (`.claude/adapters/loa_cheval/config/interpolation.py:133`)
-- **_deep_merge** — Deep merge overlay into base. (`.claude/adapters/loa_cheval/config/loader.py:53`)
-- **_find_project_root** — Walk up from cwd to find project root (contains .loa.config.yaml or .claude/). (`.claude/adapters/loa_cheval/config/loader.py:64`)
-- **_get_credential_provider** — Get the credential provider chain (lazily initialized, thread-safe). (`.claude/adapters/loa_cheval/config/interpolation.py:192`)
-- **_matches_lazy_path** — Check if a dotted config key path matches any lazy path pattern. (`.claude/adapters/loa_cheval/config/interpolation.py:275`)
-- **_reset_credential_provider** — Reset credential provider cache. (`.claude/adapters/loa_cheval/config/interpolation.py:205`)
+- `.claude/adapters/cheval.py:_build_provider_config`
+- `.claude/adapters/cheval.py:_error_json`
+- `.claude/adapters/cheval.py:_load_persona`
+- `.claude/adapters/cheval.py:cmd_invoke`
+- `.claude/adapters/cheval.py:cmd_print_config`
+- `.claude/adapters/cheval.py:cmd_validate_bindings`
+- `.claude/adapters/cheval.py:main`
+- `.claude/adapters/loa_cheval/config/interpolation.py:LazyValue`
+- `.claude/adapters/loa_cheval/config/interpolation.py:_check_env_allowed`
+- `.claude/adapters/loa_cheval/config/interpolation.py:_check_file_allowed`
+- `.claude/adapters/loa_cheval/config/interpolation.py:_get_credential_provider`
+- `.claude/adapters/loa_cheval/config/interpolation.py:_matches_lazy_path`
+- `.claude/adapters/loa_cheval/config/interpolation.py:_reset_credential_provider`
+- `.claude/adapters/loa_cheval/config/interpolation.py:_resolve_env`
+- `.claude/adapters/loa_cheval/config/interpolation.py:interpolate_config`
+- `.claude/adapters/loa_cheval/config/interpolation.py:interpolate_value`
+- `.claude/adapters/loa_cheval/config/interpolation.py:redact_config`
+- `.claude/adapters/loa_cheval/config/loader.py:_deep_merge`
+- `.claude/adapters/loa_cheval/config/loader.py:_find_project_root`
+- `.claude/adapters/loa_cheval/config/loader.py:load_system_defaults`
+- `.claude/commands/scripts/common.sh:check_audit_prerequisites`
+- `.claude/commands/scripts/common.sh:check_dir_exists`
+- `.claude/commands/scripts/common.sh:check_file_exists`
+- `.claude/commands/scripts/common.sh:check_implement_prerequisites`
+- `.claude/commands/scripts/common.sh:check_review_prerequisites`
+- `.claude/commands/scripts/common.sh:check_reviewer_report`
+- `.claude/commands/scripts/common.sh:check_senior_approval`
+- `.claude/commands/scripts/common.sh:check_setup_complete`
+- `.claude/commands/scripts/common.sh:check_sprint_dir`
+- `.claude/commands/scripts/common.sh:check_sprint_in_plan`
 
 ## Architecture
 <!-- provenance: DERIVED -->
-The architecture follows a three-zone model: System (`.claude/`) contains framework-managed scripts and skills, State (`grimoires/`, `.beads/`) holds project-specific artifacts and memory, and App (`src/`, `lib/`) contains developer-owned application code. The framework orchestrates 29 specialized skills through slash commands.
-```mermaid
-graph TD
-    apps[apps]
-    decisions[decisions]
-    docs[docs]
-    drizzle[drizzle]
-    evals[evals]
-    grimoires[grimoires]
-    infrastructure[infrastructure]
-    packages[packages]
-    Root[Project Root]
-    Root --> apps
-    Root --> decisions
-    Root --> docs
-    Root --> drizzle
-    Root --> evals
-    Root --> grimoires
-    Root --> infrastructure
-    Root --> packages
-```
 Directory structure:
 ```
 ./apps
@@ -108,22 +84,28 @@ Directory structure:
 ## Interfaces
 <!-- provenance: DERIVED -->
 ### HTTP Routes
-
-- **DELETE** `/sandbox/:sandboxId/reset` (`themes/sietch/src/api/middleware/auth.ts:417`)
-- **GET** `/.well-known/jwks.json` (`themes/sietch/src/api/routes/agents.routes.ts:142`)
-- **GET** `/:id/identity` (`themes/sietch/src/api/routes/agent-identity.routes.ts:99`)
-- **GET** `/:id/provenance` (`themes/sietch/src/api/routes/agent-identity.routes.ts:82`)
-- **GET** `/admin/stats` (`themes/sietch/src/api/middleware.ts:397`)
-- **GET** `/api/agents/health` (`themes/sietch/src/api/routes/agents.routes.ts:193`)
-- **GET** `/config` (`themes/sietch/src/api/middleware/dashboardAuth.ts:125`)
-- **GET** `/protected` (`themes/sietch/src/api/middleware/auth.ts:176`)
-- **PATCH** `/:userId/thresholds` (`themes/sietch/src/api/middleware/auth.ts:382`)
-- **POST** `/config` (`themes/sietch/src/api/middleware/dashboardAuth.ts:217`)
-- **POST** `/endpoint` (`themes/sietch/src/api/middleware/rate-limit.ts:367`)
-- **POST** `/register` (`themes/sietch/src/api/routes/agent-identity.routes.ts:37`)
+themes/sietch/src/api/middleware.ts:397: * router.get('/admin/stats', (req, res) => { ... });
+themes/sietch/src/api/middleware/auth.ts:176: * router.get('/protected', (req, res) => {
+themes/sietch/src/api/middleware/auth.ts:382: * router.patch('/:userId/thresholds', requireAuth, requireQARole, handler);
+themes/sietch/src/api/middleware/auth.ts:417: * router.delete('/sandbox/:sandboxId/reset', requireAuth, requireAdminRole, handler);
+themes/sietch/src/api/middleware/dashboardAuth.ts:125:   * router.get('/config', requireDashboardAuth, handler);
+themes/sietch/src/api/middleware/dashboardAuth.ts:217:   * router.post('/config', requireDashboardAuth, liveAdminCheck, handler);
+themes/sietch/src/api/middleware/rate-limit.ts:367: * router.post('/endpoint', writeLimiter, handler);
+themes/sietch/src/api/routes/admin/agent-config.ts:139:  router.get(
+themes/sietch/src/api/routes/admin/agent-config.ts:162:  router.put(
+themes/sietch/src/api/routes/admin/agent-config.ts:210:  router.post(
+themes/sietch/src/api/routes/admin/agent-config.ts:247:  router.post(
+themes/sietch/src/api/routes/admin/byok.routes.ts:109:  router.post(
+themes/sietch/src/api/routes/admin/byok.routes.ts:147:  router.get(
+themes/sietch/src/api/routes/admin/byok.routes.ts:164:  router.delete(
+themes/sietch/src/api/routes/admin/byok.routes.ts:189:  router.post(
+themes/sietch/src/api/routes/agents.routes.ts:142:  router.get('/.well-known/jwks.json', (req: Request, res: Response) => {
+themes/sietch/src/api/routes/agents.routes.ts:193:  router.get('/api/agents/health', setDefaultRateLimitPolicy, killSwitch(agentEnabled), async (_req: Request, res: Response) => {
+themes/sietch/src/api/routes/agents.routes.ts:211:  router.post('/api/agents/invoke', ...authMiddlewares, async (req: Request, res: Response) => {
+themes/sietch/src/api/routes/agents.routes.ts:243:  router.post('/api/agents/stream', ...authMiddlewares, async (req: Request, res: Response) => {
+themes/sietch/src/api/routes/agents.routes.ts:336:  router.get('/api/agents/models', ...authMiddlewares, (req: Request, res: Response) => {
 
 ### CLI Commands
-
 packages/cli/src/commands/auth/index.ts:113:    .command('login')
 packages/cli/src/commands/auth/index.ts:130:    .command('logout')
 packages/cli/src/commands/auth/index.ts:145:    .command('whoami')
@@ -136,68 +118,52 @@ packages/cli/src/commands/sandbox/index.ts:168:    .command('unlink <sandbox> <g
 packages/cli/src/commands/sandbox/index.ts:185:    .command('status <name>')
 
 ### Skill Commands
-
-- **/auditing-security** — Paranoid Cypherpunk Auditor
-- **/autonomous-agent** — Autonomous agent
-- **/bridgebuilder-review** — Bridgebuilder — Autonomous PR Review
-- **/browsing-constructs** — Provide a multi-select UI for browsing and installing packs from the Loa Constructs Registry. Enables composable skill installation per-repo.
-- **/bug-triaging** — Bug Triage Skill
-- **/butterfreezone-gen** — BUTTERFREEZONE Generation Skill
-- **/continuous-learning** — Continuous Learning Skill
-- **/deploying-infrastructure** — Deploying infrastructure
-- **/designing-architecture** — Architecture Designer
-- **/discovering-requirements** — Discovering Requirements
-- **/enhancing-prompts** — Enhancing prompts
-- **/eval-running** — Eval running
-- **/flatline-knowledge** — Provides optional NotebookLM integration for the Flatline Protocol, enabling external knowledge retrieval from curated AI-powered notebooks.
-- **/flatline-reviewer** — Flatline reviewer
-- **/flatline-scorer** — Flatline scorer
-- **/flatline-skeptic** — Flatline skeptic
-- **/gpt-reviewer** — Gpt reviewer
-- **/implementing-tasks** — Sprint Task Implementer
-- **/managing-credentials** — /loa-credentials — Credential Management
-- **/mounting-framework** — Create structure (preserve if exists)
-- **/planning-sprints** — Sprint Planner
-- **/red-teaming** — Use the Flatline Protocol's red team mode to generate creative attack scenarios against design documents. Produces structured attack scenarios with consensus classification and architectural counter-designs.
-- **/reviewing-code** — Senior Tech Lead Reviewer
-- **/riding-codebase** — Riding Through the Codebase
-- **/rtfm-testing** — RTFM Testing Skill
-- **/run-bridge** — Run Bridge — Autonomous Excellence Loop
-- **/run-mode** — Run mode
-- **/simstim-workflow** — Check post-PR state
-- **/translating-for-executives** — Translating for executives
+- `/auditing-security`
+- `/autonomous-agent`
+- `/bridgebuilder-review`
+- `/browsing-constructs`
+- `/bug-triaging`
+- `/butterfreezone-gen`
+- `/continuous-learning`
+- `/deploying-infrastructure`
+- `/designing-architecture`
+- `/discovering-requirements`
+- `/enhancing-prompts`
+- `/eval-running`
+- `/flatline-knowledge`
+- `/flatline-reviewer`
+- `/flatline-scorer`
+- `/flatline-skeptic`
+- `/gpt-reviewer`
+- `/implementing-tasks`
+- `/managing-credentials`
+- `/mounting-framework`
+- `/planning-sprints`
+- `/red-teaming`
+- `/reviewing-code`
+- `/riding-codebase`
+- `/rtfm-testing`
+- `/run-bridge`
+- `/run-mode`
+- `/simstim-workflow`
+- `/translating-for-executives`
 
 ## Module Map
 <!-- provenance: DERIVED -->
-| Module | Files | Purpose | Documentation |
-|--------|-------|---------|---------------|
-| `apps/` | 34983 | Apps | \u2014 |
-| `decisions/` | 6 | Documentation | \u2014 |
-| `docs/` | 29 | Documentation | \u2014 |
-| `drizzle/` | 1 | Drizzle | \u2014 |
-| `evals/` | 122 | Benchmarking and regression framework for the Loa agent development system. Ensures framework changes don't degrade agent behavior through | [evals/README.md](evals/README.md) |
-| `grimoires/` | 1023 | Home to all grimoire directories for the Loa | [grimoires/README.md](grimoires/README.md) |
-| `infrastructure/` | 181 | This directory contains the Infrastructure as Code (IaC) for Arrakis, using Terraform to provision AWS | [infrastructure/README.md](infrastructure/README.md) |
-| `packages/` | 57581 | Shared libraries and utilities for the Arrakis | [packages/README.md](packages/README.md) |
-| `scripts/` | 10 | Utility scripts | \u2014 |
-| `sites/` | 28151 | Web properties for the Arrakis | [sites/README.md](sites/README.md) |
-| `tests/` | 83 | Test suites | \u2014 |
-| `themes/` | 65947 | Theme-specific backend services for Arrakis | [themes/README.md](themes/README.md) |
-
-## Verification
-<!-- provenance: CODE-FACTUAL -->
-- Trust Level: **L2 — CI Verified**
-- 83 test files across 1 suite
-- CI/CD: GitHub Actions (23 workflows)
-- Security: SECURITY.md present
-
-## Agents
-<!-- provenance: DERIVED -->
-The project defines 1 specialized agent persona.
-
-| Agent | Identity | Voice |
-|-------|----------|-------|
-| Bridgebuilder | You are the Bridgebuilder — a senior engineering mentor who has spent decades building systems at scale. | Your voice is warm, precise, and rich with analogy. |
+| Module | Files | Purpose |
+|--------|-------|---------|
+| `apps/` | 34983 |  |
+| `decisions/` | 6 |  |
+| `docs/` | 28 | Documentation |
+| `drizzle/` | 1 |  |
+| `evals/` | 122 |  |
+| `grimoires/` | 971 | Loa state files |
+| `infrastructure/` | 181 |  |
+| `packages/` | 57581 |  |
+| `scripts/` | 10 | Utility scripts |
+| `sites/` | 28151 |  |
+| `tests/` | 83 | Test suites |
+| `themes/` | 65863 |  |
 
 ## Ecosystem
 <!-- provenance: OPERATIONAL -->
@@ -214,6 +180,7 @@ The project defines 1 specialized agent persona.
 
 ## Quick Start
 <!-- provenance: OPERATIONAL -->
+## Quick Start
 
 ```bash
 # Clone
@@ -232,20 +199,16 @@ cd themes/sietch
 npx drizzle-kit push
 
 # Start development server
-npm run dev
-```
 <!-- ground-truth-meta
-head_sha: db656ede1431c98426a1aa09b3c3ab8c14854162
-generated_at: 2026-02-16T07:49:12Z
+head_sha: 0fa6a7805769beda28feffff5a39c08f0cea833d
+generated_at: 2026-02-15T11:39:28Z
 generator: butterfreezone-gen v1.0.0
 sections:
-  agent_context: 5b965bac0f10efb688ec656ae4f3cb27f8e4182b7fc7e9d0c9450e99e5512680
-  capabilities: 7ac5066c6290b2bd238aba0cebe80e6c24d2c32ecc6b066842a065eb8c2300c1
-  architecture: fcb6c51c96067ef45a3bb82065af7ec05c0d3105a4096632801512adf5d576d2
-  interfaces: d6dc2fbdbb399bc7920d06a1a407460f5486d81b27139b4385e85569f8c932f9
-  module_map: 9661a7cfb9c921635a57e7d40289a777240c81e03787470926bba638153eb444
-  verification: 1e7814207f724f1e5323ade2599ff083cf54b6a6ffe7f42a2211e65149b17c18
-  agents: ca263d1e05fd123434a21ef574fc8d76b559d22060719640a1f060527ef6a0b6
+  agent_context: 8e6e81f20ee2d5a669227a7d14f18b33f71bfb5fafaf62d3e80e4b7fa3cd9590
+  capabilities: fb6ef381fb7c2032e949e99a675dae0b4d58aabe935aec3c9c48c362594e9ca7
+  architecture: ac0df8c3054b47de4a589106e66d40cd9ac67a53a68f20b02cef3ce1bed2beea
+  interfaces: ad3885132bd141b5cc8707fa779d267bfe28bcd3fafb5b0bcf1d9f3b32bb71af
+  module_map: 97194de1a408b1f004b2c217039af54beafae77016a6afd0b0aaeff5bc19cf19
   ecosystem: 29fc390a2a77ec8d5bdbe657182dd47a2a5cd0c0c36c74c763c9e65cfad170e3
-  quick_start: 868e137672d3b0c0543c010a80cc8cf15d67586c127c5c80a8287d2d97a7dfcf
+  quick_start: e26d726aebbf5e8317bee1b55fe4e7979ca39f8a9eee91f7c3b47373a268ff8d
 -->

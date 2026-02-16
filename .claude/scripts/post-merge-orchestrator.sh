@@ -36,7 +36,7 @@ SKIP_RTFM=false
 
 # Phase matrix: which phases run for each PR type
 declare -A CYCLE_PHASES=( [classify]=1 [semver]=1 [changelog]=1 [gt_regen]=1 [rtfm]=1 [tag]=1 [release]=1 [notify]=1 )
-declare -A BUGFIX_PHASES=( [classify]=1 [semver]=1 [changelog]=1 [tag]=1 [release]=1 [notify]=1 )
+declare -A BUGFIX_PHASES=( [classify]=1 [semver]=1 [tag]=1 [notify]=1 )
 declare -A OTHER_PHASES=( [classify]=1 [semver]=1 [tag]=1 [notify]=1 )
 
 # Ordered phase list
@@ -289,144 +289,6 @@ phase_semver() {
   fi
 }
 
-# =============================================================================
-# CHANGELOG Auto-Generation (FR-1, cycle-016)
-# =============================================================================
-
-# Generate a CHANGELOG entry from PR metadata and conventional commits
-# when no [Unreleased] section is maintained by developers.
-auto_generate_changelog_entry() {
-  local version="$1"
-  local changelog="$2"
-  local date_str
-  date_str=$(date +%Y-%m-%d)
-
-  # 1. Get PR metadata (single API call for efficiency)
-  local pr_title="" pr_body=""
-  if [[ -n "${PR_NUMBER:-}" ]] && check_gh 2>/dev/null; then
-    local pr_json
-    pr_json=$(gh pr view "$PR_NUMBER" --json title,body 2>/dev/null || true)
-    if [[ -n "$pr_json" ]]; then
-      pr_title=$(echo "$pr_json" | jq -r '.title // ""')
-      pr_body=$(echo "$pr_json" | jq -r '.body // ""')
-    fi
-  fi
-
-  # 2. Get conventional commits since previous tag
-  # Use grep -A1 to find the tag BEFORE the current version (not just head -1)
-  local prev_tag
-  prev_tag=$(git -C "$PROJECT_ROOT" tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | \
-    grep -v "^v${version}$" | head -1)
-  local range="${prev_tag:+${prev_tag}..HEAD}"
-
-  local feat_commits fix_commits
-  if [[ -n "$range" ]]; then
-    feat_commits=$(git -C "$PROJECT_ROOT" log "$range" --format='%s' 2>/dev/null | grep -E '^feat' || true)
-    fix_commits=$(git -C "$PROJECT_ROOT" log "$range" --format='%s' 2>/dev/null | grep -E '^fix' || true)
-  else
-    feat_commits=$(git -C "$PROJECT_ROOT" log --format='%s' 2>/dev/null | grep -E '^feat' || true)
-    fix_commits=$(git -C "$PROJECT_ROOT" log --format='%s' 2>/dev/null | grep -E '^fix' || true)
-  fi
-
-  # 3. Extract subtitle from PR title
-  local subtitle=""
-  if [[ -n "$pr_title" ]]; then
-    # Store regex in variable — bash [[ =~ ]] requires this for patterns with parentheses
-    local re_with_pr_ref='^(feat|fix)\([^)]+\): (.+) \(#[0-9]+\)$'
-    local re_simple='^(feat|fix)\([^)]+\): (.+)$'
-    if [[ "$pr_title" =~ $re_with_pr_ref ]]; then
-      subtitle="${BASH_REMATCH[2]}"
-    elif [[ "$pr_title" =~ $re_simple ]]; then
-      subtitle="${BASH_REMATCH[2]}"
-    else
-      subtitle="$pr_title"
-    fi
-  fi
-
-  # 4. Extract summary from PR body (## Summary section or first paragraph)
-  local summary=""
-  if [[ -n "$pr_body" ]]; then
-    # Try ## Summary section first (awk handles last-section case correctly)
-    summary=$(printf '%s\n' "$pr_body" | awk '/^## Summary/{f=1;next} /^## /{f=0} f' | head -5)
-    if [[ -z "$summary" ]]; then
-      # Fall back to first non-empty paragraph
-      summary=$(printf '%s\n' "$pr_body" | awk 'NF{p=1} p && !NF{exit} p' | head -5)
-    fi
-  fi
-
-  # 5. Build entry
-  local entry=""
-  entry="## [${version}] — ${date_str}"
-  if [[ -n "$subtitle" ]]; then
-    entry+=" — ${subtitle}"
-  fi
-  entry+=$'\n'
-
-  if [[ -n "$summary" ]]; then
-    entry+=$'\n'"${summary}"$'\n'
-  fi
-
-  # Regex stored in variable — bash [[ =~ ]] requires this for patterns with parentheses
-  local re_feat_scope='^feat\(([^)]+)\)'
-  local re_fix_scope='^fix\(([^)]+)\)'
-
-  if [[ -n "$feat_commits" ]]; then
-    entry+=$'\n'"### Added"$'\n\n'
-    while IFS= read -r commit; do
-      local msg="${commit#*: }"
-      local scope=""
-      if [[ "$commit" =~ $re_feat_scope ]]; then
-        scope="${BASH_REMATCH[1]}"
-      fi
-      if [[ -n "$scope" && "$scope" != "release" ]]; then
-        entry+="- **${scope}**: ${msg}"$'\n'
-      else
-        entry+="- ${msg}"$'\n'
-      fi
-    done <<< "$feat_commits"
-  fi
-
-  if [[ -n "$fix_commits" ]]; then
-    entry+=$'\n'"### Fixed"$'\n\n'
-    while IFS= read -r commit; do
-      local msg="${commit#*: }"
-      local scope=""
-      if [[ "$commit" =~ $re_fix_scope ]]; then
-        scope="${BASH_REMATCH[1]}"
-      fi
-      if [[ -n "$scope" && "$scope" != "release" ]]; then
-        entry+="- **${scope}**: ${msg}"$'\n'
-      else
-        entry+="- ${msg}"$'\n'
-      fi
-    done <<< "$fix_commits"
-  fi
-
-  if [[ -n "${PR_NUMBER:-}" ]]; then
-    entry+=$'\n'"_Source: PR #${PR_NUMBER}_"$'\n'
-  fi
-
-  # 6. Insert into CHANGELOG before the first existing "## [" entry
-  local tmpfile
-  tmpfile=$(mktemp)
-  local inserted=false
-
-  while IFS= read -r line; do
-    if [[ "$inserted" == false && "$line" =~ ^##\ \[ ]]; then
-      printf '%s\n\n' "$entry" >> "$tmpfile"
-      inserted=true
-    fi
-    printf '%s\n' "$line" >> "$tmpfile"
-  done < "$changelog"
-
-  # If no existing ## [ found, append after header
-  if [[ "$inserted" == false ]]; then
-    printf '\n%s\n' "$entry" >> "$tmpfile"
-  fi
-
-  mv "$tmpfile" "$changelog"
-}
-
 phase_changelog() {
   update_phase "changelog" "in_progress"
 
@@ -448,7 +310,15 @@ phase_changelog() {
     return 0
   fi
 
-  # Check if version already exists (idempotency)
+  # Check if [Unreleased] section exists
+  if ! grep -q '## \[Unreleased\]' "$changelog"; then
+    update_phase "changelog" "skipped" '{"reason": "no [Unreleased] section"}'
+    increment_metric "phases_skipped"
+    echo "[CHANGELOG] No [Unreleased] section — skipped"
+    return 0
+  fi
+
+  # Check if version already exists
   if grep -q "## \[${version}\]" "$changelog"; then
     update_phase "changelog" "skipped" '{"reason": "version already in CHANGELOG"}'
     increment_metric "phases_skipped"
@@ -463,39 +333,27 @@ phase_changelog() {
     return 0
   fi
 
-  # Check if [Unreleased] section exists
-  if grep -q '## \[Unreleased\]' "$changelog"; then
-    # Existing behavior: finalize [Unreleased] section with versioned header
-    local date_str
-    date_str=$(date +%Y-%m-%d)
-    local tmpfile
-    tmpfile=$(mktemp)
-    sed "s/## \[Unreleased\]/## [Unreleased]\\
-\\
-## [${version}] — ${date_str}/" "$changelog" > "$tmpfile" && mv "$tmpfile" "$changelog"
-
-    git -C "$PROJECT_ROOT" add "$changelog"
-    if ! git -C "$PROJECT_ROOT" diff --cached --quiet; then
-      git -C "$PROJECT_ROOT" commit -m "chore(release): v${version} — finalize CHANGELOG"
-    fi
-
-    update_phase "changelog" "completed" '{"mode": "finalized"}'
-    increment_metric "phases_completed"
-    echo "[CHANGELOG] Finalized v${version}"
+  # Replace [Unreleased] with versioned header
+  local date_str
+  date_str=$(date +%Y-%m-%d)
+  # Portable sed -i (GNU uses -i, macOS/BSD uses -i '')
+  if sed --version 2>/dev/null | grep -q GNU; then
+    sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [${version}] - ${date_str}/" "$changelog"
   else
-    # New behavior (FR-1): auto-generate CHANGELOG entry from PR metadata + commits
-    echo "[CHANGELOG] No [Unreleased] section — auto-generating entry"
-    auto_generate_changelog_entry "$version" "$changelog"
-
-    git -C "$PROJECT_ROOT" add "$changelog"
-    if ! git -C "$PROJECT_ROOT" diff --cached --quiet; then
-      git -C "$PROJECT_ROOT" commit -m "chore(release): v${version} — auto-generate CHANGELOG entry"
-    fi
-
-    update_phase "changelog" "completed" '{"mode": "auto-generated"}'
-    increment_metric "phases_completed"
-    echo "[CHANGELOG] Auto-generated entry for v${version}"
+    sed -i '' "s/## \[Unreleased\]/## [Unreleased]\\
+\\
+## [${version}] - ${date_str}/" "$changelog"
   fi
+
+  # Commit the change
+  git -C "$PROJECT_ROOT" add "$changelog"
+  if ! git -C "$PROJECT_ROOT" diff --cached --quiet; then
+    git -C "$PROJECT_ROOT" commit -m "chore(release): v${version} — finalize CHANGELOG"
+  fi
+
+  update_phase "changelog" "completed"
+  increment_metric "phases_completed"
+  echo "[CHANGELOG] Finalized v${version}"
 }
 
 phase_gt_regen() {
@@ -734,26 +592,8 @@ phase_release() {
     notes="Release ${tag}"
   fi
 
-  # Extract release title with subtitle (FR-4, cycle-016)
-  local release_title="${tag}"
-  local pr_title_raw
-  if [[ -n "${PR_NUMBER:-}" ]] && check_gh 2>/dev/null; then
-    pr_title_raw=$(gh pr view "$PR_NUMBER" --json title --jq '.title' 2>/dev/null || true)
-    if [[ -n "$pr_title_raw" ]]; then
-      local subtitle=""
-      local re_title_with_pr='^(feat|fix)\([^)]+\): (.+) \(#[0-9]+\)$'
-      local re_title_simple='^(feat|fix)\([^)]+\): (.+)$'
-      if [[ "$pr_title_raw" =~ $re_title_with_pr ]]; then
-        subtitle="${BASH_REMATCH[2]}"
-      elif [[ "$pr_title_raw" =~ $re_title_simple ]]; then
-        subtitle="${BASH_REMATCH[2]}"
-      fi
-      [[ -n "$subtitle" ]] && release_title="${tag} — ${subtitle}"
-    fi
-  fi
-
   # Create release
-  if gh release create "$tag" --title "$release_title" --notes "$notes" --verify-tag 2>/dev/null; then
+  if gh release create "$tag" --title "${tag}" --notes "$notes" --verify-tag 2>/dev/null; then
     update_phase "release" "completed" "{\"tag\": \"${tag}\"}"
     increment_metric "phases_completed"
     echo "[RELEASE] Created GitHub Release ${tag}"
