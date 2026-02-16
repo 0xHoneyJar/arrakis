@@ -108,3 +108,15 @@ export type {
 export {
   BILLING_ENTRY_CONTRACT_VERSION,
 } from './billing-entry.js';
+
+// Config schema registry
+export type {
+  ParamSchema,
+  ValidationResult,
+} from './config-schema.js';
+
+export {
+  CONFIG_SCHEMA,
+  CONFIG_FALLBACKS,
+  validateConfigValue,
+} from './config-schema.js';

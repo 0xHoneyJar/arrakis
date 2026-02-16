@@ -130,7 +130,7 @@ function verifyHS256(token: string, secret: string): AdminTokenPayload | null {
   }
 }
 
-function requireAdminAuth(req: Request, res: Response, next: Function): void {
+export function requireAdminAuth(req: Request, res: Response, next: Function): void {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Authorization required' });
