@@ -1,4 +1,4 @@
-<!-- @loa-managed: true | version: 1.37.0 | hash: c7b53a0ffac7360c96cd5696af08ba0ee502123383a39b247aae036202f83af1PLACEHOLDER -->
+<!-- @loa-managed: true | version: 1.39.0 | hash: PLACEHOLDER -->
 <!-- WARNING: This file is managed by the Loa Framework. Do not edit directly. -->
 
 # Loa Framework Instructions
@@ -19,6 +19,7 @@ Agent-driven development framework. Skills auto-load their SKILL.md when invoked
 | Memory | `.claude/loa/reference/memory-reference.md` |
 | Guardrails | `.claude/loa/reference/guardrails-reference.md` |
 | Hooks | `.claude/loa/reference/hooks-reference.md` |
+| Agent Teams | `.claude/loa/reference/agent-teams-reference.md` |
 
 ## Beads-First Architecture (v1.29.0)
 
@@ -233,12 +234,44 @@ Defense-in-depth via Claude Code hooks. Active in ALL modes (interactive, autono
 | Hook | Event | Purpose |
 |------|-------|---------|
 | `block-destructive-bash.sh` | PreToolUse:Bash | Block `rm -rf`, force-push, reset --hard, clean -f |
+| `team-role-guard.sh` | PreToolUse:Bash | Enforce lead-only ops in Agent Teams (no-op in single-agent) |
+| `team-role-guard-write.sh` | PreToolUse:Write/Edit | Block teammate writes to System Zone, state files, and append-only files |
+| `team-skill-guard.sh` | PreToolUse:Skill | Block lead-only skill invocations for teammates |
 | `run-mode-stop-guard.sh` | Stop | Guard against premature exit during autonomous runs |
 | `mutation-logger.sh` | PostToolUse:Bash | Log mutating commands to `.run/audit.jsonl` |
+| `write-mutation-logger.sh` | PostToolUse:Write/Edit | Log Write/Edit file modifications to `.run/audit.jsonl` |
 
 **Deny Rules**: `.claude/hooks/settings.deny.json` — blocks agent access to `~/.ssh/`, `~/.aws/`, `~/.kube/`, `~/.gnupg/`, credential stores.
 
 **Reference**: `.claude/loa/reference/hooks-reference.md`
+
+## Agent Teams Compatibility (v1.39.0)
+
+When Claude Code Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) is active, additional rules apply. Without Agent Teams, this section has no effect.
+
+### Agent Teams Constraints
+
+| Rule | Why |
+|------|-----|
+<!-- @constraint-generated: start agent_teams_constraints | hash:c020-teamcreate -->
+<!-- DO NOT EDIT — generated from .claude/data/constraints.json -->
+| MUST restrict planning skills to team lead only — teammates implement, review, and audit only | Planning skills assume single-writer semantics |
+| MUST serialize all beads operations through team lead — teammates report via SendMessage | SQLite single-writer prevents lock contention |
+| MUST only let team lead write to `.run/` state files — teammates report via SendMessage | Read-modify-write pattern prevents lost updates |
+| MUST coordinate git commit/push through team lead — teammates report completed work via SendMessage | Git working tree and index are shared mutable state |
+| MUST NOT modify .claude/ (System Zone) — framework files are lead-only, enforced by PreToolUse:Write/Edit hook | System Zone changes alter constraints/hooks for all agents |
+<!-- @constraint-generated: end agent_teams_constraints -->
+
+### Task Tracking in Agent Teams Mode
+
+| Tool | Single-Agent Mode | Agent Teams Mode |
+|------|------------------|------------------|
+| `br` (beads) | Sprint lifecycle | Sprint lifecycle (lead ONLY) |
+| `TaskCreate`/`TaskUpdate` | Session display only | Team coordination + session display |
+| `SendMessage` | N/A | Teammate → lead status reports |
+| `NOTES.md` | Observations | Observations (prefix with `[teammate-name]`) |
+
+**Reference**: `.claude/loa/reference/agent-teams-reference.md`
 
 ## Conventions
 
