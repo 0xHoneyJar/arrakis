@@ -125,6 +125,7 @@ interface RedisClient {
 export class CreditLedgerAdapter implements ICreditLedgerService {
   private db: Database.Database;
   private redis: RedisClient | null;
+  private economicEmitter: { emitInTransaction(tx: { prepare(sql: string): any }, event: any): void } | null = null;
 
   constructor(db: Database.Database, redis?: RedisClient | null) {
     this.db = db;
@@ -134,6 +135,14 @@ export class CreditLedgerAdapter implements ICreditLedgerService {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('busy_timeout = 5000');
     this.db.pragma('foreign_keys = ON');
+  }
+
+  /**
+   * Set the economic event emitter for outbox-backed event emission.
+   * Optional: when not set, no economic events are emitted (backward-compatible).
+   */
+  setEconomicEmitter(emitter: { emitInTransaction(tx: { prepare(sql: string): any }, event: any): void }): void {
+    this.economicEmitter = emitter;
   }
 
   // ---------------------------------------------------------------------------
