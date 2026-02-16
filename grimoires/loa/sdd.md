@@ -1,27 +1,25 @@
-# SDD: Creator Economy — Referrals, Leaderboards & Score-Weighted Rewards
+# SDD: The Kwisatz Haderach — Agent Economic Citizenship & Constitutional Governance
 
-**Version:** 1.2.0
+**Version:** 1.0.0
 **Date:** 2026-02-16
 **Status:** Draft
-**PRD:** `grimoires/loa/prd.md` v1.2.0
-**Cycle:** cycle-029
+**PRD:** `grimoires/loa/prd.md` v1.0.0
+**Cycle:** cycle-030
 
 ---
 
 ## 1. Executive Summary
 
-This SDD designs the technical architecture for transforming Arrakis into a creator economy. It extends the existing billing infrastructure (credit ledger, revenue distribution, campaign system, NOWPayments adapter, agent gateway) with six new subsystems:
+This SDD designs the technical architecture for making agents first-class economic citizens and establishing constitutional governance for system parameters. It extends the existing billing infrastructure (credit ledger, state machines, billing events, revenue rules, fraud/settlement services) with four new subsystems:
 
-1. **Referral Tracking** — codes, registrations, attribution
-2. **Signup Bonus** — delayed-grant campaign with fraud checks
-3. **Revenue Share** — 4th party extension to 3-way split
-4. **Leaderboard** — cached aggregate queries with timeframes
-5. **Score Rewards** — periodic non-withdrawable credit distribution
-6. **Creator Payouts** — async NOWPayments payout with treasury reserve
+1. **Constitutional Governance** — `system_config` table with multi-sig approval, 7-day cooldown, entity-type overrides
+2. **Agent Budget Engine** — per-agent daily spending caps with circuit breaker, Redis advisory + SQLite authoritative
+3. **EconomicEvent Outbox** — unified `economic_events` append-only table for cross-system publication (outbox pattern)
+4. **ADR-008 Reconciliation** — design + test harness for credit ledger ↔ budget engine conservation
 
-All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` precision). No new databases — extends SQLite (authoritative) + Redis (cache/acceleration).
+All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` precision). No new databases — extends SQLite (authoritative) + Redis (cache/acceleration). No existing interfaces are modified.
 
-> Grounded in: `ICreditLedgerService.ts`, `RevenueDistributionService.ts`, `CampaignAdapter.ts`, `NOWPaymentsAdapter.ts`, `agent-gateway.ts`, migrations 030-041.
+> Grounded in: `ICreditLedgerService.ts`, `state-machines.ts`, `billing-events.ts`, `RevenueRulesAdapter.ts`, `AgentWalletPrototype.ts`, `CreditLedgerAdapter.ts`, `SettlementService.ts`, `CreatorPayoutService.ts`, `FraudRulesService.ts`, migrations 030-046.
 
 ---
 
@@ -30,28 +28,29 @@ All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` pre
 ### 2.1 Component Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        API Layer (Express)                       │
-│  /api/referrals/*  /api/payouts/*  /api/creator/*  /api/score/*  │
-└──────┬──────────────────┬──────────────────┬────────────────────┘
-       │                  │                  │
-┌──────▼──────┐  ┌────────▼────────┐  ┌──────▼──────┐
-│  Referral   │  │  CreatorPayout  │  │   Score     │
-│  Service    │  │  Service        │  │   Rewards   │
-│             │  │                 │  │   Service   │
-└──────┬──────┘  └────────┬────────┘  └──────┬──────┘
-       │                  │                  │
-┌──────▼──────────────────▼──────────────────▼──────┐
-│              Existing Billing Layer                 │
-│  CreditLedgerAdapter  │  RevenueDistributionSvc    │
-│  CampaignAdapter      │  RevenueRulesAdapter       │
-│  NOWPaymentsAdapter   │  BudgetManager             │
-└──────┬──────────────────┬──────────────────┬──────┘
-       │                  │                  │
-┌──────▼──────┐  ┌────────▼────────┐  ┌──────▼──────┐
-│   SQLite    │  │     Redis       │  │   BullMQ    │
-│ (authority) │  │   (cache)       │  │  (queues)   │
-└─────────────┘  └─────────────────┘  └─────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        API Layer (Express)                           │
+│  /api/admin/config/*  /api/agent/*  /api/reconciliation/*            │
+└──────┬──────────────────────┬──────────────────────┬────────────────┘
+       │                      │                      │
+┌──────▼──────────┐  ┌────────▼──────────┐  ┌────────▼──────────┐
+│  Constitutional  │  │  AgentBudget      │  │  Reconciliation   │
+│  Governance      │  │  Service          │  │  Service          │
+│  Service         │  │                   │  │                   │
+└──────┬──────────┘  └────────┬──────────┘  └────────┬──────────┘
+       │                      │                      │
+┌──────▼──────────────────────▼──────────────────────▼──────────┐
+│                    Existing Billing Layer                       │
+│  CreditLedgerAdapter  │  RevenueDistributionSvc               │
+│  SettlementService    │  RevenueRulesAdapter                  │
+│  CreatorPayoutService │  FraudRulesService                    │
+│  AgentWalletPrototype │  BillingEventEmitter                  │
+└──────┬──────────────────────┬──────────────────────┬──────────┘
+       │                      │                      │
+┌──────▼──────┐  ┌────────────▼────────┐  ┌──────────▼──────────┐
+│   SQLite    │  │     Redis           │  │  EconomicEvent      │
+│ (authority) │  │   (cache/advisory)  │  │  Outbox Dispatcher  │
+└─────────────┘  └────────────────────┘  └─────────────────────┘
 ```
 
 ### 2.2 Extension Strategy
@@ -60,11 +59,18 @@ All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` pre
 
 | Existing Port | How Extended |
 |---------------|-------------|
-| `ICreditLedgerService` | New source types + pool tags. No interface change. |
-| `ICampaignService` | New campaign types `referral`, `score_weighted`. Already defined in type union. |
-| `IRevenueRulesService` | Add `referrer_bps` column to `revenue_rules` table. Schema version bump. |
-| `ICryptoPaymentProvider` | Add `createPayout()` method to `NOWPaymentsAdapter`. New interface `IPayoutProvider`. |
-| `BudgetManager` | Post-finalization hook for referrer share. No interface change. |
+| `ICreditLedgerService` | Unchanged. Agent accounts already supported (`entity_type: 'agent'`). Budget cap checks wrap `reserve()` calls — no interface change. |
+| `IRevenueRulesService` | Unchanged. Revenue rules governance pattern cloned for constitutional governance. |
+| `BillingEvent` union type | Extended: new event types added to discriminated union (additive only). |
+| `StateMachineDefinition` | New `SYSTEM_CONFIG_MACHINE` defined using existing `StateMachineDefinition<S>` generic. |
+| `BillingEventEmitter` | New `EconomicEventEmitter` wraps existing emitter + writes to `economic_events` outbox table within same transaction. |
+
+### 2.3 Key Design Principles
+
+1. **Conservation invariant preserved**: All changes are additive — no new money creation paths, no invariant modifications.
+2. **Entity-type agnosticism maintained**: The credit ledger remains entity-type agnostic. Differentiation happens in the governance/policy layer above the ledger.
+3. **Compile-time fallback**: Every runtime-configurable parameter has a compile-time constant as last-resort default. If `system_config` lookup fails, the system operates with hardcoded values (identical to current behavior).
+4. **Synchronous outbox**: Event emission uses synchronous INSERT within the same SQLite transaction. Async dispatch happens after commit (outbox pattern).
 
 ---
 
@@ -72,598 +78,723 @@ All monetary operations use BigInt micro-USD (existing `CreditLedgerAdapter` pre
 
 ### 3.1 New Tables
 
-#### `referral_codes`
+#### `system_config`
+
+Constitutional parameters with governance lifecycle.
 
 ```sql
-CREATE TABLE referral_codes (
+CREATE TABLE system_config (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  code TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'revoked')),
-  max_uses INTEGER,                    -- NULL = unlimited
-  use_count INTEGER NOT NULL DEFAULT 0,
-  expires_at TEXT,                     -- ISO 8601, NULL = never
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  revoked_at TEXT,
-  revoked_by TEXT
-);
-CREATE UNIQUE INDEX idx_referral_codes_account_active
-  ON referral_codes(account_id) WHERE status = 'active';
-```
-
-#### `referral_registrations`
-
-```sql
-CREATE TABLE referral_registrations (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  referee_account_id TEXT NOT NULL UNIQUE REFERENCES credit_accounts(id),
-  referrer_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  referral_code_id TEXT NOT NULL REFERENCES referral_codes(id),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  attribution_expires_at TEXT NOT NULL,  -- created_at + 12 months
-  CHECK (referee_account_id != referrer_account_id)
-);
-CREATE INDEX idx_referral_reg_referrer ON referral_registrations(referrer_account_id);
-```
-
-#### `referral_attribution_log`
-
-```sql
-CREATE TABLE referral_attribution_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  referee_account_id TEXT NOT NULL,
-  referral_code TEXT NOT NULL,
-  outcome TEXT NOT NULL CHECK (outcome IN ('bound', 'rebound_grace', 'admin_rebind', 'dispute_resolved', 'rejected_existing', 'rejected_self', 'rejected_expired', 'rejected_max_uses')),
+  param_key TEXT NOT NULL,
+  entity_type TEXT,           -- NULL = global default, 'agent'/'person'/etc = entity override
+  value_json TEXT NOT NULL,   -- JSON-encoded value (supports numbers, strings, objects)
+  config_version INTEGER NOT NULL DEFAULT 1,
+  active_from TEXT,           -- ISO 8601 timestamp when this config becomes active
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'pending_approval', 'cooling_down', 'active', 'superseded', 'rejected')),
+  proposed_by TEXT NOT NULL,
+  proposed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  approved_by TEXT,           -- JSON array of approver IDs (multi-sig)
+  approval_count INTEGER NOT NULL DEFAULT 0,
+  required_approvals INTEGER NOT NULL DEFAULT 2,
+  cooldown_ends_at TEXT,      -- Set when status transitions to 'cooling_down'
+  activated_at TEXT,
+  superseded_at TEXT,
+  superseded_by TEXT REFERENCES system_config(id),
+  metadata TEXT,              -- JSON: notes, justification
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+-- Only one active config per (param_key, entity_type) pair
+CREATE UNIQUE INDEX idx_system_config_active
+  ON system_config(param_key, entity_type) WHERE status = 'active';
+
+-- Version uniqueness per (param_key, entity_type) — prevents concurrent version collision
+CREATE UNIQUE INDEX idx_system_config_version
+  ON system_config(param_key, entity_type, config_version);
+
+-- Lookup active config: entity-specific first, then global fallback
+CREATE INDEX idx_system_config_lookup
+  ON system_config(param_key, status, entity_type);
 ```
 
-#### `referral_bonuses`
+#### `system_config_version_seq`
+
+Monotonic version counter per (param_key, entity_type) pair. Updated within `BEGIN IMMEDIATE` to prevent concurrent version allocation.
 
 ```sql
-CREATE TABLE referral_bonuses (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  referee_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  referrer_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  registration_id TEXT NOT NULL REFERENCES referral_registrations(id),
-  qualifying_action TEXT NOT NULL CHECK (qualifying_action IN ('dnft_creation', 'credit_purchase')),
-  qualifying_action_id TEXT NOT NULL,
-  amount_micro BIGINT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'cleared', 'granted', 'withheld', 'expired')),
-  risk_score REAL,
-  fraud_check_at TEXT,
-  granted_at TEXT,
-  grant_id TEXT REFERENCES credit_grants(id),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE(referee_account_id, qualifying_action, qualifying_action_id)  -- Idempotency: one bonus per action per referee
+CREATE TABLE system_config_version_seq (
+  param_key TEXT NOT NULL,
+  entity_type TEXT,           -- NULL for global
+  current_version INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(param_key, entity_type)
 );
 ```
 
-#### `referrer_earnings`
+#### `system_config_audit`
+
+Append-only audit trail for all governance actions.
 
 ```sql
-CREATE TABLE referrer_earnings (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  referrer_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  referee_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  inference_charge_id TEXT NOT NULL,
-  rule_version INTEGER NOT NULL,
-  amount_micro BIGINT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'settled', 'clawed_back')),
-  settlement_at TEXT,                  -- When status transitions to 'settled'
-  earning_lot_id TEXT REFERENCES credit_lots(id),    -- Explicit linkage: the referrer's earned lot
-  reserve_entry_id TEXT,               -- Explicit linkage: the treasury reserve backing entry
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE(inference_charge_id, rule_version)  -- Idempotency
-);
-CREATE INDEX idx_referrer_earnings_referrer ON referrer_earnings(referrer_account_id);
-CREATE INDEX idx_referrer_earnings_status ON referrer_earnings(status) WHERE status = 'pending';
-```
-
-#### `payout_requests`
-
-```sql
-CREATE TABLE payout_requests (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  amount_micro BIGINT NOT NULL,        -- Gross amount requested
-  fee_micro BIGINT,                    -- Provider/network fee (set after quote)
-  net_amount_micro BIGINT,             -- Net amount received by creator
-  currency TEXT NOT NULL,              -- 'usdt', 'usdc', 'eth', etc.
-  destination_address TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'stalled', 'cancelled')),
-  idempotency_key TEXT NOT NULL UNIQUE,
-  provider_reference TEXT,             -- NOWPayments payout ID
-  provider_status TEXT,                -- Raw provider status
-  withdrawal_ledger_entry_id TEXT,     -- credit_ledger entry for the burn
-  reserve_debit_entry_id TEXT,         -- treasury debit entry
-  error_message TEXT,
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  max_retries INTEGER NOT NULL DEFAULT 3,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  processing_at TEXT,
-  completed_at TEXT,
-  failed_at TEXT
-);
-CREATE INDEX idx_payout_account ON payout_requests(account_id);
-CREATE INDEX idx_payout_status ON payout_requests(status) WHERE status IN ('pending', 'processing', 'stalled');
-```
-
-#### `wallet_link_nonces`
-
-```sql
-CREATE TABLE wallet_link_nonces (
-  nonce TEXT PRIMARY KEY,
-  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  wallet_address TEXT NOT NULL,
-  chain_id INTEGER NOT NULL,
-  issued_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  expires_at TEXT NOT NULL,              -- issued_at + 5 minutes
-  used_at TEXT                           -- Set on successful verification, NULL = unused
-);
-CREATE INDEX idx_nonces_cleanup ON wallet_link_nonces(expires_at) WHERE used_at IS NULL;
-```
-
-#### `wallet_links`
-
-```sql
-CREATE TABLE wallet_links (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  wallet_address TEXT NOT NULL,
-  chain_id INTEGER NOT NULL,
-  verified_at TEXT NOT NULL,
-  unlinked_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE(wallet_address, chain_id) -- One account per wallet per chain
-);
-CREATE INDEX idx_wallet_links_account ON wallet_links(account_id) WHERE unlinked_at IS NULL;
-```
-
-#### `referral_events`
-
-```sql
-CREATE TABLE referral_events (
+CREATE TABLE system_config_audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
-  event_type TEXT NOT NULL CHECK (event_type IN ('registration', 'bonus_claim', 'qualifying_action')),
-  ip_hash TEXT,                          -- SHA-256 of IP address (privacy-preserving)
-  ip_prefix TEXT,                        -- /24 prefix for cluster detection (e.g. '192.168.1')
-  user_agent_hash TEXT,                  -- SHA-256 of User-Agent string
-  fingerprint_hash TEXT,                 -- SHA-256 of client fingerprint (if available)
-  referral_code_id TEXT REFERENCES referral_codes(id),
-  metadata TEXT,                         -- JSON: additional context (action_id, etc.)
+  config_id TEXT NOT NULL REFERENCES system_config(id),
+  action TEXT NOT NULL
+    CHECK (action IN ('proposed', 'approved', 'rejected', 'cooling_started', 'activated', 'superseded', 'emergency_override')),
+  actor TEXT NOT NULL,
+  previous_status TEXT,
+  new_status TEXT,
+  config_version INTEGER NOT NULL,
+  metadata TEXT,              -- JSON: approval reason, override justification
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
-CREATE INDEX idx_referral_events_account ON referral_events(account_id);
-CREATE INDEX idx_referral_events_ip_prefix ON referral_events(ip_prefix, created_at);
-CREATE INDEX idx_referral_events_fingerprint ON referral_events(fingerprint_hash, created_at)
-  WHERE fingerprint_hash IS NOT NULL;
-CREATE INDEX idx_referral_events_type_time ON referral_events(event_type, created_at);
+CREATE INDEX idx_config_audit_config ON system_config_audit(config_id);
+CREATE INDEX idx_config_audit_action ON system_config_audit(action, created_at);
 ```
 
-**Privacy constraints:** All PII is hashed at write time (SHA-256). Raw IPs and user-agents are never stored. Retention policy: 90-day rolling window enforced by a weekly cleanup cron. The API layer writes these events on every referral registration and bonus claim request.
+#### `agent_spending_limits`
 
-#### `score_snapshots`
-
-```sql
-CREATE TABLE score_snapshots (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  wallet_address TEXT NOT NULL,
-  chain_id INTEGER NOT NULL DEFAULT 1,
-  score_value BIGINT NOT NULL,         -- Score in integer units
-  snapshot_period TEXT NOT NULL,        -- '2026-02' (monthly) or '2026-W07' (weekly)
-  imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE(wallet_address, chain_id, snapshot_period)
-);
-```
-
-#### `score_distributions`
+Per-agent daily budget caps with circuit breaker state.
 
 ```sql
-CREATE TABLE score_distributions (
+CREATE TABLE agent_spending_limits (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  period TEXT NOT NULL,                -- Matches snapshot_period
-  pool_size_micro BIGINT NOT NULL,
-  total_score BIGINT NOT NULL,
-  participant_count INTEGER NOT NULL,
-  campaign_id TEXT REFERENCES credit_campaigns(id),
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'distributed', 'failed', 'aborted')),
+  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  daily_cap_micro BIGINT NOT NULL,
+  current_spend_micro BIGINT NOT NULL DEFAULT 0,
+  window_start TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  window_duration_seconds INTEGER NOT NULL DEFAULT 86400,  -- 24h
+  circuit_state TEXT NOT NULL DEFAULT 'closed'
+    CHECK (circuit_state IN ('closed', 'warning', 'open')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  completed_at TEXT,
-  UNIQUE(period)                       -- One distribution per period
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE(account_id)
 );
+```
+
+#### `agent_budget_finalizations`
+
+Idempotency ledger for budget cap accounting. Each finalization is recorded exactly once.
+
+```sql
+CREATE TABLE agent_budget_finalizations (
+  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  reservation_id TEXT NOT NULL,
+  amount_micro BIGINT NOT NULL,
+  finalized_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (account_id, reservation_id)
+);
+```
+
+#### `agent_identity`
+
+Canonical identity anchor for agent provenance verification.
+
+```sql
+CREATE TABLE agent_identity (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  account_id TEXT NOT NULL UNIQUE REFERENCES credit_accounts(id),
+  chain_id INTEGER NOT NULL,
+  contract_address TEXT NOT NULL,
+  token_id TEXT NOT NULL,
+  tba_address TEXT,           -- Phase 2: ERC-6551 token-bound account address
+  creator_account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  creator_signature TEXT,     -- Hex-encoded signature of agent config by creator wallet
+  verified_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE(chain_id, contract_address, token_id)
+);
+CREATE INDEX idx_agent_identity_creator ON agent_identity(creator_account_id);
+```
+
+#### `agent_clawback_receivables`
+
+Tracks unpaid clawback remainders to preserve conservation when agent balance is insufficient for full clawback.
+
+```sql
+CREATE TABLE agent_clawback_receivables (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  account_id TEXT NOT NULL REFERENCES credit_accounts(id),
+  source_clawback_id TEXT NOT NULL,        -- Original clawback event correlation ID
+  original_amount_micro INTEGER NOT NULL,  -- Total remainder at time of shortfall
+  balance_micro INTEGER NOT NULL,          -- Current outstanding amount (decremented by drip recovery)
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  resolved_at TEXT,                        -- Set when balance_micro reaches 0
+  CHECK(original_amount_micro > 0),
+  CHECK(balance_micro >= 0)
+);
+CREATE INDEX idx_clawback_receivables_account
+  ON agent_clawback_receivables(account_id) WHERE balance_micro > 0;
+```
+
+#### `economic_events`
+
+Unified outbox table for cross-system event publication.
+
+```sql
+CREATE TABLE economic_events (
+  rowid INTEGER PRIMARY KEY AUTOINCREMENT,  -- Global ordering
+  event_id TEXT NOT NULL UNIQUE,            -- UUID
+  event_type TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  correlation_id TEXT,                      -- Traces across operations
+  idempotency_key TEXT NOT NULL UNIQUE,     -- Deduplication
+  config_version INTEGER,                   -- system_config version used
+  payload TEXT NOT NULL,                    -- JSON event-specific data
+  -- Dispatch claim columns (prevents double-dispatch under concurrency)
+  claimed_by TEXT,                          -- Worker ID that claimed this event
+  claimed_at TEXT,                          -- When claimed (stale claim detection)
+  published_at TEXT,                        -- Set after successful external publish
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Dispatcher claims unpublished, unclaimed events atomically
+CREATE INDEX idx_economic_events_dispatchable
+  ON economic_events(rowid) WHERE published_at IS NULL AND claimed_by IS NULL;
+
+-- Stale claim detection (claimed but not published within timeout)
+CREATE INDEX idx_economic_events_stale_claims
+  ON economic_events(claimed_at) WHERE claimed_by IS NOT NULL AND published_at IS NULL;
+
+-- Per-entity ordering queries
+CREATE INDEX idx_economic_events_entity
+  ON economic_events(entity_id, rowid);
 ```
 
 ### 3.2 Schema Extensions to Existing Tables
 
-#### `revenue_rules` — add `referrer_bps`
+#### `billing_events` — new event types
 
-```sql
-ALTER TABLE revenue_rules ADD COLUMN referrer_bps INTEGER NOT NULL DEFAULT 0;
--- Constraint: referrer_bps + commons_bps + community_bps + foundation_bps = 10000
--- when referrer_bps > 0, the 3-way split applies to (10000 - referrer_bps) proportionally
+Add to `BillingEvent` discriminated union (TypeScript only — SQLite stores as TEXT):
+- `AgentBudgetWarning` — agent hit 80% of daily cap
+- `AgentBudgetExhausted` — agent hit 100% of daily cap
+- `AgentSettlementInstant` — agent earning settled immediately (0h hold)
+- `ConfigProposed` — constitutional parameter change proposed
+- `ConfigApproved` — constitutional parameter change approved
+- `ConfigActivated` — constitutional parameter became active
+
+#### `credit_accounts` — no schema change
+
+Agent accounts already work. `entity_type: 'agent'` is already in the CHECK constraint (`030_credit_ledger.ts:27-29`). `AgentWalletPrototype.ts:172` already creates agent accounts via `getOrCreateAccount('agent', ...)`.
+
+### 3.3 Parameter Resolution
+
+### 3.4 Parameter Schema Registry
+
+Every constitutional parameter has a strict typed schema defined in code. Proposals are validated against this schema **before** they can enter the governance lifecycle. This prevents runtime type errors in money-moving code paths.
+
+```typescript
+// packages/core/protocol/config-schema.ts
+
+interface ParamSchema {
+  key: string;
+  type: 'integer' | 'bigint_micro' | 'integer_seconds' | 'integer_percent' | 'nullable';
+  min?: number;
+  max?: number;
+  description: string;
+}
+
+const CONFIG_SCHEMA: Record<string, ParamSchema> = {
+  'kyc.basic_threshold_micro':      { key: 'kyc.basic_threshold_micro',      type: 'bigint_micro',      min: 0, description: 'KYC basic tier threshold in micro-USD' },
+  'kyc.enhanced_threshold_micro':   { key: 'kyc.enhanced_threshold_micro',   type: 'bigint_micro',      min: 0, description: 'KYC enhanced tier threshold in micro-USD' },
+  'settlement.hold_seconds':        { key: 'settlement.hold_seconds',        type: 'integer_seconds',   min: 0, max: 604800, description: 'Settlement hold duration in seconds' },
+  'payout.min_micro':               { key: 'payout.min_micro',               type: 'bigint_micro',      min: 0, description: 'Minimum payout amount in micro-USD' },
+  'payout.rate_limit_seconds':      { key: 'payout.rate_limit_seconds',      type: 'integer_seconds',   min: 0, description: 'Minimum seconds between payouts per account' },
+  'payout.fee_cap_percent':         { key: 'payout.fee_cap_percent',         type: 'integer_percent',   min: 1, max: 100, description: 'Maximum fee as percentage of gross payout' },
+  'revenue_rule.cooldown_seconds':  { key: 'revenue_rule.cooldown_seconds',  type: 'integer_seconds',   min: 0, description: 'Revenue rule cooldown in seconds' },
+  'fraud_rule.cooldown_seconds':    { key: 'fraud_rule.cooldown_seconds',    type: 'integer_seconds',   min: 0, description: 'Fraud rule cooldown in seconds' },
+  'reservation.default_ttl_seconds':{ key: 'reservation.default_ttl_seconds',type: 'integer_seconds',   min: 30, max: 3600, description: 'Default reservation TTL in seconds' },
+  'referral.attribution_window_days':{ key: 'referral.attribution_window_days', type: 'integer',        min: 1, max: 730, description: 'Referral attribution window in days' },
+  'agent.drip_recovery_pct':         { key: 'agent.drip_recovery_pct',         type: 'integer_percent',   min: 1, max: 100, description: 'Percentage of each new agent earning applied to outstanding clawback receivable' },
+};
 ```
 
-#### `credit_ledger` — new entry types
+**Key normalization changes from current codebase:**
+- `settlement.hold_hours` → `settlement.hold_seconds` (integer seconds, no floats)
+- `payout.rate_limit_hours` → `payout.rate_limit_seconds` (integer seconds — agent override: 8640 = 10 per 24h)
+- `revenue_rule.cooldown_hours` → `revenue_rule.cooldown_seconds` (integer seconds)
+- `fraud_rule.cooldown_hours` → `fraud_rule.cooldown_seconds` (integer seconds)
+- `referral.attribution_window_months` → `referral.attribution_window_days` (integer days)
 
-Add to `entry_type` CHECK constraint:
-- `referral_revenue_share` — referrer earnings from inference
-- `referral_bonus` — signup bonus grant
-- `score_reward` — Score pool distribution
-- `withdrawal` — payout credit burn
-- `reserve_debit` — treasury payout reserve debit
-- `clawback` — refund/reversal of pending earnings
-- `settlement` — pending → settled finality record (authoritative ledger entry with `earning_id` + `lot_id` metadata)
+All durations are stored as **integer seconds or days** — no floating-point values in `value_json`. The `propose()` method validates the value against the schema and rejects proposals with invalid types or out-of-range values before they enter the governance lifecycle.
 
-#### `credit_lots` — new pool IDs
+### 3.5 Parameter Resolution
 
-New pool patterns:
-- `referral:revenue_share` — withdrawable earned credits
-- `referral:signup` — non-withdrawable bonus credits
-- `score:rewards` — non-withdrawable Score rewards
+Runtime parameter lookup follows a three-tier resolution chain:
 
-### 3.3 Treasury Account
+```
+1. entity-specific override  →  system_config WHERE param_key = ? AND entity_type = ? AND status = 'active'
+2. global default            →  system_config WHERE param_key = ? AND entity_type IS NULL AND status = 'active'
+3. compile-time fallback     →  hardcoded constant in source code (current behavior)
+```
 
-A special `credit_account` with `entity_type: 'foundation'` and `entity_id: 'treasury:payout_reserve'`. Created during migration. **Not funded by minting** — funded as a direct slice of charge proceeds within the conserved distribution split.
+**For money-moving operations** (reserve, finalize, settlement, payout), parameter reads MUST occur within the SQLite transaction (`BEGIN IMMEDIATE` block). Redis is used only for non-transactional reads (dashboards, API queries, advisory cap checks).
 
-When distributing a finalized charge, the single `totalMicro` is split into up to 5 recipients whose credits sum to exactly `totalMicro`:
-
-| Recipient | Amount | Source |
-|-----------|--------|--------|
-| Referrer | `bpsShare(totalMicro, referrerBps)` (0 if no attribution) | Charge proceeds |
-| Commons | `bpsShare(remainder, commonsBps)` | Charge proceeds |
-| Community | `bpsShare(remainder, communityBps)` | Charge proceeds |
-| Foundation (net) | `foundationGross - treasuryReserve` | Charge proceeds |
-| Treasury reserve | `referrerShareMicro` (1:1 backing) | Charge proceeds (out of foundation's gross) |
-
-**Conservation:** `referrer + commons + community + foundationNet + treasuryReserve === totalMicro`. The treasury reserve comes out of the foundation's gross allocation — not additive supply. All credits use `creditFromCharge()` which draws from the charge's proceeds lot (balanced debit+credit).
-
-**OCC state:** The `treasury_state` table tracks aggregate reserve balance with a `version` column for optimistic concurrency control during payout operations.
-
-**Reserve linkage enforcement:** Every `referrer_earnings` row MUST have `earning_lot_id` set at creation time (NOT NULL after the distribution transaction completes). The `reserve_entry_id` references the `creditFromCharge()` ledger entry that backed the treasury reserve. Both are set within the same `BEGIN IMMEDIATE` transaction in `postDistribution()`. A periodic invariant check cron (hourly) verifies:
-- `SUM(treasury_state.balance_micro + treasury_state.held_micro) >= SUM(referrer_earnings.amount_micro WHERE status = 'settled' AND earning_lot_id NOT IN (consumed lots))`
-- Any drift >0 triggers a `treasury.invariant.violation` alert (critical severity)
-
-On payout, the referrer's earned lot is moved to escrow (`withdrawal:pending`) and treasury reserve to held state (`reserve:held`), then finalized or released based on provider outcome.
+The `config_version` from the resolved config record is recorded in the operation's audit trail (ledger entry metadata or economic event payload).
 
 ---
 
 ## 4. Service Architecture
 
-### 4.1 ReferralService
+### 4.1 ConstitutionalGovernanceService
 
-**Location:** `themes/sietch/src/packages/adapters/billing/ReferralService.ts`
-**Port:** `themes/sietch/src/packages/core/ports/IReferralService.ts`
+**Location:** `themes/sietch/src/packages/adapters/billing/ConstitutionalGovernanceService.ts`
+**Port:** `themes/sietch/src/packages/core/ports/IConstitutionalGovernanceService.ts`
 
 ```typescript
-interface IReferralService {
-  // Code management
-  createCode(accountId: string): Promise<ReferralCode>;
-  getCode(accountId: string): Promise<ReferralCode | null>;
-  revokeCode(codeId: string, revokedBy: string): Promise<void>;
+interface IConstitutionalGovernanceService {
+  // Parameter resolution (used by all services)
+  resolve<T>(paramKey: string, entityType?: EntityType): Promise<ResolvedParam<T>>;
+  resolveInTransaction<T>(tx: Transaction, paramKey: string, entityType?: EntityType): ResolvedParam<T>;
 
-  // Registration
-  register(refereeAccountId: string, code: string): Promise<ReferralRegistration>;
+  // Governance lifecycle
+  propose(paramKey: string, value: unknown, opts: ProposeOpts): Promise<SystemConfig>;
+  approve(configId: string, approverAdminId: string): Promise<SystemConfig>;
+  reject(configId: string, rejectorAdminId: string, reason: string): Promise<SystemConfig>;
+  activateExpiredCooldowns(): Promise<number>; // BullMQ cron
 
-  // Attribution lookup
-  getReferrer(refereeAccountId: string): Promise<ReferralRegistration | null>;
-  isAttributionActive(registration: ReferralRegistration, at: Date): boolean;
+  // Emergency override (requires 3+ approvals + immediate audit)
+  emergencyOverride(configId: string, approvers: string[], justification: string): Promise<SystemConfig>;
 
-  // Bonus triggering
-  onQualifyingAction(refereeAccountId: string, action: QualifyingAction): Promise<void>;
+  // Query
+  getActiveConfig(paramKey: string, entityType?: EntityType): Promise<SystemConfig | null>;
+  getConfigHistory(paramKey: string): Promise<SystemConfig[]>;
+  getPendingProposals(): Promise<SystemConfig[]>;
+}
 
-  // Stats
-  getReferralStats(referrerAccountId: string): Promise<ReferralStats>;
+interface ResolvedParam<T> {
+  value: T;
+  configVersion: number;
+  source: 'entity_override' | 'global_config' | 'compile_fallback';
+  configId: string | null;
+}
+
+interface ProposeOpts {
+  entityType?: EntityType;  // NULL = global, 'agent' = agent-specific override
+  proposerAdminId: string;
+  justification?: string;
 }
 ```
 
-**Code generation:** `nanoid(10)` with custom alphabet `0123456789abcdefghjkmnpqrstuvwxyz` (no i/l/o to avoid confusion). Collision checked against DB.
-
-**Registration flow:**
-1. Validate code exists and is active (not expired, not max uses)
-2. Check referee doesn't already have a binding (UNIQUE constraint)
-3. Check referee ≠ referrer (self-referral prevention)
-4. Insert `referral_registrations` with `attribution_expires_at = created_at + 12 months`
-5. Increment `referral_codes.use_count`
-6. Log to `referral_attribution_log` with outcome
-7. All within single SQLite transaction
-
-**Attribution correction policy:**
-- **Grace period**: Within 24 hours of registration, a referee can re-register with a different code (existing binding is replaced). After 24h, binding is locked.
-- **Admin rebind**: Admin can reassign attribution via internal tool. Requires audit log entry with `outcome: 'admin_rebind'`, old referrer, new referrer, and reason. Only allowed if no earnings have been generated for the original referrer from this referee.
-- **Account merge**: If accounts are merged (future feature), attribution follows the primary account. Logged as `outcome: 'account_merge'`.
-- **Disputes**: Referrer can flag an attribution dispute via support. Resolution logged to `referral_attribution_log` with outcome `'dispute_resolved'`.
-
-### 4.2 RevenueDistributionService Extension
-
-**Modification:** `themes/sietch/src/packages/adapters/billing/RevenueDistributionService.ts`
-
-Extend `postDistribution()` to check for referrer attribution. **Entire distribution runs within a single SQLite `BEGIN IMMEDIATE` transaction** ([ADR-015](decisions/adr-015-sqlite-locking-hierarchy.md)) for atomicity. The distribution is a **conserved split of a single charge source** — `totalMicro` is debited exactly once from the charge-proceeds source and credited to up to **5 recipients** (referrer + commons + community + foundation net + treasury reserve) whose amounts sum to exactly `totalMicro`:
+**State machine:** Reuses `StateMachineDefinition<S>` pattern from `state-machines.ts`:
 
 ```typescript
-async postDistribution(chargeId: string, totalMicro: bigint, opts: DistributionOpts): Promise<void> {
-  const config = await this.getActiveConfig();
+export type SystemConfigState =
+  | 'draft'
+  | 'pending_approval'
+  | 'cooling_down'
+  | 'active'
+  | 'superseded'
+  | 'rejected';
 
-  // NEW: Check for referrer attribution
-  const referral = await this.referralService.getReferrer(opts.userId);
-
-  await this.db.transaction('IMMEDIATE', async (tx) => {
-    // ── Step 1: Compute the 4-way split ──
-    let referrerShareMicro = 0n;
-    if (referral && this.isAttributionActive(referral, opts.finalizedAt)) {
-      referrerShareMicro = bpsShare(totalMicro, config.referrerBps);
-    }
-
-    const remainder = totalMicro - referrerShareMicro;
-    const commonsShare = bpsShare(remainder, config.commonsBps);
-    const communityShare = bpsShare(remainder, config.communityBps);
-    const foundationGross = remainder - commonsShare - communityShare; // Absorbs rounding (ADR-010)
-    // Treasury reserve comes OUT OF foundation's gross — not additive
-    const treasuryReserve = referrerShareMicro; // 1:1 backing for referrer earning
-    const foundationNet = foundationGross - treasuryReserve;
-
-    // Conservation check: referrer + commons + community + foundationNet + treasuryReserve === totalMicro
-    assert(referrerShareMicro + commonsShare + communityShare + foundationNet + treasuryReserve === totalMicro);
-
-    // ── Step 2: Distribute from charge source to all recipients ──
-    // All credits come from the single charge source (chargeId). The existing
-    // ledger.creditFromCharge() debits the charge source and credits the recipient
-    // in a single balanced entry. No supply-increasing mints.
-
-    // 3-way split (existing recipients)
-    await this.ledger.creditFromCharge(chargeId, config.commonsAccountId, commonsShare, 'commons_contribution', {
-      idempotencyKey: `dist:commons:${chargeId}:${config.version}`,
-    });
-    await this.ledger.creditFromCharge(chargeId, config.communityAccountId, communityShare, 'revenue_share', {
-      idempotencyKey: `dist:community:${chargeId}:${config.version}`,
-    });
-    await this.ledger.creditFromCharge(chargeId, config.foundationAccountId, foundationNet, 'revenue_share', {
-      idempotencyKey: `dist:foundation:${chargeId}:${config.version}`,
-    });
-
-    // Treasury reserve backing (from charge source, counted against foundation's gross)
-    if (treasuryReserve > 0n) {
-      await this.ledger.creditFromCharge(chargeId, this.treasuryAccountId, treasuryReserve, 'reserve_backing', {
-        idempotencyKey: `dist:reserve:${chargeId}:${config.version}`,
-      });
-    }
-
-    // ── Step 3: Referrer earning (if attributed) ──
-    if (referrerShareMicro > 0n) {
-      // Idempotency: INSERT ... ON CONFLICT DO NOTHING as the FIRST write
-      const result = await tx.run(
-        `INSERT INTO referrer_earnings (referrer_account_id, referee_account_id, inference_charge_id,
-         rule_version, amount_micro, status)
-         VALUES (?, ?, ?, ?, ?, 'pending')
-         ON CONFLICT(inference_charge_id, rule_version) DO NOTHING`,
-        [referral.referrerAccountId, referral.refereeAccountId, chargeId,
-         config.version, referrerShareMicro]
-      );
-
-      if (result.changes > 0) {
-        // Credit referrer from charge source (conserved — part of the split)
-        const earningLot = await this.ledger.creditFromCharge(
-          chargeId, referral.referrerAccountId, referrerShareMicro, 'referral_revenue_share', {
-            poolId: 'referral:revenue_share',
-            idempotencyKey: `dist:referrer:${chargeId}:${config.version}`,
-          }
-        );
-
-        // Link earning to lot and reserve entry for clawback traceability
-        await tx.run(
-          `UPDATE referrer_earnings SET earning_lot_id = ?
-           WHERE inference_charge_id = ? AND rule_version = ?`,
-          [earningLot.id, chargeId, config.version]
-        );
-      }
-    }
-  });
-}
+export const SYSTEM_CONFIG_MACHINE: StateMachineDefinition<SystemConfigState> = {
+  name: 'system_config',
+  initial: 'draft',
+  transitions: {
+    draft: ['pending_approval'],
+    pending_approval: ['cooling_down', 'rejected'],
+    cooling_down: ['active', 'rejected'],
+    active: ['superseded'],
+    superseded: [],
+    rejected: [],
+  },
+  terminal: ['superseded', 'rejected'],
+};
 ```
 
-**Conservation invariant:** `referrerShare + commonsShare + communityShare + foundationNet + treasuryReserve === totalMicro`. The treasury reserve is funded from the foundation's gross share (not additive supply). All credits use `creditFromCharge()` which debits the charge source and credits the recipient — a balanced transfer, not a supply-creating mint.
+**Approval flow:**
 
-**`creditFromCharge()` — formal contract:**
+```
+Admin proposes parameter change → status: 'draft'
+  → First admin approves → status: 'pending_approval', approval_count: 1
+    → Second admin approves → status: 'cooling_down', cooldown_ends_at set (7 days)
+      → BullMQ cron detects cooldown expired → status: 'active'
+        → Previous active config for same (param_key, entity_type) → status: 'superseded'
+```
+
+**Multi-sig enforcement:** The `approved_by` JSON array stores approver IDs. The proposer cannot be among the approvers (four-eyes). Approval count must reach `required_approvals` (default: 2) before cooling can start.
+
+**Emergency override:** Requires 3+ admin approvals in a single call. Bypasses cooldown — config goes directly to `active`. An `emergency_override` audit entry is written with all approver IDs and justification. A notification event (`ConfigActivated` with `emergency: true`) is emitted immediately.
+
+### 4.2 AgentBudgetService
+
+**Location:** `themes/sietch/src/packages/adapters/billing/AgentBudgetService.ts`
+**Port:** `themes/sietch/src/packages/core/ports/IAgentBudgetService.ts`
+
+```typescript
+interface IAgentBudgetService {
+  // Cap management
+  setDailyCap(accountId: string, capMicro: bigint): Promise<AgentSpendingLimit>;
+  getDailyCap(accountId: string): Promise<AgentSpendingLimit | null>;
+
+  // Budget check (called before reserve())
+  checkBudget(accountId: string, amountMicro: bigint): Promise<BudgetCheckResult>;
+
+  // Budget update (called after finalize())
+  recordFinalization(accountId: string, reservationId: string, amountMicro: bigint): Promise<void>;
+
+  // Window reset (BullMQ cron)
+  resetExpiredWindows(): Promise<number>;
+
+  // Circuit breaker state
+  getCircuitState(accountId: string): Promise<CircuitState>;
+}
+
+interface BudgetCheckResult {
+  allowed: boolean;
+  currentSpendMicro: bigint;
+  dailyCapMicro: bigint;
+  remainingMicro: bigint;
+  circuitState: CircuitState;
+}
+
+type CircuitState = 'closed' | 'warning' | 'open';
+```
+
+**Cap accounting rules (from PRD FR-2):**
+
+The cap tracks **finalized spend only** — reservations are never counted toward the cap. Idempotency is enforced via the `agent_budget_finalizations` table (one row per `(account_id, reservation_id)` — `INSERT OR IGNORE` prevents double-counting across retries):
 
 ```typescript
 /**
- * Transfer credits from a finalized charge's proceeds lot to a recipient.
- * Balanced operation: debits charge source lot, credits recipient lot.
- * NOT a supply-creating mint — total drawn across all calls for a given chargeId
- * must not exceed the original charge amount.
- *
- * @param chargeId - The finalized inference charge ID (source of funds)
- * @param recipientAccountId - The account to credit
- * @param amountMicro - Amount in micro-USD (BigInt, must be > 0)
- * @param entryType - Ledger entry type for audit trail
- * @param opts.poolId - Optional pool tag for the recipient lot (e.g., 'referral:revenue_share')
- * @param opts.idempotencyKey - REQUIRED. Unique key for retry safety. Format: `dist:{recipient}:{chargeId}:{version}`
- *
- * @returns CreditLot - The created/updated lot on the recipient account
- *
- * @throws InsufficientFundsError - If charge proceeds lot has insufficient available_micro
- *         (total drawn > original charge amount — indicates conservation violation)
- * @throws IdempotencyConflictError - If idempotencyKey already exists (safe to ignore — operation already applied)
- * @throws AccountNotFoundError - If recipientAccountId does not exist
- *
- * Invariants enforced:
- * - SUM(all creditFromCharge calls for chargeId) ≤ charge.totalMicro
- * - Each call is idempotent (same key = no-op, returns existing lot)
- * - Operates within the caller's SQLite transaction context
+ * Called within the SAME SQLite transaction as the CreditLedgerAdapter.finalize() call.
+ * The caller passes the active transaction handle to ensure atomicity.
  */
-async creditFromCharge(
-  chargeId: string,
-  recipientAccountId: string,
-  amountMicro: bigint,
-  entryType: string,
-  opts: { poolId?: string; idempotencyKey: string }
-): Promise<CreditLot>;
-```
+async recordFinalizationInTransaction(
+  tx: Transaction, accountId: string, reservationId: string, amountMicro: bigint
+): Promise<void> {
+  const now = new Date().toISOString();
 
-### 4.3 CreatorPayoutService
+  // Get spending limit for this agent
+  const limit = await tx.get(
+    'SELECT * FROM agent_spending_limits WHERE account_id = ?',
+    [accountId]
+  );
+  if (!limit) return; // No cap configured — no-op
 
-**Location:** `themes/sietch/src/packages/adapters/billing/CreatorPayoutService.ts`
-**Port:** `themes/sietch/src/packages/core/ports/ICreatorPayoutService.ts`
+  // Idempotency: INSERT OR IGNORE into finalizations ledger
+  const inserted = await tx.run(
+    `INSERT OR IGNORE INTO agent_budget_finalizations (account_id, reservation_id, amount_micro, finalized_at)
+     VALUES (?, ?, ?, ?)`,
+    [accountId, reservationId, amountMicro.toString(), now]
+  );
+  if (inserted.changes === 0) return; // Already recorded — idempotent skip
 
-```typescript
-interface ICreatorPayoutService {
-  requestPayout(accountId: string, request: PayoutRequest): Promise<PayoutRequestResult>;
-  getPayoutStatus(payoutId: string): Promise<PayoutStatus>;
-  getPayoutHistory(accountId: string, opts?: PaginationOpts): Promise<PayoutRequest[]>;
-  processPayoutWebhook(payload: unknown, signature: string): Promise<void>;
-  getWithdrawableBalance(accountId: string): Promise<bigint>;
+  // Check if window has expired → reset
+  const windowEnd = new Date(new Date(limit.window_start).getTime() + limit.window_duration_seconds * 1000);
+  let windowStart = limit.window_start;
+  if (new Date(now) > windowEnd) {
+    windowStart = now; // Window expired, reset start
+    // Recompute spend from finalizations in new window only
+    const windowSpend = await tx.get(
+      `SELECT COALESCE(SUM(amount_micro), 0) as total FROM agent_budget_finalizations
+       WHERE account_id = ? AND finalized_at >= ?`,
+      [accountId, now]
+    );
+    // New window — only this finalization counts
+  }
+
+  // Compute current spend from authoritative finalizations ledger
+  const spendResult = await tx.get(
+    `SELECT COALESCE(SUM(amount_micro), 0) as total FROM agent_budget_finalizations
+     WHERE account_id = ? AND finalized_at >= ?`,
+    [accountId, windowStart]
+  );
+  const newSpend = BigInt(spendResult.total);
+  const cap = BigInt(limit.daily_cap_micro);
+
+  // Determine circuit state
+  let circuitState: CircuitState = 'closed';
+  if (newSpend >= cap) {
+    circuitState = 'open';
+  } else if (newSpend >= (cap * 80n) / 100n) {
+    circuitState = 'warning';
+  }
+
+  // Atomic update of spending limit state
+  await tx.run(
+    `UPDATE agent_spending_limits
+     SET current_spend_micro = ?, circuit_state = ?, window_start = ?, updated_at = ?
+     WHERE account_id = ?`,
+    [newSpend.toString(), circuitState, windowStart, now, accountId]
+  );
+
+  // Emit events within transaction (outbox insert)
+  if (circuitState === 'warning') {
+    await this.eventEmitter.emitInTransaction(tx, {
+      eventType: 'AgentBudgetWarning',
+      entityType: 'agent', entityId: accountId,
+      idempotencyKey: `budget_warning:${accountId}:${reservationId}`,
+      payload: { accountId, currentSpendMicro: newSpend.toString(), dailyCapMicro: cap.toString() },
+    });
+  } else if (circuitState === 'open') {
+    await this.eventEmitter.emitInTransaction(tx, {
+      eventType: 'AgentBudgetExhausted',
+      entityType: 'agent', entityId: accountId,
+      idempotencyKey: `budget_exhausted:${accountId}:${reservationId}`,
+      payload: { accountId, currentSpendMicro: newSpend.toString(), dailyCapMicro: cap.toString() },
+    });
+  }
 }
 ```
 
-**Payout flow (two-phase escrow model):**
+**Budget check (advisory — called before `reserve()`):**
 
-```
-User requests payout
-  → Validate: earned balance ≥ amount, amount ≥ minimum, rate limit check, KYC threshold
-  → Phase 1: HOLD — Within SQLite BEGIN IMMEDIATE transaction:
-    1. Read treasury balance with OCC version check:
-       SELECT balance_micro, version FROM treasury_state WHERE id = 'payout_reserve'
-    2. Verify treasury balance ≥ amount
-    3. Move creator earned credits to escrow pool:
-       Transfer from pool 'referral:revenue_share' → 'withdrawal:pending'
-    4. Move treasury reserve to held state:
-       Transfer from 'treasury:payout_reserve' → 'reserve:held'
-       with OCC: UPDATE treasury_state SET ... WHERE version = ? (fails if stale)
-    5. Insert payout_request (status: 'pending')
-  → Enqueue BullMQ job: 'payout-execution'
-  → Return payout_request_id (API response < 200ms)
+```typescript
+async checkBudget(accountId: string, amountMicro: bigint): Promise<BudgetCheckResult> {
+  // Fast path: Redis advisory check (non-authoritative)
+  const cached = await this.redis.get(`agent_budget:${accountId}`);
+  if (cached) {
+    const { currentSpendMicro, dailyCapMicro, circuitState } = JSON.parse(cached);
+    if (circuitState === 'open') {
+      return { allowed: false, currentSpendMicro, dailyCapMicro, remainingMicro: 0n, circuitState };
+    }
+  }
 
-BullMQ payout-execution worker (concurrency: 1):
-  → Call NOWPayments payout API with idempotency_key = payout_request_id
-  → Phase 2a: ACCEPT — Update status: 'pending' → 'processing'
-  → NOWPayments webhook (HMAC verified):
-    → 'completed': Phase 2b: FINALIZE
-      - Burn escrowed credits (pool: 'withdrawal:pending' → consumed)
-      - Burn held reserve (pool: 'reserve:held' → consumed)
-      - Update status → 'completed', record net_amount, fee
-    → 'failed' (terminal): Phase 2c: RELEASE
-      - Transfer credits back: 'withdrawal:pending' → 'referral:revenue_share'
-      - Transfer reserve back: 'reserve:held' → 'treasury:payout_reserve'
-      - Update status → 'failed'
-    → 'failed' (retryable): increment retry_count
-      - If retry_count < max_retries: re-enqueue with exponential backoff
-      - If retry_count >= max_retries: treat as terminal failure → RELEASE
-  → Stall detection: BullMQ cron polls processing payouts > 24h → mark 'stalled'
-    → Stalled payouts: reconcile via NOWPayments status API, then FINALIZE or RELEASE
-```
+  // SQLite authoritative check (used if Redis miss or for final confirmation)
+  const limit = await this.db.get(
+    'SELECT * FROM agent_spending_limits WHERE account_id = ?',
+    [accountId]
+  );
+  if (!limit) return { allowed: true, currentSpendMicro: 0n, dailyCapMicro: 0n, remainingMicro: 0n, circuitState: 'closed' };
 
-**Concurrency safety:** BullMQ payout-execution concurrency set to **1** (serialized). The `treasury_state` table provides OCC as defense-in-depth:
+  const cap = BigInt(limit.daily_cap_micro);
+  const spend = BigInt(limit.current_spend_micro);
+  const remaining = cap > spend ? cap - spend : 0n;
 
-```sql
-CREATE TABLE treasury_state (
-  id TEXT PRIMARY KEY DEFAULT 'payout_reserve',
-  balance_micro BIGINT NOT NULL DEFAULT 0,
-  held_micro BIGINT NOT NULL DEFAULT 0,
-  version INTEGER NOT NULL DEFAULT 0
-);
+  // Update Redis cache
+  await this.redis.setex(`agent_budget:${accountId}`, 60, JSON.stringify({
+    currentSpendMicro: spend.toString(),
+    dailyCapMicro: cap.toString(),
+    circuitState: limit.circuit_state,
+  }));
+
+  return {
+    allowed: limit.circuit_state !== 'open',
+    currentSpendMicro: spend,
+    dailyCapMicro: cap,
+    remainingMicro: remaining,
+    circuitState: limit.circuit_state as CircuitState,
+  };
+}
 ```
 
-All payout state transitions are idempotent, keyed by `payout_requests.id`.
+**Integration with existing reserve/finalize flow:**
 
-**Payout state machine — formal transitions:**
+Budget enforcement operates at **two points** — advisory pre-check and authoritative finalize-time enforcement:
 
-```
-pending → processing → completed
-                    → failed
-                    → stalled → completed (via reconciliation)
-                              → failed (via reconciliation)
-pending → cancelled (user cancellation before processing starts)
-failed → (terminal — no retry from failed; RELEASE already executed)
-completed → (terminal — FINALIZE already executed)
-```
+1. **Pre-check (advisory)**: `AgentBudgetService.checkBudget()` is called before `reserve()` as a fast-path rejection. This is a performance optimization, not a safety guarantee.
+2. **Finalize-time (authoritative)**: `AgentBudgetService.recordFinalizationInTransaction()` is called **within the same SQLite `BEGIN IMMEDIATE` transaction** as `CreditLedgerAdapter.finalize()`. This is the safety guarantee — budget increment and finalize are atomic.
 
-**Transition guards (SQL WHERE clauses):**
+All code paths that call `finalize()` for agent accounts MUST go through `AgentAwareFinalizer` — a single application service wrapper that enforces budget accounting:
 
-| Transition | Actor | SQL Guard |
-|-----------|-------|-----------|
-| pending → processing | payout worker | `WHERE id = ? AND status = 'pending'` |
-| processing → completed | webhook handler | `WHERE id = ? AND status = 'processing'` |
-| processing → failed | webhook handler | `WHERE id = ? AND status = 'processing'` |
-| processing → stalled | reconciliation cron | `WHERE id = ? AND status = 'processing' AND processing_at < ?` |
-| stalled → completed | reconciliation cron | `WHERE id = ? AND status = 'stalled'` |
-| stalled → failed | reconciliation cron | `WHERE id = ? AND status = 'stalled'` |
-| pending → cancelled | API (user) | `WHERE id = ? AND status = 'pending'` |
+```typescript
+// AgentAwareFinalizer — the ONLY finalize entrypoint for agent accounts
+class AgentAwareFinalizer {
+  async finalize(reservationId: string, actualCostMicro: bigint, opts?: FinalizeOptions): Promise<FinalizeResult> {
+    return this.db.transaction('IMMEDIATE', async (tx) => {
+      // 1. Finalize reservation in ledger (within tx)
+      const result = await this.ledger.finalizeInTransaction(tx, reservationId, actualCostMicro, opts);
 
-Each transition uses `UPDATE ... WHERE status = ? RETURNING id` — if 0 rows affected, the transition was already applied (idempotent skip) or the payout is in an incompatible state (log warning). Ledger operations for each phase use deterministic idempotency keys: `hold:{payoutId}`, `finalize:{payoutId}`, `release:{payoutId}`.
+      // 2. If agent account, apply authoritative budget accounting (within same tx)
+      const account = await tx.get('SELECT entity_type FROM credit_accounts WHERE id = ?', [result.accountId]);
+      if (account.entity_type === 'agent') {
+        await this.budgetService.recordFinalizationInTransaction(tx, result.accountId, reservationId, actualCostMicro);
+      }
 
-**Payout operational requirements:**
-
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| Minimum payout | $10.00 (10,000,000 micro) | Configurable via `revenue_rules` |
-| Maximum payout | $10,000.00 per request | Anti-fraud ceiling |
-| KYC threshold | $100.00 cumulative | Admin approval required above this |
-| Supported currencies | `usdt`, `usdc` | Add chains via config, not code change |
-| Supported chains | Ethereum (1), Polygon (137), Arbitrum (42161) | Validated against NOWPayments availability |
-| Rate limit | 1 per 24h per account | Enforced at API layer |
-
-**Address validation:** Before accepting a payout request, validate `destination_address` format per chain:
-- EVM chains: EIP-55 checksum validation via `ethers.getAddress()`
-- Reject known burn addresses (`0x0000...`, `0xdead...`)
-- If address was previously used for a failed payout, warn user
-
-**Fee handling and quoting:**
-1. **Quote step**: Before HOLD, call `NOWPayments.getEstimate()` to get current fee for the currency/chain pair. Store `quote_id` and `estimated_fee_micro` on `payout_requests`.
-2. **Quote TTL**: 5 minutes. If payout execution starts after TTL, re-quote before calling provider. If new fee > original estimate + 10%, pause and notify user.
-3. **Fee deduction**: Creator receives `net_amount_micro = amount_micro - fee_micro`. Fee is deducted from the gross payout amount (not from the creator's balance separately).
-4. **Fee cap**: If fee exceeds 20% of gross, reject with `400 fee_too_high` error and suggest lower amount or different currency.
-5. **Fee reconciliation**: On webhook completion, compare `actual_fee` from provider with `estimated_fee`. Log discrepancy >5% as `payout.fee.drift` metric. Actual fee used for accounting.
-6. **Partial/underpaid payouts**: If provider sends less than expected (network fee spike), record the actual `net_amount_micro` from webhook and log the discrepancy. Do not auto-retry — mark as completed with a `fee_discrepancy_micro` field for manual review if material.
-
-**Withdrawable balance calculation (settled lots with available balance):**
-```sql
-SELECT COALESCE(SUM(cl.available_micro), 0) as withdrawable
-FROM credit_lots cl
-INNER JOIN referrer_earnings re ON re.earning_lot_id = cl.id
-INNER JOIN credit_ledger le ON le.lot_id = cl.id AND le.entry_type = 'settlement'
-WHERE cl.account_id = ? AND cl.pool_id = 'referral:revenue_share'
-  AND re.status = 'settled'
-  AND cl.available_micro > 0
+      return result;
+    });
+  }
+}
 ```
 
-Only lots with a corresponding `settlement` ledger entry and `available_micro > 0` are withdrawable. The `settlement` ledger entry is the authoritative finality record. Pending lots exist but cannot be withdrawn. Lots partially consumed by prior payouts have reduced `available_micro`.
+```
+Agent requests inference
+  → API/Gateway reads account entity_type
+  → If entity_type === 'agent':
+    → AgentBudgetService.checkBudget(accountId, estimatedCost) [advisory]
+      → If circuit_state === 'open': reject with 429
+      → If allowed: proceed to CreditLedgerAdapter.reserve()
+  → On finalize():
+    → AgentAwareFinalizer.finalize(reservationId, actualCost) [authoritative]
+      → Within single BEGIN IMMEDIATE transaction:
+        1. CreditLedgerAdapter.finalizeInTransaction(tx, ...)
+        2. AgentBudgetService.recordFinalizationInTransaction(tx, ...)
+      → If budget exceeded: finalize succeeds but circuit opens immediately
+        (next reserve() will be rejected)
+```
 
-### 4.4 SettlementService
+### 4.3 EconomicEventEmitter
 
-**Location:** `themes/sietch/src/packages/adapters/billing/SettlementService.ts`
+**Location:** `themes/sietch/src/packages/adapters/billing/EconomicEventEmitter.ts`
+**Port:** `themes/sietch/src/packages/core/ports/IEconomicEventEmitter.ts`
 
-BullMQ cron job runs every hour. Transitions `referrer_earnings` from `pending` → `settled` after the configurable settlement delay (default: 48 hours, see [ADR-011](decisions/adr-011-settlement-hold-duration.md)). Uses pre-computed `settle_after` column ([ADR-013](decisions/adr-013-timestamp-format-convention.md)) rather than wall-clock math. **Each settlement writes a ledger entry** to make the ledger the authoritative audit trail for settlement state:
+```typescript
+interface IEconomicEventEmitter {
+  /**
+   * Emit an economic event within the caller's SQLite transaction.
+   * The event is INSERTed into the `economic_events` table synchronously.
+   * External publication happens asynchronously after commit (outbox pattern).
+   *
+   * @param tx - The active SQLite transaction handle
+   * @param event - The event to emit
+   */
+  emitInTransaction(tx: Transaction, event: EconomicEventInput): Promise<void>;
+
+  /**
+   * Emit an event outside a transaction context (for non-financial events).
+   * Uses its own BEGIN IMMEDIATE transaction.
+   */
+  emit(eventType: string, payload: Record<string, unknown>): Promise<void>;
+}
+
+interface EconomicEventInput {
+  eventType: EconomicEventType;
+  entityType: string;
+  entityId: string;
+  correlationId?: string;
+  idempotencyKey: string;
+  configVersion?: number;
+  payload: Record<string, unknown>;
+}
+```
+
+**EconomicEvent union type** — extends existing `BillingEvent` for cross-system vocabulary:
+
+```typescript
+// packages/core/protocol/economic-events.ts
+
+export type EconomicEventType =
+  // From existing BillingEvent (bridged 1:1)
+  | 'LotMinted' | 'ReservationCreated' | 'ReservationFinalized' | 'ReservationReleased'
+  | 'ReferralRegistered' | 'BonusGranted' | 'BonusFlagged'
+  | 'EarningRecorded' | 'EarningSettled' | 'EarningClawedBack'
+  | 'PayoutRequested' | 'PayoutApproved' | 'PayoutCompleted' | 'PayoutFailed'
+  | 'RewardsDistributed' | 'ScoreImported'
+  // New for cycle-030
+  | 'AgentBudgetWarning' | 'AgentBudgetExhausted'
+  | 'AgentSettlementInstant'
+  | 'ConfigProposed' | 'ConfigApproved' | 'ConfigActivated'
+  | 'ReconciliationCompleted' | 'ReconciliationDivergence';
+
+/**
+ * Base shape for all economic events in the outbox table.
+ * Each event includes ordering (rowid), deduplication (idempotency_key),
+ * tracing (correlation_id), and governance provenance (config_version).
+ */
+export interface EconomicEvent {
+  eventId: string;           // UUID
+  eventType: EconomicEventType;
+  entityType: string;
+  entityId: string;
+  correlationId: string | null;
+  idempotencyKey: string;
+  configVersion: number | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+```
+
+**Outbox dispatch pattern (with claim protocol to prevent double-dispatch):**
+
+```
+Within SQLite transaction (synchronous):
+  1. Source-of-truth write (ledger entry, config update, etc.)
+  2. INSERT INTO economic_events (synchronous, same transaction)
+  3. COMMIT
+
+After commit (asynchronous — claim-based dispatcher):
+  4. Claim batch atomically:
+     UPDATE economic_events
+       SET claimed_by = :worker_id, claimed_at = :now
+       WHERE rowid IN (
+         SELECT rowid FROM economic_events
+         WHERE published_at IS NULL AND claimed_by IS NULL
+         ORDER BY rowid LIMIT 100
+       )
+       RETURNING *;
+  5. Publish claimed events to external consumers (NATS, webhooks, etc.)
+  6. UPDATE economic_events SET published_at = :now WHERE rowid = :rowid AND claimed_by = :worker_id
+  7. Stale claim recovery (runs periodically):
+     UPDATE economic_events SET claimed_by = NULL, claimed_at = NULL
+       WHERE claimed_by IS NOT NULL AND published_at IS NULL
+       AND claimed_at < datetime('now', '-60 seconds');
+```
+
+**Claim guarantees:** The `UPDATE ... WHERE claimed_by IS NULL RETURNING *` is atomic under SQLite's single-writer model. Concurrent dispatcher workers never claim the same rows. Stale claims (worker crashed mid-publish) are recovered after 60s timeout and re-dispatched by another worker.
+
+**Ordering guarantees:** Events are ordered by `(entity_id, rowid)` for per-entity ordering, or `rowid` alone for global ordering. The SQLite auto-incrementing rowid provides total ordering within the single-writer database.
+
+**Delivery semantics:** At-least-once. The `idempotency_key` enables consumers to deduplicate. Events are NOT gap-free (failed transactions don't emit events since the whole transaction rolls back). The claim protocol minimizes duplicate dispatch to only crash-recovery scenarios (stale claim re-dispatch), not concurrent worker contention.
+
+### 4.4 AgentSettlementPolicy
+
+**Modification to:** `themes/sietch/src/packages/adapters/billing/SettlementService.ts`
+
+Agent earnings settle with a 0-hour hold (configurable via `system_config`). The existing `SettlementService` is modified to read the settlement hold parameter per entity type.
+
+**Critical: all writes within a single transaction.** The `tx` handle is threaded through every write — ledger entry, earning status update, and economic event emission all use the same `BEGIN IMMEDIATE` transaction. If any step fails, the entire transaction rolls back (no partial settlement).
 
 ```typescript
 async settleEarnings(): Promise<number> {
-  const cutoff = new Date(Date.now() - this.settlementDelayMs).toISOString();
   const now = new Date().toISOString();
+  let settled = 0;
+
+  // Get all pending earnings grouped by entity type
   const pending = await this.db.all(
-    `SELECT * FROM referrer_earnings WHERE status = 'pending' AND created_at < ?`,
-    [cutoff]
+    `SELECT re.*, ca.entity_type
+     FROM referrer_earnings re
+     INNER JOIN credit_accounts ca ON ca.id = re.referrer_account_id
+     WHERE re.status = 'pending'`
   );
 
-  let settled = 0;
   for (const earning of pending) {
     await this.db.transaction('IMMEDIATE', async (tx) => {
-      // Write settlement ledger entry referencing the earning lot
-      // This makes the ledger the authoritative record of finality
-      await this.ledger.postEntry({
+      // Resolve settlement hold per entity type (reads within tx)
+      const holdParam = this.governance.resolveInTransaction(
+        tx, 'settlement.hold_seconds', earning.entity_type
+      );
+      const holdSeconds = holdParam.value; // Already integer seconds (no conversion needed)
+
+      // Check if hold has elapsed
+      const settleAfter = new Date(new Date(earning.created_at).getTime() + holdSeconds * 1000);
+      if (new Date(now) < settleAfter) return; // Still in hold period
+
+      // Write settlement ledger entry — WITHIN SAME TX
+      await this.ledger.postEntryInTransaction(tx, {
         accountId: earning.referrer_account_id,
         entryType: 'settlement',
         amountMicro: earning.amount_micro,
         lotId: earning.earning_lot_id,
         idempotencyKey: `settlement:${earning.id}`,
-        metadata: { earning_id: earning.id, reserve_entry_id: earning.reserve_entry_id },
+        metadata: JSON.stringify({
+          earning_id: earning.id,
+          config_version: holdParam.configVersion,
+        }),
       });
 
-      // Update earning status
+      // Update earning status — WITHIN SAME TX
       await tx.run(
         `UPDATE referrer_earnings SET status = 'settled', settlement_at = ? WHERE id = ? AND status = 'pending'`,
         [now, earning.id]
       );
+
+      // Emit economic event — WITHIN SAME TX (outbox insert)
+      const eventType = holdSeconds === 0 ? 'AgentSettlementInstant' : 'EarningSettled';
+      await this.eventEmitter.emitInTransaction(tx, {
+        eventType,
+        entityType: earning.entity_type,
+        entityId: earning.referrer_account_id,
+        correlationId: earning.id,
+        idempotencyKey: `settlement_event:${earning.id}`,
+        configVersion: holdParam.configVersion,
+        payload: {
+          earningId: earning.id,
+          amountMicro: earning.amount_micro.toString(),
+          holdSeconds,
+        },
+      });
     });
     settled++;
   }
@@ -671,453 +802,376 @@ async settleEarnings(): Promise<number> {
 }
 ```
 
-**Clawback on refund (compensating ledger entries):**
+**Transaction threading requirement:** `ICreditLedgerService` MUST expose `postEntryInTransaction(tx, ...)` and `finalizeInTransaction(tx, ...)` overloads that accept an external transaction handle. All money-moving writes in this SDD use these overloads to guarantee atomicity across ledger entry + earning status + economic event emission.
+```
+
+**Agent clawback policy (from PRD FR-2b):**
+
+Agent earnings (even with 0-hour settlement hold) remain subject to:
+1. **Automated fraud rules**: If `FraudCheckService` flags the underlying transaction, the earning is withheld regardless of entity type.
+2. **Clawback**: If the source transaction is reversed (e.g., referee chargeback), the agent earning is clawed back via compensating ledger entry. Existing `clawbackEarning()` method works unchanged.
+3. **Non-negative balance with receivable tracking**: If a clawback would create a negative balance, the clawback is applied in two parts within the **same `BEGIN IMMEDIATE` transaction**:
+   - **Immediate clawback**: Applied up to available balance (debit agent account to zero).
+   - **Receivable entry**: The unpaid remainder is recorded as a `clawback_receivable` ledger entry against the agent's receivable sub-account (`{agentAccountId}:receivable`). This preserves conservation — the liability is not forgiven, it is tracked.
+   - **Economic events**: Both `agent_clawback_partial` (for the applied portion) and `agent_clawback_receivable_created` (for the remainder) are emitted within the same transaction.
+4. **Drip recovery**: Future agent earnings are intercepted by the `AgentAwareFinalizer`. Before crediting new earnings, it checks the agent's receivable balance. If non-zero, a portion (configurable via `system_config` key `agent.drip_recovery_pct`, default 50%) of each new earning is transferred from the earning to the receivable account via idempotent ledger entries keyed by `drip:{earningId}:{receivableId}`. When the receivable reaches zero, normal earning flow resumes.
+5. **Reconciliation**: The `ReconciliationService` includes `clawback_receivable` sub-accounts in its conservation check. The invariant is: `sum(all_account_balances) + sum(all_receivable_balances) = total_minted`. Receivable balances are always >= 0 (they represent money owed to the platform).
+
+### 4.5 AgentProvenanceVerifier
+
+**Location:** `themes/sietch/src/packages/adapters/billing/AgentProvenanceVerifier.ts`
+
 ```typescript
-async clawbackEarning(earningId: string, reason: string): Promise<void> {
-  await this.db.transaction('IMMEDIATE', async (tx) => {
-    // Only pending earnings can be clawed back (settled = finalized, cannot reverse)
-    const earning = await tx.get(
-      'SELECT * FROM referrer_earnings WHERE id = ? AND status = ?',
-      [earningId, 'pending']
-    );
-    if (!earning) throw new Error('Earning not found or already settled');
+interface IAgentProvenanceVerifier {
+  // Register agent identity
+  registerAgent(opts: RegisterAgentOpts): Promise<AgentIdentity>;
 
-    // 1. Post compensating ledger entry reversing the earning lot
-    //    References the original earning_lot_id for full audit trail
-    await this.ledger.postCompensatingEntry({
-      originalLotId: earning.earning_lot_id,
-      accountId: earning.referrer_account_id,
-      amountMicro: earning.amount_micro,
-      entryType: 'clawback',
-      poolId: 'referral:revenue_share',
-      idempotencyKey: `clawback:earning:${earningId}`,
-      metadata: { reason, earning_id: earningId },
-    });
+  // Verify agent provenance (called on agent account creation)
+  verifyProvenance(accountId: string): Promise<ProvenanceResult>;
 
-    // 2. Post compensating ledger entry reversing the treasury reserve backing
-    //    References the original reserve_entry_id for full audit trail
-    await this.ledger.postCompensatingEntry({
-      originalEntryId: earning.reserve_entry_id,
-      accountId: this.treasuryAccountId,
-      amountMicro: earning.amount_micro,
-      entryType: 'clawback',
-      poolId: 'treasury:payout_reserve',
-      idempotencyKey: `clawback:reserve:${earningId}`,
-      metadata: { reason, earning_id: earningId },
-    });
+  // Resolve creator for an agent
+  getCreator(agentAccountId: string): Promise<CreditAccount>;
 
-    // 3. Mark earning as clawed back
-    await tx.run(
-      'UPDATE referrer_earnings SET status = ? WHERE id = ?',
-      ['clawed_back', earningId]
-    );
-  });
+  // Phase 2: Bind TBA address
+  bindTBA(accountId: string, tbaAddress: string): Promise<AgentIdentity>;
+}
+
+interface RegisterAgentOpts {
+  agentAccountId: string;
+  creatorAccountId: string;
+  chainId: number;
+  contractAddress: string;
+  tokenId: string;
+  creatorSignature?: string;  // Hex-encoded signature of agent config
+}
+
+interface ProvenanceResult {
+  verified: boolean;
+  creatorKYCLevel: 'none' | 'basic' | 'enhanced';
+  identityAnchor: { chainId: number; contractAddress: string; tokenId: string };
 }
 ```
 
-**`postCompensatingEntry`** reduces `available_micro` on the original lot by the specified amount and creates a new `clawback` ledger entry referencing the original entry. This maintains the append-only audit trail while correctly reversing the financial impact. The `idempotencyKey` ensures clawback is safe to retry.
+**Beneficiary model:** Agents are controlled sub-ledgers of a KYC'd creator:
+- Agent earnings credit the agent's internal account (for spending on inference)
+- Surplus (earnings > spending) is transferable to the creator's account
+- Creator KYC level governs payout thresholds for agent-originating earnings
+- Agent cannot receive external payouts directly (Phase 1)
 
-**Clawback edge cases and ordering rules:**
+### 4.6 ReconciliationService (ADR-008)
 
-| Scenario | Behavior |
-|----------|----------|
-| Clawback arrives **before** settlement (normal) | Earning reversed, lot + reserve compensated, earning status → `clawed_back` |
-| Clawback arrives **after** settlement | Rejected — settled earnings are final. Refund must be handled via separate dispute process. |
-| Clawback arrives during **active payout** (lot in escrow `withdrawal:pending`) | Rejected — lot is locked in escrow. Payout must complete (FINALIZE or RELEASE) before clawback can be evaluated. If payout fails and releases, a subsequent clawback attempt can succeed if still within pending window. |
-| Partial clawback (refund < earning amount) | Not supported in v1 — clawback is all-or-nothing per earning. Partial refunds create a new pending earning for the un-refunded portion if needed. |
-| Concurrent clawback + settlement race | The `BEGIN IMMEDIATE` transaction + `WHERE status = 'pending'` guard ensures exactly one wins. If settlement runs first, clawback is rejected. If clawback runs first, settlement skips that earning. |
-| Duplicate clawback (retry) | Idempotent via `idempotencyKey: clawback:earning:{earningId}`. Second attempt is a no-op. |
-
-### 4.5 ScoreRewardsService
-
-**Location:** `themes/sietch/src/packages/adapters/billing/ScoreRewardsService.ts`
-**Port:** `themes/sietch/src/packages/core/ports/IScoreRewardsService.ts`
+**Location:** `themes/sietch/src/packages/adapters/billing/ReconciliationService.ts`
 
 ```typescript
-interface IScoreRewardsService {
-  importScores(scores: ScoreEntry[]): Promise<ImportResult>;
-  distributeRewards(period: string): Promise<DistributionResult>;
-  getAccountScore(accountId: string, period: string): Promise<bigint>;
-  linkWallet(accountId: string, proof: WalletLinkProof): Promise<WalletLink>;
-  unlinkWallet(accountId: string, walletAddress: string): Promise<void>;
+interface IReconciliationService {
+  // Run periodic reconciliation check
+  reconcile(): Promise<ReconciliationResult>;
+
+  // Get reconciliation history
+  getHistory(limit?: number): Promise<ReconciliationResult[]>;
+}
+
+interface ReconciliationResult {
+  timestamp: string;
+  checks: ReconciliationCheck[];
+  status: 'passed' | 'divergence_detected';
+}
+
+interface ReconciliationCheck {
+  name: string;
+  expected: bigint;
+  actual: bigint;
+  divergenceMicro: bigint;
+  passed: boolean;
 }
 ```
 
-**Distribution flow (BullMQ cron — weekly/monthly):**
+**Reconciliation checks:**
 
-1. Query `foundation:score_rewards` pool balance
-2. Calculate pool size = `min(configured_amount, available_balance)`
-3. If pool size < minimum threshold → abort (log warning)
-4. Aggregate scores per account (via `wallet_links` → `score_snapshots`)
-5. Filter: per-wallet min score + per-account min score
-6. Calculate proportional shares: `account_reward = (account_score / total_score) × pool_size`
-7. Create campaign with `type: 'score_weighted'`, `budget_micro: pool_size`
-8. Batch grant via `CampaignAdapter.batchGrant()` with `pool: 'score:rewards'`
-9. Record in `score_distributions`
+1. **Internal conservation** (credit ledger only):
+   ```sql
+   -- For each account: available + reserved + consumed = total minted - expired
+   SELECT account_id,
+     SUM(available_micro + reserved_micro + consumed_micro) as lot_sum,
+     SUM(original_micro) as minted_sum
+   FROM credit_lots
+   GROUP BY account_id
+   HAVING lot_sum != minted_sum
+   ```
 
-**Nonce issuance (API: `POST /api/score/wallets/nonce`):**
-```typescript
-async issueNonce(accountId: string, walletAddress: string, chainId: number): Promise<string> {
-  const nonce = crypto.randomBytes(16).toString('hex');
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes
+   **Including clawback receivables:** Agent accounts may have associated receivable sub-accounts (`{accountId}:receivable`). The global conservation check must include these:
+   ```sql
+   -- Global conservation: all balances + all receivables = total minted
+   SELECT
+     (SELECT SUM(available_micro + reserved_micro + consumed_micro) FROM credit_lots) as total_lots,
+     (SELECT COALESCE(SUM(balance_micro), 0) FROM agent_clawback_receivables
+      WHERE balance_micro > 0) as total_receivables,
+     (SELECT SUM(original_micro) FROM credit_lots) as total_minted
+   -- Invariant: total_lots + total_receivables = total_minted
+   ```
 
-  await this.db.run(
-    `INSERT INTO wallet_link_nonces (nonce, account_id, wallet_address, chain_id, issued_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [nonce, accountId, walletAddress, chainId, now.toISOString(), expiresAt.toISOString()]
-  );
-  return nonce;
-}
-```
+2. **Cross-system bridge conservation** (credit ledger ↔ budget engine):
+   ```
+   sum(credit_ledger.reserved_micro WHERE status = 'pending') == sum(budget_engine.allocated_capacity)
+   ```
+   This check is design-only in Phase 1 (ADR-008). The test harness simulates the budget engine side.
 
-**Wallet link verification (EIP-191 with SIWE-style deterministic message):**
-```typescript
-async linkWallet(accountId: string, proof: WalletLinkProof): Promise<WalletLink> {
-  // Verify linked wallet count
-  const count = await this.db.get(
-    'SELECT COUNT(*) as n FROM wallet_links WHERE account_id = ? AND unlinked_at IS NULL',
-    [accountId]
-  );
-  if (count.n >= 10) throw new Error('Maximum 10 linked wallets');
+3. **Agent spending vs cap** (agent budget engine):
+   ```sql
+   -- Verify cap counter matches actual finalized spend in window
+   SELECT asl.account_id, asl.current_spend_micro,
+     (SELECT COALESCE(SUM(actual_cost_micro), 0) FROM credit_reservations
+      WHERE account_id = asl.account_id AND status = 'finalized'
+      AND finalized_at >= asl.window_start) as actual_spend
+   FROM agent_spending_limits asl
+   WHERE asl.current_spend_micro != actual_spend
+   ```
 
-  // Consume nonce — atomic single-use enforcement
-  const nonceRow = await this.db.get(
-    `UPDATE wallet_link_nonces SET used_at = ? WHERE nonce = ? AND used_at IS NULL AND expires_at > ?
-     RETURNING *`,
-    [new Date().toISOString(), proof.nonce, new Date().toISOString()]
-  );
-  if (!nonceRow) throw new Error('Invalid, expired, or already-used nonce');
+**Reconciliation NEVER auto-corrects.** Divergence > threshold triggers an alert event (`ReconciliationDivergence`) and admin notification.
 
-  // Verify nonce was issued for this account + wallet + chain
-  if (nonceRow.account_id !== accountId ||
-      nonceRow.wallet_address.toLowerCase() !== proof.walletAddress.toLowerCase() ||
-      nonceRow.chain_id !== proof.chainId) {
-    throw new Error('Nonce does not match request parameters');
-  }
+### 4.7 Parameter Migration Path
 
-  // Deterministic message format (SIWE-style fixed template, NOT JSON.stringify)
-  const message = [
-    `Arrakis Wallet Link`,
-    ``,
-    `Action: link_wallet`,
-    `Account: ${accountId}`,
-    `Wallet: ${proof.walletAddress}`,
-    `Chain ID: ${proof.chainId}`,
-    `Nonce: ${proof.nonce}`,
-  ].join('\n');
-
-  const recoveredAddress = ethers.verifyMessage(message, proof.signature);
-  if (recoveredAddress.toLowerCase() !== proof.walletAddress.toLowerCase())
-    throw new Error('Signature verification failed');
-
-  // Insert wallet_links
-  return await this.db.run(
-    `INSERT INTO wallet_links (account_id, wallet_address, chain_id, verified_at)
-     VALUES (?, ?, ?, ?)`,
-    [accountId, proof.walletAddress, proof.chainId, new Date().toISOString()]
-  );
-}
-```
-
-### 4.6 LeaderboardService
-
-**Location:** `themes/sietch/src/packages/adapters/billing/LeaderboardService.ts`
+To replace hardcoded constants with runtime-configurable parameters, each service is modified to read from `ConstitutionalGovernanceService` instead of constants:
 
 ```typescript
-interface ILeaderboardService {
-  getLeaderboard(timeframe: Timeframe, opts: LeaderboardOpts): Promise<LeaderboardEntry[]>;
-  getCreatorRank(accountId: string, timeframe: Timeframe): Promise<number>;
-}
+// BEFORE (current code)
+const KYC_BASIC_THRESHOLD_MICRO = 100_000_000n;  // CreatorPayoutService.ts:67
+
+// AFTER (cycle-030)
+const kycThreshold = this.governance.resolveInTransaction(
+  tx, 'kyc.basic_threshold_micro', account.entityType
+);
+// kycThreshold.value = 100000000 (from system_config or compile-time fallback)
+// kycThreshold.configVersion = 3 (recorded in audit trail)
+// kycThreshold.source = 'entity_override' | 'global_config' | 'compile_fallback'
 ```
 
-**Implementation:** Redis-cached aggregate queries with 1-minute TTL.
+**Compile-time fallbacks (unchanged from current codebase):**
 
-```typescript
-async getLeaderboard(timeframe: Timeframe, opts: LeaderboardOpts): Promise<LeaderboardEntry[]> {
-  const cacheKey = `leaderboard:${timeframe}:${opts.limit}`;
-  const cached = await this.redis.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+| Param Key | Fallback Value | Source File | Notes |
+|-----------|---------------|-------------|-------|
+| `kyc.basic_threshold_micro` | `100000000` | CreatorPayoutService.ts:67 | bigint_micro |
+| `kyc.enhanced_threshold_micro` | `600000000` | CreatorPayoutService.ts:68 | bigint_micro |
+| `settlement.hold_seconds` | `172800` | SettlementService.ts:55 | 48h in seconds |
+| `payout.min_micro` | `1000000` | CreatorPayoutService.ts:64 | bigint_micro |
+| `payout.rate_limit_seconds` | `86400` | CreatorPayoutService.ts:71 | 24h in seconds |
+| `payout.fee_cap_percent` | `20` | CreatorPayoutService.ts:77 | integer percent |
+| `revenue_rule.cooldown_seconds` | `172800` | RevenueRulesAdapter.ts:34 | 48h in seconds |
+| `fraud_rule.cooldown_seconds` | `604800` | FraudRulesService.ts:129 | 168h in seconds |
+| `reservation.default_ttl_seconds` | `300` | CreditLedgerAdapter.ts:48 | integer seconds |
+| `referral.attribution_window_days` | `365` | ReferralService | 12 months ≈ 365 days |
 
-  const since = this.getTimeframeSince(timeframe); // daily/weekly/monthly/all_time
-  const rows = await this.db.all(`
-    SELECT
-      r.referrer_account_id,
-      COUNT(DISTINCT r.referee_account_id) as referral_count,
-      COALESCE(SUM(e.amount_micro), 0) as total_earnings_micro
-    FROM referral_registrations r
-    LEFT JOIN referrer_earnings e ON e.referrer_account_id = r.referrer_account_id
-      AND e.created_at >= ?
-    WHERE r.created_at >= ?
-    GROUP BY r.referrer_account_id
-    ORDER BY total_earnings_micro DESC
-    LIMIT ?
-  `, [since, since, opts.limit]);
+**Entity-type overrides seeded at migration time:**
 
-  await this.redis.setex(cacheKey, 60, JSON.stringify(rows));
-  return rows;
-}
-```
-
-### 4.7 FraudCheckService
-
-**Location:** `themes/sietch/src/packages/adapters/billing/FraudCheckService.ts`
-
-Evaluates referral registrations and bonus claims for abuse signals:
-
-```typescript
-interface IFraudCheckService {
-  scoreRegistration(registration: ReferralRegistration, context: RequestContext): Promise<FraudScore>;
-  scoreBonusClaim(bonus: ReferralBonus): Promise<FraudScore>;
-  processDelayedBonuses(): Promise<number>; // BullMQ cron
-}
-```
-
-**Risk signals (queried from `referral_events` table):**
-- Same IP cluster: `SELECT COUNT(*) FROM referral_events WHERE ip_prefix = ? AND created_at > ? AND event_type = 'registration'` (>3 from same /24 in 1 hour)
-- Similar user-agent fingerprint: cluster by `user_agent_hash` (>5 same hash in 24h)
-- Rapid sequential registration: `SELECT COUNT(*) FROM referral_events WHERE referral_code_id = ? AND created_at > ?` (>5 per code per hour)
-- Referee has no paid activity after 7 days (queried from `credit_ledger`)
-- Referrer has >50% flagged registrations (queried from `referral_bonuses.status`)
-
-**Event capture:** API middleware writes to `referral_events` on every `/api/referrals/register` and bonus-triggering action. `RequestContext` contains `ip`, `userAgent`, and optional `fingerprint` from the request. All values are SHA-256 hashed before insert.
-
-**Scoring:** Weighted sum (0.0-1.0). Threshold: >0.7 = withheld, 0.4-0.7 = flagged for review, <0.4 = cleared.
+| Param Key | Entity Type | Override Value | Notes |
+|-----------|-------------|----------------|-------|
+| `settlement.hold_seconds` | `agent` | `0` | Instant settlement |
+| `payout.min_micro` | `agent` | `10000` | $0.01 micro-transactions |
+| `payout.rate_limit_seconds` | `agent` | `8640` | ~10 per 24h |
 
 ---
 
 ## 5. API Design
 
-### 5.1 Referral Endpoints
+### 5.1 Constitutional Governance Endpoints
 
 ```
-POST   /api/referrals/code                Create referral code
-GET    /api/referrals/code                Get my referral code
-POST   /api/referrals/register            Register as referee
-DELETE /api/referrals/code/:id            Revoke code (admin)
-GET    /api/referrals/leaderboard         Get leaderboard
+POST   /api/admin/config/propose         Propose parameter change
+POST   /api/admin/config/:id/approve     Approve pending proposal
+POST   /api/admin/config/:id/reject      Reject pending proposal
+POST   /api/admin/config/:id/emergency   Emergency override (3+ admins)
+GET    /api/admin/config                  List active configuration
+GET    /api/admin/config/pending          List pending proposals
+GET    /api/admin/config/:key/history     Get parameter history
 ```
 
-#### `POST /api/referrals/code`
+#### `POST /api/admin/config/propose`
 
-**Auth:** Bearer token (authenticated user)
-**Response:** `201 Created`
-```json
-{
-  "code": "a7bx3mwp2k",
-  "status": "active",
-  "created_at": "2026-02-16T01:00:00Z"
-}
-```
-**Errors:** `409 Conflict` if active code exists.
-
-#### `POST /api/referrals/register`
-
-**Body:** `{ "code": "a7bx3mwp2k" }`
-**Response:** `201 Created`
-```json
-{
-  "registration_id": "...",
-  "referrer_display": "0xab...cd",
-  "attribution_expires_at": "2027-02-16T01:00:00Z"
-}
-```
-**Errors:** `400` (self-referral), `404` (invalid code), `409` (already bound), `429` (rate limited)
-
-#### `GET /api/referrals/leaderboard`
-
-**Query:** `?timeframe=weekly&limit=50`
-**Response:** `200 OK`
-```json
-{
-  "timeframe": "weekly",
-  "entries": [
-    {
-      "rank": 1,
-      "display_name": "0xab...cd",
-      "referral_count": 12,
-      "total_earnings_micro": 5000000
-    }
-  ]
-}
-```
-
-### 5.2 Creator Dashboard Endpoints
-
-```
-GET    /api/creator/earnings              Earnings summary
-GET    /api/creator/referrals             Referral stats
-GET    /api/creator/payouts               Payout history
-```
-
-#### `GET /api/creator/earnings`
-
-**Query:** `?timeframe=monthly`
-**Response:**
-```json
-{
-  "total_earned_micro": 15000000,
-  "pending_settlement_micro": 2000000,
-  "settled_withdrawable_micro": 10000000,
-  "withdrawn_micro": 3000000,
-  "referral_count": 25,
-  "active_referees": 18
-}
-```
-
-### 5.3 Payout Endpoints
-
-```
-POST   /api/payouts/request              Request payout
-GET    /api/payouts/:id                  Get payout status
-POST   /api/payouts/webhook              NOWPayments callback (internal)
-```
-
-#### `POST /api/payouts/request`
-
+**Auth:** Admin bearer token
 **Body:**
 ```json
 {
-  "amount_micro": 10000000,
-  "destination_address": "0x...",
-  "currency": "usdt"
+  "param_key": "settlement.hold_seconds",
+  "entity_type": "agent",
+  "value": 0,
+  "justification": "Agents don't need human dispute windows"
 }
 ```
-**Response:** `202 Accepted`
+**Response:** `201 Created`
 ```json
 {
-  "payout_id": "...",
-  "status": "pending",
-  "amount_micro": 10000000,
-  "estimated_fee_micro": 500000
+  "id": "...",
+  "param_key": "settlement.hold_seconds",
+  "entity_type": "agent",
+  "value_json": "0",
+  "status": "draft",
+  "required_approvals": 2,
+  "approval_count": 0
 }
 ```
-**Errors:** `400` (below minimum, insufficient balance), `429` (rate limited), `403` (KYC required)
 
-### 5.4 Score Endpoints
+#### `POST /api/admin/config/:id/approve`
+
+**Auth:** Admin bearer token (different admin from proposer)
+**Response:** `200 OK`
+```json
+{
+  "id": "...",
+  "status": "cooling_down",
+  "approval_count": 2,
+  "cooldown_ends_at": "2026-02-23T00:00:00Z"
+}
+```
+**Errors:** `403` (self-approval), `409` (already approved by this admin), `400` (invalid state)
+
+### 5.2 Agent Budget Endpoints
 
 ```
-POST   /api/score/import                 Import scores (admin)
-POST   /api/score/wallets/nonce          Issue verification nonce
-POST   /api/score/wallets/link           Link wallet (requires nonce + signature)
-DELETE /api/score/wallets/:address        Unlink wallet
-GET    /api/score/wallets                 Get linked wallets
-GET    /api/score/rewards                 Get reward history
+GET    /api/agent/:id/budget             Get agent budget status
+PUT    /api/agent/:id/budget/cap         Set daily spending cap
+GET    /api/agent/:id/identity           Get agent identity/provenance
 ```
 
-### 5.5 Rate Limiting
+#### `GET /api/agent/:id/budget`
+
+**Response:** `200 OK`
+```json
+{
+  "account_id": "...",
+  "daily_cap_micro": 50000000,
+  "current_spend_micro": 12000000,
+  "remaining_micro": 38000000,
+  "circuit_state": "closed",
+  "window_resets_at": "2026-02-17T00:00:00Z"
+}
+```
+
+### 5.3 Reconciliation Endpoints
+
+```
+POST   /api/admin/reconciliation/run     Trigger manual reconciliation
+GET    /api/admin/reconciliation/history  Get reconciliation history
+```
+
+### 5.4 Rate Limiting
 
 | Endpoint | Limit |
 |----------|-------|
-| `POST /api/referrals/register` | 10/minute per IP |
-| `POST /api/payouts/request` | 1/24h per account |
-| `POST /api/referrals/code` | 1/hour per account |
-| `POST /api/score/wallets/link` | 5/hour per account |
+| `POST /api/admin/config/propose` | 10/hour per admin |
+| `POST /api/admin/config/:id/approve` | 50/hour per admin |
+| `POST /api/admin/config/:id/emergency` | 3/day per admin |
+| `GET /api/agent/:id/budget` | 60/minute per account |
 
 ---
 
 ## 6. Security Architecture
 
-### 6.1 Anti-Fraud Pipeline
+### 6.1 Constitutional Governance Security
 
-```
-Registration → Risk Score → Route
-  ├── score < 0.4 → CLEAR (immediate bonus eligibility after hold)
-  ├── 0.4 ≤ score < 0.7 → FLAGGED (manual review queue)
-  └── score ≥ 0.7 → WITHHELD (bonus blocked, admin notification)
-```
+- **Multi-sig**: Minimum 2 admin approvals; proposer cannot self-approve (four-eyes enforced via `approved_by` array check)
+- **Extended cooldown**: 7-day window between approval and activation for constitutional parameters (vs 48h for revenue rules)
+- **Emergency override**: Requires 3+ admin approvals + immediate audit notification. All approver IDs recorded in `system_config_audit` with `action: 'emergency_override'`
+- **Append-only audit**: Every governance action recorded in `system_config_audit` — no UPDATE or DELETE allowed on this table
+- **Config versioning**: Monotonically increasing `config_version` prevents stale reads. Money-moving operations record the version used
 
-### 6.2 Settlement Finality
+### 6.2 Agent Budget Security
 
-Earnings go through a **single 48-hour settlement delay** (not a separate cooling-off period). The 48h window allows refund/clawback processing. After settlement, earnings are immediately withdrawable. See [ADR-011](decisions/adr-011-settlement-hold-duration.md) for duration rationale and crypto finality analysis.
+- **Defense-in-depth**: Redis atomic counter (advisory, fast check) + SQLite authoritative counter (within same transaction as finalize)
+- **Idempotent cap updates**: `agent_budget_finalizations` table with `PRIMARY KEY (account_id, reservation_id)` and `INSERT OR IGNORE` prevents double-counting on retry — each reservation can only increment spend once
+- **Circuit breaker**: 80% warning → 100% hard stop. All `reserve()` calls for that agent are rejected until window resets
+- **No negative caps**: `current_spend_micro` is monotonically increasing within a window. Window reset is the only decrease
+- **Creator cannot override agent cap**: Cap changes require admin governance (prevents creator from removing safety limits)
 
-```
-Inference finalized → Referrer earning created (status: 'pending', earning_lot_id set)
-  → 48h settlement delay (configurable: SETTLEMENT_DELAY_MS, default 172800000)
-    → No refund/reversal received → status: 'settled', settlement ledger entry written
-      → Lots now withdrawable (appears in getWithdrawableBalance)
-    → Refund received during pending window → status: 'clawed_back'
-      → Compensating ledger entries reverse earning + reserve
-  → Settlement is irreversible — settled earnings cannot be clawed back
-```
+### 6.3 Agent Provenance Security
 
-**State timeline for a single earning:**
-| Time | Status | Withdrawable? | Clawback allowed? |
-|------|--------|---------------|-------------------|
-| T+0h | `pending` | No | Yes |
-| T+48h | `settled` | Yes | No |
-| After payout | `settled` (lot consumed) | No (consumed) | No |
+- **Chain-of-custody**: Agent identity is verified via creator's wallet signature, not human identity documents
+- **Canonical anchor**: `(chain_id, contract_address, token_id)` is immutable after registration. Phase 2 `tba_address` is additive only
+- **Creator KYC cascades**: Agent payout thresholds are governed by the creator's KYC level, not the agent's
+- **No orphan agents**: Agent account creation requires a valid `creator_account_id` that exists in `credit_accounts`
 
-### 6.3 Payout Security
+### 6.4 Economic Event Security
 
-- **Wallet verification**: First payout requires address re-confirmation
-- **HMAC webhook verification**:
-  - Header: `x-nowpayments-sig` contains HMAC-SHA-512 of the raw request body
-  - Secret: `NOWPAYMENTS_IPN_SECRET` environment variable (set in NOWPayments dashboard)
-  - Canonicalization: Sort JSON keys alphabetically, then HMAC the canonical string
-  - Timestamp window: Accept webhooks within 5-minute clock skew (`x-nowpayments-ts` header if available)
-  - Dedupe: `payout_requests.provider_reference` + status combination as idempotency — reject duplicate `(provider_reference, provider_status)` pairs
-  - Failure behavior: Return `200 OK` even if processing fails (to prevent NOWPayments retry storms); log error and enqueue for manual reconciliation
-  - Replay protection: Store processed webhook IDs in Redis with 24h TTL; reject seen IDs
-- **Idempotency**: `payout_request_id` as idempotency key to NOWPayments
-- **KYC threshold**: Cumulative payouts > $100 require admin approval
-- **Rate limit**: 1 payout per 24 hours per account
-
-### 6.4 Wallet Link Security
-
-- **EIP-191 personal_sign**: SIWE-style deterministic message with action, account_id, wallet_address, chain_id, nonce
-- **Nonce lifecycle**: Issued via `wallet_link_nonces` table → consumed atomically on verification → expired after 5 minutes
-- **Single-use**: `UPDATE ... WHERE used_at IS NULL` prevents nonce reuse
-- **Max links**: 10 per account (enforced before nonce consumption)
-- **Unlink**: Immediate, does not affect already-distributed rewards
+- **Synchronous outbox**: Events are INSERTed within the same SQLite transaction as source-of-truth writes. No orphan events, no missed events
+- **Idempotency**: `idempotency_key` UNIQUE constraint prevents duplicate events on retry
+- **Append-only**: `economic_events` table has no UPDATE or DELETE in application code. `published_at` is the only mutable field (set by dispatcher after external publish)
+- **No data leakage**: Event payloads contain account IDs and amounts but no PII. Cross-system consumers authenticate via API keys
 
 ---
 
-## 7. Queue Architecture
+## 7. Migration Plan
 
-### 7.1 BullMQ Queues
-
-| Queue | Purpose | Concurrency | Retry |
-|-------|---------|-------------|-------|
-| `payout-execution` | Process NOWPayments payouts | 1 | 3× exponential backoff |
-| `settlement-check` | Settle pending earnings | 1 | 1× (cron hourly) |
-| `score-distribution` | Distribute Score rewards | 1 | 1× (cron weekly/monthly) |
-| `fraud-check` | Evaluate delayed bonuses | 3 | 2× |
-| `payout-reconciliation` | Poll NOWPayments for stalled payouts | 1 | 1× (cron hourly) |
-| `bonus-granting` | Grant cleared bonuses | 3 | 2× |
-
-### 7.2 Cron Jobs
-
-| Job | Schedule | Description |
-|-----|----------|-------------|
-| `settle-earnings` | Every hour | Transition pending → settled after 48h |
-| `process-delayed-bonuses` | Every hour | Evaluate and grant cleared bonuses |
-| `score-distribution` | Monthly (1st) | Distribute Score rewards pool |
-| `reconcile-payouts` | Every hour | Poll processing payouts, mark stalled if >24h |
-| `leaderboard-refresh` | Every minute | Invalidate leaderboard cache |
-| `cleanup-expired-nonces` | Every hour | Delete expired/used `wallet_link_nonces` older than 1 hour |
-| `cleanup-referral-events` | Weekly | Delete `referral_events` older than 90 days (privacy retention) |
-
----
-
-## 8. Migration Plan
-
-### 8.1 New Migrations
+### 7.1 New Migrations
 
 | Migration | Tables/Changes |
 |-----------|---------------|
-| `042_referral_system` | `referral_codes`, `referral_registrations`, `referral_attribution_log`, `referral_bonuses`, `referral_events` |
-| `043_referrer_earnings` | `referrer_earnings` (with `earning_lot_id`, `reserve_entry_id` linkage), extend `credit_ledger` entry types |
-| `044_payout_system` | `payout_requests`, `treasury_state` (OCC table), treasury account creation |
-| `045_wallet_links` | `wallet_link_nonces`, `wallet_links`, `score_snapshots`, `score_distributions` |
-| `046_revenue_rules_referrer` | Add `referrer_bps` to `revenue_rules`, schema version bump |
+| `047_system_config` | `system_config`, `system_config_audit`, seed default parameters, seed agent-specific overrides |
+| `048_agent_budget` | `agent_spending_limits`, `agent_budget_finalizations` |
+| `049_agent_identity` | `agent_identity`, `agent_clawback_receivables` |
+| `050_economic_events` | `economic_events` outbox table (with claim columns) |
 
-### 8.2 Seed Data
+### 7.2 Seed Data (Migration 047)
 
-- Treasury account: `entity_type: 'foundation'`, `entity_id: 'treasury:payout_reserve'`
-- Default revenue rule with `referrer_bps: 1000` (10%)
-- Referral signup bonus campaign: `type: 'referral'`, `budget_micro: 50000000000` ($50,000)
-- Foundation Score rewards pool account
+```sql
+-- Seed global defaults (matching current hardcoded values, normalized to integer seconds/days)
+INSERT INTO system_config (param_key, entity_type, value_json, status, config_version, proposed_by, activated_at)
+VALUES
+  ('kyc.basic_threshold_micro', NULL, '100000000', 'active', 1, 'migration', datetime('now')),
+  ('kyc.enhanced_threshold_micro', NULL, '600000000', 'active', 1, 'migration', datetime('now')),
+  ('settlement.hold_seconds', NULL, '172800', 'active', 1, 'migration', datetime('now')),
+  ('payout.min_micro', NULL, '1000000', 'active', 1, 'migration', datetime('now')),
+  ('payout.rate_limit_seconds', NULL, '86400', 'active', 1, 'migration', datetime('now')),
+  ('payout.fee_cap_percent', NULL, '20', 'active', 1, 'migration', datetime('now')),
+  ('revenue_rule.cooldown_seconds', NULL, '172800', 'active', 1, 'migration', datetime('now')),
+  ('fraud_rule.cooldown_seconds', NULL, '604800', 'active', 1, 'migration', datetime('now')),
+  ('reservation.default_ttl_seconds', NULL, '300', 'active', 1, 'migration', datetime('now')),
+  ('referral.attribution_window_days', NULL, '365', 'active', 1, 'migration', datetime('now'));
+
+-- Seed version sequence counters
+INSERT INTO system_config_version_seq (param_key, entity_type, current_version)
+SELECT param_key, entity_type, 1 FROM system_config WHERE status = 'active';
+
+-- Seed agent-specific overrides
+INSERT INTO system_config (param_key, entity_type, value_json, status, config_version, proposed_by, activated_at)
+VALUES
+  ('settlement.hold_seconds', 'agent', '0', 'active', 1, 'migration', datetime('now')),
+  ('payout.min_micro', 'agent', '10000', 'active', 1, 'migration', datetime('now')),
+  ('payout.rate_limit_seconds', 'agent', '8640', 'active', 1, 'migration', datetime('now')),
+  ('agent.drip_recovery_pct', 'agent', '50', 'active', 1, 'migration', datetime('now'));
+
+-- Seed agent override version counters
+INSERT INTO system_config_version_seq (param_key, entity_type, current_version)
+VALUES
+  ('settlement.hold_seconds', 'agent', 1),
+  ('payout.min_micro', 'agent', 1),
+  ('payout.rate_limit_seconds', 'agent', 1),
+  ('agent.drip_recovery_pct', 'agent', 1);
+```
+
+### 7.3 Backward Compatibility
+
+- All existing tests (439+) continue passing unchanged
+- Services that don't read from `system_config` continue using compile-time constants
+- `system_config` seed data matches current hardcoded values exactly
+- Migration is purely additive — no existing column changes, no constraint modifications
+
+---
+
+## 8. Queue Architecture
+
+### 8.1 New BullMQ Queues
+
+| Queue | Purpose | Concurrency | Schedule |
+|-------|---------|-------------|----------|
+| `config-activation` | Activate configs after cooldown expiry | 1 | Cron: every hour |
+| `budget-window-reset` | Reset expired agent spending windows | 1 | Cron: every hour |
+| `economic-event-dispatch` | Publish outbox events to external consumers | 3 | Poll: every 10s |
+| `reconciliation` | Run cross-system reconciliation checks | 1 | Cron: every 6 hours |
+
+### 8.2 Modified Existing Queues
+
+| Queue | Modification |
+|-------|-------------|
+| `settlement-check` | Modified to read settlement hold per entity type from `system_config` |
 
 ---
 
@@ -1127,24 +1181,25 @@ Inference finalized → Referrer earning created (status: 'pending', earning_lot
 
 | Metric | Type | Alert |
 |--------|------|-------|
-| `referral.registrations` | Counter | >100/hour = spike alert |
-| `referral.bonuses.granted` | Counter | Budget >80% = warning |
-| `referral.bonuses.withheld` | Counter | >20% withheld = review |
-| `referrer.earnings.total_micro` | Gauge | Monitoring only |
-| `payout.requests.created` | Counter | Monitoring only |
-| `payout.requests.failed` | Counter | Any in 5min = alert |
-| `payout.requests.stalled` | Gauge | Any >0 = alert |
-| `treasury.reserve.balance_micro` | Gauge | <10% of withdrawable = critical |
-| `settlement.earnings.settled` | Counter | Monitoring only |
-| `score.distributions.completed` | Counter | Monitoring only |
-| `fraud.registrations.flagged` | Counter | >50% = alert |
+| `config.proposals.created` | Counter | Monitoring only |
+| `config.proposals.activated` | Counter | Monitoring only |
+| `config.emergency_overrides` | Counter | Any = alert (exceptional) |
+| `agent.budget.warnings` | Counter | >10/hour = alert |
+| `agent.budget.exhausted` | Counter | >5/hour = alert (runaway pattern) |
+| `agent.budget.utilization_pct` | Histogram | p90 >90% = alert |
+| `agent.settlement.instant_count` | Counter | Monitoring only |
+| `economic_events.emitted` | Counter | Monitoring only |
+| `economic_events.dispatch_lag_ms` | Histogram | p99 >5000ms = alert |
+| `economic_events.unpublished_count` | Gauge | >1000 = alert (dispatcher stuck) |
+| `reconciliation.divergence_count` | Counter | Any >0 = critical alert |
+| `reconciliation.check_duration_ms` | Histogram | p99 >30s = warning |
 
 ### 9.2 Audit Trail
 
-All financial operations append to `credit_ledger` (immutable, append-only). Additional audit:
-- `referral_attribution_log` — all attribution attempts
-- `revenue_rule_audit_log` — governance changes (existing)
-- `payout_requests` — full payout lifecycle with provider references
+All governance actions append to `system_config_audit` (immutable, append-only). Additional audit:
+- `economic_events` — unified financial event trail
+- `agent_spending_limits` — cap counter state (mutable but version-tracked)
+- Existing: `credit_ledger`, `revenue_rule_audit_log`, `referral_attribution_log`
 
 ---
 
@@ -1152,12 +1207,15 @@ All financial operations append to `credit_ledger` (immutable, append-only). Add
 
 | Operation | Target | Strategy |
 |-----------|--------|----------|
-| Referral registration | <200ms p99 | Single SQLite transaction |
-| Revenue share computation | <50ms overhead | In-memory BPS arithmetic, single DB insert |
-| Leaderboard query | <500ms p99 | Redis cache (1-min TTL) |
-| Payout request (API) | <200ms p99 | Async (enqueue only) |
-| Score distribution | <60s for 10K participants | Batch campaign grants |
-| Withdrawable balance | <100ms p99 | Indexed query on settled lots |
+| Parameter resolution (money-moving) | <2ms p99 | SQLite indexed lookup within transaction |
+| Parameter resolution (dashboard) | <1ms p99 | Redis cache (60s TTL) |
+| Agent budget check | <5ms p99 | Redis advisory + SQLite fallback |
+| Agent budget finalization update | <3ms p99 | Single UPDATE within existing finalize transaction |
+| Economic event emission | <2ms overhead | Single INSERT within existing transaction |
+| Economic event dispatch (outbox) | <100ms per batch | Poll + batch publish |
+| Reconciliation check | <30s for 10K accounts | Aggregate SQL queries |
+| Config activation (cooldown expiry) | <100ms per config | Cron hourly, single UPDATE |
+| Agent settlement (instant) | <100ms p99 | Same as existing settlement, hold = 0 |
 
 ---
 
@@ -1165,11 +1223,11 @@ All financial operations append to `credit_ledger` (immutable, append-only). Add
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| SQLite contention under concurrent financial writes | Medium | High | WAL mode (already enabled) + `busy_timeout: 5000ms` + application-level retry (3× with jitter). Isolate high-frequency event writes (`referral_events`) from ledger writes using separate write batching (insert events via buffered queue, not inline with financial transactions). BullMQ payout execution serialized (concurrency: 1). Settlement cron processes in small batches (50/iteration) to limit lock duration. Load-test target: 100 concurrent finalizations/min + 10 payout requests/min without p99 >500ms. If exceeded, escalation path: migrate authoritative ledger to Postgres (schema is portable, no SQLite-specific features used beyond `BEGIN IMMEDIATE`). |
-| NOWPayments API downtime | Low | High | Retry queue, stall detection, manual fallback runbook |
-| Score import data quality | Medium | Medium | Validation on import, minimum score thresholds filter noise |
-| Settlement delay creates UX friction | Low | Low | Dashboard clearly shows pending vs settled vs withdrawable |
-| Referral fraud at scale | High | Medium | Multi-signal fraud scoring, delayed granting, per-referrer caps |
+| Constitutional migration breaks parameter reads | Medium | High | Compile-time fallback: if `system_config` lookup returns null, use hardcoded constant. Migration seeds values identical to current constants. Feature flag: `SYSTEM_CONFIG_ENABLED=false` falls back to all compile-time. |
+| Agent budget cap race condition (concurrent finalize) | Low | Medium | SQLite single-writer prevents concurrent writes to `agent_spending_limits`. Redis advisory is eventually-consistent (acceptable — authoritative check is in SQLite transaction). Idempotent via `agent_budget_finalizations` PK `(account_id, reservation_id)` with `INSERT OR IGNORE`. |
+| Economic event outbox grows unbounded | Low | Low | Async dispatcher runs every 10s. Retention: published events archived after 30 days. Index on `published_at IS NULL` ensures fast poll. |
+| Config version monotonicity breaks on edge case | Low | Medium | `config_version` is per-`(param_key, entity_type)` — allocated via `system_config_version_seq` counter table under `BEGIN IMMEDIATE`, with `UNIQUE(param_key, entity_type, config_version)` DB-enforced constraint. No `MAX+1` races possible. |
+| Cross-system reconciliation reveals inconsistencies at launch | Medium | Medium | ADR-008 is design-only in Phase 1. Test harness simulates budget engine. Reconciliation is alert-only (never auto-corrects). |
 
 ---
 
@@ -1177,54 +1235,50 @@ All financial operations append to `credit_ledger` (immutable, append-only). Add
 
 | Dependency | Version | Purpose |
 |-----------|---------|---------|
-| `ethers` | ^6.x | EIP-191 signature verification for wallet linking |
-| `nanoid` | ^5.x | Referral code generation |
+| `better-sqlite3` | existing | SQLite database (already in codebase) |
+| `ioredis` | existing | Redis client (already in codebase) |
 | `bullmq` | existing | Queue management (already in codebase) |
-| `NOWPayments API` | v1 | Payout execution (extend existing adapter) |
+| `uuid` | existing | Event ID generation (already in codebase) |
 
-No new infrastructure dependencies. All runs on existing SQLite + Redis + BullMQ stack.
+**No new infrastructure dependencies.** All runs on existing SQLite + Redis + BullMQ stack.
 
 ---
 
 ## 13. Key Decisions (ADR Cross-References)
 
-Architectural decisions underpinning this system are documented in `grimoires/loa/decisions/`:
-
 | ADR | Title | SDD Sections Affected |
 |-----|-------|-----------------------|
-| [ADR-010](decisions/adr-010-rounding-algorithm.md) | Largest-Remainder Rounding | §4.2 Revenue Distribution (conservation invariant, foundation absorbs dust) |
-| [ADR-011](decisions/adr-011-settlement-hold-duration.md) | 48-Hour Settlement Hold | §4.4 Settlement, §6.2 Settlement Finality (pre-computed `settle_after`) |
-| [ADR-012](decisions/adr-012-payment-provider-selection.md) | NOWPayments Provider Selection | §4.3 Creator Payouts, §6.3 Payout Security (`IPayoutProvider` port) |
-| [ADR-013](decisions/adr-013-timestamp-format-convention.md) | Timestamp Format Convention | §3.1 Tables, §4.4 Settlement (SQLite `YYYY-MM-DD HH:MM:SS`, ISO 8601 at API boundary only) |
-| [ADR-015](decisions/adr-015-sqlite-locking-hierarchy.md) | SQLite Locking Hierarchy | §4.2, §4.4, §11 (IMMEDIATE for money ops, DEFERRED for reads, busy_timeout) |
-| [Data Authority Map](decisions/data-authority-map.md) | System-of-Record Matrix | §3.1-3.3 Tables (primary vs derived, append-only enforcement) |
+| [ADR-008](decisions/adr-008-cross-system-reconciliation.md) | Cross-System Balance Reconciliation | §4.6 ReconciliationService (design-only in Phase 1) |
+| [ADR-010](decisions/adr-010-rounding-algorithm.md) | Largest-Remainder Rounding | §4.2 Budget cap (BigInt arithmetic, no rounding issues) |
+| [ADR-013](decisions/adr-013-timestamp-format-convention.md) | Timestamp Format Convention | §3.1 Tables (ISO 8601 format) |
+| [ADR-015](decisions/adr-015-sqlite-locking-hierarchy.md) | SQLite Locking Hierarchy | §4.1-4.4 (BEGIN IMMEDIATE for money ops) |
+| NEW: ADR-016 | Constitutional vs Statutory Parameter Taxonomy | §3.3 Parameter Resolution, §4.1 Governance |
+| NEW: ADR-017 | Outbox Pattern for Economic Events | §3.1 economic_events, §4.3 EconomicEventEmitter |
 
 ---
 
 ## 14. Phase Mapping
 
-### Phase 1A: Non-Withdrawable Earnings (Sprints 1-7, Global 257-263)
+### Phase 1: Constitutional Foundation (Sprints 1-9, Global 275-283)
 
 | Sprint | Components |
 |--------|-----------|
-| 1-2 | Migration 042-043, ReferralService, registration API |
-| 3 | Revenue share extension (RevenueDistributionService), migration 046 |
-| 4 | Signup bonus with delayed granting, FraudCheckService |
-| 5 | LeaderboardService, leaderboard API |
-| 6 | Creator dashboard API, SettlementService |
-| 7 | Integration testing, fraud pipeline validation |
+| 1-2 | Migration 047, ConstitutionalGovernanceService, system_config state machine, parameter resolution with compile-time fallback |
+| 3-4 | Entity-specific overrides, modify SettlementService + CreatorPayoutService + FraudRulesService to read from system_config, AgentSettlementPolicy |
+| 5-6 | Migration 048-049, AgentBudgetService + circuit breaker, AgentProvenanceVerifier, agent_identity table |
+| 7 | Migration 050, EconomicEventEmitter (outbox), EconomicEvent union type, event emission from credit ledger operations |
+| 8 | ADR-008 design document, ReconciliationService + test harness, reconciliation cron |
+| 9 | Cross-sprint coherence review stage, E2E testing, integration validation |
 
-### Phase 1B: Payouts + Score (Sprints 8-13, Global 264-269)
+### Phase 2: Agent Sovereignty (Future Cycle)
 
 | Sprint | Components |
 |--------|-----------|
-| 8-9 | Migration 044, CreatorPayoutService, NOWPayments payout API, treasury |
-| 10 | Payout reconciliation, stall detection, webhook processing |
-| 11 | Migration 045, ScoreRewardsService, wallet linking, Score import |
-| 12 | Score distribution, campaign integration |
-| 13 | E2E testing, closed beta readiness, launch checklists |
+| 1-2 | ERC-6551 TBA binding: `tba_address` column, on-chain verification, `agent_identity` Phase 2 fields |
+| 3-4 | Agent self-authorization: TBA-signed reserve/finalize, referral code generation, budget-cap-bounded autonomy |
+| 5 | Agent economic self-sustainability dashboard, surplus transfer to creator account |
 
 ---
 
 *Generated with Loa Framework `/architect`*
-*Grounded in: existing billing infrastructure (migrations 030-041), `ICreditLedgerService`, `RevenueDistributionService`, `CampaignAdapter`, `NOWPaymentsAdapter`, `agent-gateway.ts`*
+*Grounded in: existing billing infrastructure (migrations 030-046), `ICreditLedgerService`, `state-machines.ts`, `billing-events.ts`, `RevenueRulesAdapter`, `AgentWalletPrototype`, `CreditLedgerAdapter`, `SettlementService`, `CreatorPayoutService`, `FraudRulesService`*

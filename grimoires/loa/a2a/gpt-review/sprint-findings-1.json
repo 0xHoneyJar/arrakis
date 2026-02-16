@@ -1,42 +1,48 @@
 {
   "verdict": "CHANGES_REQUIRED",
-  "summary": "As written, the plan has migration ordering conflicts and a few missing/undefined components that will block implementation or make Phase 1A non-shippable without additional work.",
+  "summary": "This plan is close, but several dependency and schema/AC mismatches will cause implementation to fail (migration conflicts, outbox-before-emission ordering, and missing persistence for reconciliation results).",
   "blocking_issues": [
     {
-      "location": "Sprints 1–3 (migrations 042/043/046) + verification item #5",
-      "issue": "Migration numbering/order is inconsistent: Sprint 2 introduces migration 046 before Sprint 3 introduces 043, while the requirements explicitly call out ordering like 042 → 043 → 044, etc.",
-      "why_blocking": "If your repo enforces sequential migration application (common), applying 046 before 043 will fail CI/deploy or create divergent schema states across environments. It also violates the stated verification requirement, so the sprint cannot be considered “done” under its own constraints.",
-      "fix": "Renumber/resequence migrations so they apply monotonically in the sprint order. Concretely: keep 042 in Sprint 1, move the revenue_rules referrer_bps change into 043 (or 042) and push referrer_earnings to 044, payout_system to 045, wallet_links to 046 (or similar). Update all sprint references and dependency diagram accordingly."
+      "location": "Sprint 4 / Task 4.4 (agent_clawback_receivables migration)",
+      "issue": "Clawback receivable table is planned as a “047 addendum or included in 047 if not yet merged”, but Sprint 5+ assumes migration ordering is strictly monotonic (047→048→049→050).",
+      "why_blocking": "In practice this creates a high risk of migration collision/renumbering or non-monotonic application across environments. If 047 is already shipped, you cannot safely “include in 047”; if you add an unnumbered addendum, you break the stated ordering and can strand deployments with missing tables.",
+      "fix": "Create a dedicated new migration (e.g., 051_agent_clawback_receivables.ts) and update the dependency graph + ordering section. Update Task 4.4 acceptance criteria to reference that new migration file explicitly and remove the conditional language."
     },
     {
-      "location": "Sprint 4.4 (bonus granting via CampaignAdapter) vs Phase 1A goal (non-withdrawable earnings)",
-      "issue": "Sprint 4.4 depends on CampaignAdapter behavior and pool isolation for `referral:signup` being non-withdrawable, but there is no explicit task ensuring CampaignAdapter supports the new pool IDs and the “non-withdrawable” property end-to-end for these grants.",
-      "why_blocking": "If CampaignAdapter/pool configuration doesn’t recognize `referral:signup` (and `score:rewards` later) or doesn’t enforce non-withdrawable semantics, bonus granting will either fail at runtime (unknown pool) or accidentally create withdrawable balances—breaking Phase 1A’s ship criterion.",
-      "fix": "Add a Phase 1A task (Sprint 3 or 4) to: (a) register/seed the new pool IDs in whatever authoritative pool registry/config exists, (b) add an automated test proving CampaignAdapter grants into `referral:signup` are marked non-withdrawable and excluded from withdrawable queries, and (c) document/configure pool isolation rules."
+      "location": "Sprint 4 / Task 4.4 and Sprint 9 / Task 9.2 (conservation formulas)",
+      "issue": "Acceptance criteria mixes clawback receivables into credit-lot conservation equations without defining how receivables relate to minted/reserved/consumed lots (double-count risk).",
+      "why_blocking": "Engineers won’t be able to implement reconciliation checks consistently: if receivables are treated as “assets” alongside lots, you must specify whether they are derived from lots (reclassification) or represent negative balance/IOU. As written, the equations can be contradictory and will fail tests once implemented.",
+      "fix": "In Sprint 4, add explicit ledger semantics: when creating a receivable, what ledger entries (if any) are posted and how does it affect lots? In Sprint 9.2, rewrite reconciliation invariants to match those semantics (e.g., either (A) receivable is off-ledger and conservation is lots-only, with a separate invariant for receivable balances, or (B) receivable is represented by specific ledger accounts/entries and included formally). Update AC to one unambiguous set of equations."
     },
     {
-      "location": "Sprint 6 (SettlementService + withdrawable balance) vs Phase 1A statement “Non-Withdrawable Earnings”",
-      "issue": "Phase 1A is labeled non-withdrawable, but Sprint 6 introduces “settled withdrawable” and a withdrawable balance query, and Sprint 7’s lifecycle AC includes “48h settlement → withdrawable.” This contradicts the phase boundary and makes it unclear what ships in 1A.",
-      "why_blocking": "Contradictory acceptance criteria will cause sprint failure because the team cannot verify completion: either earnings are non-withdrawable (as promised) or they become withdrawable after settlement (as tests/queries imply). This also affects Phase 1B dependency: payouts assume withdrawable balances exist.",
-      "fix": "Decide and encode the rule in schema + queries + tests: For Phase 1A, either (Option A) settlement exists but lots remain non-withdrawable until Phase 1B flips a feature flag/pool classification, or (Option B) remove/disable withdrawable concepts from 1A and only compute “settled (non-withdrawable)” until Sprint 9. Update Sprint 6/7 ACs and naming accordingly (e.g., `settled_available_micro` vs `withdrawable`)."
+      "location": "Sprint 6 / Task 6.1 (events emitted within same transaction as finalization)",
+      "issue": "Task 6.1 requires outbox inserts for AgentBudgetWarning/Exhausted “within same transaction as finalization”, but the outbox table and emitter are not created until Sprint 8.",
+      "why_blocking": "You cannot implement or test “outbox insert” semantics before the table/port exists. This will either block Sprint 6 or force a rework later, breaking the single-session constraint.",
+      "fix": "Either (1) move Sprint 8 ahead of Sprint 6 (or split outbox migration+emitter earlier), or (2) change Sprint 6 AC to emit via an in-memory/no-op interface and add a Sprint 8 task to backfill wiring + tests. Prefer (1): make Sprint 8 a prerequisite for any task that requires transactional outbox writes."
     },
     {
-      "location": "Sprint 4.4 (manual review queue) and Risk Mitigation table (manual review queue mentioned)",
-      "issue": "Plan references “manual review queue” for flagged bonuses but no task defines where flagged items go, how they are surfaced, or how an admin resolves them (approve/deny) and what ledger/campaign actions occur on resolution.",
-      "why_blocking": "Flagged/withheld bonuses will accumulate with no resolution path, which will break operationally and can block acceptance criteria like “flagged sent to review” (there’s no defined mechanism to test).",
-      "fix": "Add a minimal Phase 1A task: persist flagged bonus review items (table or status fields), add an admin endpoint to list + resolve (approve→grant, deny→cancel), and add an integration test covering one flagged → approved flow and one flagged → denied flow."
+      "location": "Sprint 8 / Task 8.4 (claim protocol SQL)",
+      "issue": "Acceptance criteria uses `UPDATE ... LIMIT 100 RETURNING *` for SQLite claim batching; this is not reliably supported across SQLite versions/configurations in the way implied.",
+      "why_blocking": "If the repo’s SQLite version (or driver) doesn’t support UPDATE…RETURNING or LIMIT on UPDATE as used, the dispatcher cannot be implemented as specified and will fail at runtime or in CI.",
+      "fix": "Change AC to a SQLite-compatible two-step claim: (a) select candidate rowids (ORDER BY rowid LIMIT 100), (b) update by rowid with a guard `WHERE claimed_by IS NULL AND published_at IS NULL`, then (c) re-select claimed rows by `claimed_by`. Add a test that proves no double-claim under concurrency."
     },
     {
-      "location": "Sprint 13.3 (cleanup validation) vs missing implementation tasks",
-      "issue": "Sprint 13.3 validates nonce cleanup cron and referral_events retention cleanup, but there are no earlier tasks that implement these cleanup crons/jobs.",
-      "why_blocking": "You cannot validate scheduled cleanup that doesn’t exist; Sprint 13 will fail its own acceptance criteria or require unplanned work late in the cycle.",
-      "fix": "Add explicit tasks (likely Sprint 11 for nonce cleanup; Sprint 4 or 7 for referral_events retention) to implement the BullMQ crons, including indexes/queries for efficient deletion, and unit/integration tests for expiry behavior."
+      "location": "Sprint 9 / Task 9.2 (Reconciliation results stored for history queries)",
+      "issue": "Task 9.2 requires reconciliation results to be stored for history queries, but there is no migration/task creating a `reconciliation_runs` (or similar) table.",
+      "why_blocking": "Sprint 9.3 adds `GET /history` endpoint; without a persistence schema, implementation will stall or devolve into ad-hoc storage, failing acceptance criteria.",
+      "fix": "Add a migration in Sprint 9 (or earlier) to create `reconciliation_runs` table (id, started_at, finished_at, status, summary_json, divergence_json, created_at). Update Task 9.2/9.3 AC and tests to assert rows are written and retrievable."
     },
     {
-      "location": "Sprint 8.1 (treasury account creation) + existing billing infrastructure assumptions",
-      "issue": "Sprint 8.1 says “Treasury account creation” inside a migration, but doesn’t specify how this is done in SQLite migrations (pure SQL vs application-side seed) and how it remains idempotent across environments.",
-      "why_blocking": "If your migration runner is SQL-only, “create account” may be impossible in that migration. If it’s app-seeded, missing idempotency can cause duplicate accounts or inconsistent entity IDs, breaking OCC and payout reserve accounting.",
-      "fix": "Add a concrete, testable approach: either (a) SQL seed with deterministic primary key/entity_id and `INSERT ... ON CONFLICT DO NOTHING`, or (b) a post-migration seed step in code executed by the migration framework with an idempotency guard. Add an AC: running migrations twice yields exactly one treasury account with the expected entity_id."
+      "location": "Sprint 2 / Task 2.2 vs Sprint 1 / Task 1.1 (state machine vs schema)",
+      "issue": "Service AC references `pending_approval` transitions, but Task 2.2 propose() inserts status `'draft'` and there is no explicit task to transition draft→pending_approval (nor an endpoint) before approvals occur.",
+      "why_blocking": "Approval flow tests (“propose -> approve -> approve -> cooling_down”) will fail if approve() only works on pending_approval but propose() leaves drafts. The plan doesn’t specify how/when a proposal becomes pending.",
+      "fix": "Add explicit behavior: either propose() creates `pending_approval` directly (skipping draft), or add a `submit()` method/endpoint to move draft→pending_approval. Update Task 2.1 interface and Task 2.5 endpoints accordingly, and add unit tests for the transition."
+    },
+    {
+      "location": "Sprint 5 / Task 5.3 (authoritative spend computation)",
+      "issue": "AC says `recordFinalizationInTransaction` “computes new spend from authoritative finalizations ledger” but the only authoritative table defined is `agent_budget_finalizations`; there is no defined query/windowing rule for computing spend and no index/task to support it.",
+      "why_blocking": "Without a precise computation rule (time window boundaries, inclusion criteria, handling of retries/partial finalizations), implementations will diverge and tests will be flaky—especially around window resets and concurrency.",
+      "fix": "Specify exact spend computation in AC: e.g., `SUM(amount_micro) FROM agent_budget_finalizations WHERE account_id=? AND finalized_at >= window_start AND finalized_at < window_start+duration`. Add an index on (account_id, finalized_at). Add tests around boundary times."
     }
   ],
   "question": "",

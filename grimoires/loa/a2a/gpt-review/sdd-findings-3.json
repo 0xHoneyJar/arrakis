@@ -1,56 +1,16 @@
 {
   "verdict": "APPROVED",
-  "summary": "Both remaining iteration-2 blockers (conservation invariant violation via minting and payout worker concurrency mismatch) are fixed in a way that preserves solvency/idempotency and does not introduce new truly blocking issues.",
+  "summary": "The two remaining blockers from the prior review are fixed (settlement hold key normalization is now consistent, and Security/Risks sections no longer contradict the implemented idempotency/versioning mechanisms), and no new truly blocking issues were introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "Treasury reserve double-mint (reserve funded by minting instead of allocating existing proceeds)",
+      "original_issue": "SettlementService resolves `settlement.hold_hours` but schema/registry uses `settlement.hold_seconds`",
       "status": "fixed",
-      "notes": "§3.3 and §4.2 now align: all recipient credits (including treasury reserve) are funded via `creditFromCharge(chargeId, ...)`, i.e., a conserved debit from the charge proceeds lot rather than supply-creating `mintLot`. The reserve is explicitly carved out of foundation gross (`foundationNet = foundationGross - treasuryReserve`) and an explicit conservation assert enforces `referrer + commons + community + foundationNet + treasuryReserve === totalMicro`. This resolves the prior solvency/conservation break."
+      "notes": "§3.4 registry, §4.4 SettlementService sample, §5.1 API propose example, §7.2 seed data, and §4.7 fallback table all consistently use `settlement.hold_seconds` with no hours→seconds conversion. This removes the runtime lookup mismatch risk."
     },
     {
-      "original_issue": "Revenue distribution idempotency + atomicity (race can double-mint)",
+      "original_issue": "Security/Risks sections still referenced `last_finalize_id` and `MAX(config_version)+1` despite revised designs",
       "status": "fixed",
-      "notes": "The referrer earning creation remains guarded by a single `BEGIN IMMEDIATE` transaction and the first write is `INSERT ... ON CONFLICT DO NOTHING` keyed by `(inference_charge_id, rule_version)`. With `creditFromCharge()` operating on the same transactional connection (as stated), retries cannot double-credit."
-    },
-    {
-      "original_issue": "SQLite SELECT FOR UPDATE misuse; payout concurrency unsafe",
-      "status": "fixed",
-      "notes": "The design continues to rely on SQLite `BEGIN IMMEDIATE` plus OCC (`treasury_state.version`) for treasury updates, which is consistent with SQLite semantics."
-    },
-    {
-      "original_issue": "Payout flow burns/debits before provider creation; no compensating path",
-      "status": "fixed",
-      "notes": "Two-phase HOLD (escrow/held pools) then FINALIZE/RELEASE on webhook remains intact; stalled reconciliation path is still present."
-    },
-    {
-      "original_issue": "Clawback linkage between earning and reserve; unsafe lot consumption",
-      "status": "fixed",
-      "notes": "Earning lot linkage is present (`earning_lot_id`). The clawback path references `reserve_entry_id` as intended; the SDD continues to specify compensating entries referencing originals for auditability."
-    },
-    {
-      "original_issue": "Settlement finality not represented in ledger (mutable table only)",
-      "status": "fixed",
-      "notes": "Settlement writes an explicit `settlement` ledger entry with idempotency key `settlement:<earning.id>` and metadata linking earning/lot, making ledger authoritative for finality."
-    },
-    {
-      "original_issue": "Wallet linking nonce issuance + JSON.stringify canonicalization problems",
-      "status": "fixed",
-      "notes": "Nonce is stored/consumed atomically via `UPDATE ... RETURNING` with expiry and single-use enforcement; message format is deterministic SIWE-style string and verified via `ethers.verifyMessage`."
-    },
-    {
-      "original_issue": "isAttributionActive type mismatch (string vs Date; wrong parameter)",
-      "status": "fixed",
-      "notes": "Interface and call site use `isAttributionActive(registration, at: Date)` consistently."
-    },
-    {
-      "original_issue": "referral_bonuses missing FKs and idempotency constraints",
-      "status": "fixed",
-      "notes": "Both account FKs exist and UNIQUE(referee_account_id, qualifying_action, qualifying_action_id) provides retry safety."
-    },
-    {
-      "original_issue": "FraudCheckService required signals but no persistence model",
-      "status": "fixed",
-      "notes": "`referral_events` table exists with hashed signals, indexes, and retention cron, sufficient to support delayed evaluation."
+      "notes": "§6.2 now correctly describes idempotency via `agent_budget_finalizations` PK(account_id,reservation_id) + `INSERT OR IGNORE`. §11 now correctly describes config version allocation via `system_config_version_seq` under `BEGIN IMMEDIATE` plus UNIQUE(param_key, entity_type, config_version), and no longer mentions MAX+1 or last_finalize_id."
     }
   ],
   "new_blocking_concerns": [],

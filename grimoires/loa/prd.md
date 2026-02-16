@@ -1,34 +1,48 @@
-# PRD: Creator Economy — Referrals, Leaderboards & Score-Weighted Rewards
+# PRD: The Kwisatz Haderach — Agent Economic Citizenship & Constitutional Governance
 
-**Version:** 1.2.0
-**Date:** 2026-02-15
+**Version:** 1.0.0
+**Date:** 2026-02-16
 **Status:** Draft
-**Author:** arrakis-ai
-**Issue:** [arrakis #64](https://github.com/0xHoneyJar/arrakis/issues/64)
-**Cross-refs:** [RFC #66](https://github.com/0xHoneyJar/loa-finn/issues/66) · [RFC #31](https://github.com/0xHoneyJar/loa-finn/issues/31) · [arrakis PR #63](https://github.com/0xHoneyJar/arrakis/pull/63) · [arrakis #62](https://github.com/0xHoneyJar/arrakis/issues/62) · [loa-hounfour PR #2](https://github.com/0xHoneyJar/loa-hounfour/pull/2) · [loa #247](https://github.com/0xHoneyJar/loa/issues/247) · [Bridgebuilder Analysis](https://github.com/0xHoneyJar/arrakis/issues/64#issuecomment-3904364688)
+**Author:** arrakis-ai (Bridgebuilder-grounded)
+**Cycle:** cycle-030
+**Issue:** [arrakis PR #67 — Bridgebuilder Part 5](https://github.com/0xHoneyJar/arrakis/pull/67#issuecomment-3906327673)
+**Cross-refs:** [arrakis #62](https://github.com/0xHoneyJar/arrakis/issues/62) · [arrakis PR #67](https://github.com/0xHoneyJar/arrakis/pull/67) · [loa-finn #31](https://github.com/0xHoneyJar/loa-finn/issues/31) · [loa-finn #66](https://github.com/0xHoneyJar/loa-finn/issues/66) · [loa-hounfour PR #2](https://github.com/0xHoneyJar/loa-hounfour/pull/2) · [loa #247](https://github.com/0xHoneyJar/loa/issues/247) · [Bridgebuilder Part 5 §I-VII](https://github.com/0xHoneyJar/arrakis/pull/67#issuecomment-3906327673)
 
 ---
 
 ## 1. Problem Statement
 
-Arrakis has 27+ sprints of billing infrastructure (credit ledger, revenue distribution, budget enforcement, agent gateway) but no user-driven growth engine. The platform depends on direct BD for adoption. There is no mechanism for:
+The Creator Economy (cycle-029, PR #67) built a bidirectional economic membrane — referrals, payouts, fraud detection, Score rewards — all atop the credit ledger. But it was built for **human** economic actors. The entity model already includes `'agent'` in the schema (`billing-types.ts:83`, migration 030 CHECK constraint), and `AgentWalletPrototype.ts:172` already creates agent accounts. The infrastructure is pre-wired. What's missing:
 
-- Users to earn from referring others to the platform
-- Creators/communities to earn ongoing revenue from the users they bring
-- Long-term ecosystem participants (high-Score holders) to be rewarded for their commitment
-- Projects to compete for and earn rewards based on ecosystem contribution
+1. **Agent-specific governance**: Agents don't need KYC. They don't need 48h settlement holds (agents can't "dispute" in the human sense). They DO need budget caps (prevent runaway spending). The current system applies identical parameters to all entity types — this is the "constitutional parameters wearing statutory clothing" problem identified in [Bridgebuilder Part 5 §II](https://github.com/0xHoneyJar/arrakis/pull/67#issuecomment-3906327673).
 
-The billing rails are 90% built but generate zero inbound demand. A creator economy creates a **growth flywheel** where creators refer users → users generate inference revenue → creators earn a share → creators refer more users. This is simultaneously a **moat** (network effects from creator relationships) and a **BD tool** (projects want inclusion in Score to access the rewards pool).
+2. **Constitutional governance layer**: 7 hardcoded parameters (KYC thresholds, settlement holds, cooldown periods, referral windows, payout limits, fee caps, reservation TTL) can only be changed by code deployment. The governance engine handles revenue rules and fraud weights but not the operating envelope itself.
 
-> Sources: [arrakis #64](https://github.com/0xHoneyJar/arrakis/issues/64) (issue description + comments), [arrakis #62](https://github.com/0xHoneyJar/arrakis/issues/62) (payment collection status), [Bridgebuilder Rails Assessment](https://github.com/0xHoneyJar/arrakis/issues/64#issuecomment-3904364688)
+3. **Unified event vocabulary**: The credit ledger entries, state machine transitions, referral attribution log, and score distributions are all events trapped in domain-specific tables. Cross-system integration with loa-finn requires a shared event vocabulary ([Bridgebuilder Part 5 §III](https://github.com/0xHoneyJar/arrakis/pull/67#issuecomment-3906327673)).
+
+4. **Cross-system reconciliation**: The credit ledger (earned/deposited funds) and loa-finn's budget engine (authorized spending capacity) are separate databases with separate schemas. When agents earn AND spend within the same protocol, these must reconcile ([Bridgebuilder Part 5 §I](https://github.com/0xHoneyJar/arrakis/pull/67#issuecomment-3906327673)).
+
+5. **Agents as Ostrom-level cooperators**: Agents can operate at levels of coherence and cooperation that humans cannot — deterministic, rule-following, transparent. Agent governance should exploit this by enabling faster consensus, automated compliance, and cooperative resource allocation per Ostrom's commons principles.
+
+> Sources: [Bridgebuilder Part 5](https://github.com/0xHoneyJar/arrakis/pull/67#issuecomment-3906327673) §I-VII, [arrakis #62](https://github.com/0xHoneyJar/arrakis/issues/62) (ERC-6551 TBA), code reality (billing-types.ts:83, CreatorPayoutService.ts:64-77, SettlementService.ts:55, RevenueRulesAdapter.ts:34)
 
 ---
 
 ## 2. Vision
 
-Transform Arrakis from a platform that sells AI agent access into a **creator economy** where participants earn from ecosystem growth. Referrers, high-Score holders, and active communities share in inference revenue through transparent, governance-controlled rules.
+Transform agents from service consumers into **first-class economic citizens** — entities that earn, spend, and participate in governance within the same protocol. Simultaneously, elevate the system's governance from "developers deploy constants" to "protocol-level constitutional machinery with tiered approval thresholds."
 
-**The Vercel insight applied:** Vercel charges 5× markup on infrastructure. Developers pay gladly because the DX justifies it. We do the same: 2× markup on inference, with 10% of revenue flowing back to the creators who drive adoption. The creator doesn't just use the platform — they *own a piece of its growth*.
+**The Thesis**: If the credit ledger is the central bank of an agent economy, and the conservation invariant is the trust primitive, then agents need citizenship papers — governance parameters that match their nature, budget envelopes that prevent harm, and event streams that make their economic activity legible across systems.
+
+**Agents differ from humans in governable ways:**
+
+| Dimension | Human | Agent |
+|-----------|-------|-------|
+| Identity verification | KYC (documents, selfie) | Provenance verification (NFT ownership, creator signature) |
+| Dispute resolution | 48h hold for human review | Instant deterministic validation (agents follow rules or they don't) |
+| Budget control | Self-managed with soft limits | Hard caps with circuit breakers (prevent runaway spending) |
+| Cooperation capacity | Limited by cognitive load, trust | Deterministic, transparent, Ostrom-level commons management |
+| Settlement speed | Days (needs human review window) | Minutes (automated compliance check) |
 
 ---
 
@@ -36,12 +50,13 @@ Transform Arrakis from a platform that sells AI agent access into a **creator ec
 
 | ID | Goal | Metric | Timeline |
 |----|------|--------|----------|
-| G-1 | Enable referral-driven user acquisition | First 50 referral registrations tracked | Sprint completion |
-| G-2 | Create demand for Score product via rewards integration | At least 3 project inquiries about Score inclusion | 30 days post-launch |
-| G-3 | Establish transparent creator revenue sharing | Revenue share visible in creator dashboard with per-transaction audit trail | Sprint completion |
-| G-4 | Enable creator payouts to external wallets | First successful crypto payout via NOWPayments | Sprint completion |
-| G-5 | Drive early demand through BD-ready referral program | Referral program materials ready for BD conversations | Sprint completion |
-| G-6 | Create competitive leaderboard dynamics | Weekly active leaderboard with 10+ participants | 30 days post-launch |
+| G-1 | Enable agent accounts with differentiated governance | Agent account with entity-specific settlement, KYC bypass, and budget caps operational | Phase 1 |
+| G-2 | Establish constitutional governance for system parameters | system_config table with multi-sig approval and 7-day cooldown for all 7+ hardcoded parameters | Phase 1 |
+| G-3 | Define unified economic event vocabulary | EconomicEvent union type in protocol/ with 10+ event types, adopted by credit ledger | Phase 1 |
+| G-4 | Create cross-system reconciliation design | ADR-008 written and validated with test harness for credit ledger ↔ budget engine consistency | Phase 1 |
+| G-5 | Enable ERC-6551 token-bound agent accounts | Agent accounts linked to on-chain TBA with transaction authorization | Phase 2 |
+| G-6 | Add cross-sprint coherence stage to Bridgebuilder protocol | Review protocol enhanced with explicit cross-sprint pattern detection | Phase 1 |
+| G-7 | Agent economic self-sustainability | At least one agent account that earns > spends over a 30-day period (proof of concept) | Phase 2 |
 
 ---
 
@@ -49,359 +64,363 @@ Transform Arrakis from a platform that sells AI agent access into a **creator ec
 
 ### 4.1 Primary Personas
 
-**Creator/Referrer** — A community leader, content creator, or ecosystem participant who refers users to Arrakis agents. Motivated by: revenue share, leaderboard status, recognition.
+**Agent (finnNFT)** — An AI agent with a token-bound account. Earns referral revenue from recommending other agents. Spends on inference costs via the Hounfour budget engine. Governed by budget caps and automated compliance. Does NOT undergo KYC. Settles instantly (deterministic validation replaces human dispute window).
 
-**High-Score Holder** — A long-term participant measured by the external Score analytics system. Holds collections tracked by Score. Motivated by: passive rewards, ecosystem participation, being resourced for their commitment.
+**Agent Creator** — A human who creates, configures, and deploys agents. Sets agent personality, model routing preferences, and initial budget allocation. Benefits from agent earnings via the referral system. Responsible for agent provenance (signing the agent configuration).
 
-**Community Project** — A project that wants inclusion in Score and access to the rewards pool. Motivated by: BD relationship with THJ, visibility in the ecosystem, access to referral incentives.
+**Protocol Governor** — An admin who manages constitutional parameters (KYC thresholds, settlement holds, etc.) through the new governance system. Subject to multi-sig approval and extended cooldown periods for constitutional changes.
 
-**Referred User** — A new user arriving via referral code. Interacts with AI agents, purchases credits, creates dNFTs. May not know or care about the referral system.
+**Cross-System Integrator** — A developer or automated process that needs to reconcile economic state between arrakis (credit ledger) and loa-finn (budget engine). Consumes the unified event vocabulary.
 
-### 4.2 User Journey
-
-```
-Creator gets referral code
-  → Shares code via Discord/Telegram/social
-    → New user registers with code (referee binding created)
-      → Referee's first qualifying action (dNFT creation OR credit purchase)
-        → Creator earns one-time signup bonus ($5 in credits)
-      → Referee uses agents → Creator earns 10% of inference revenue (ongoing, 12-month window)
-        → Creator checks leaderboard → Sees rank, earnings, referral count
-          → Creator withdraws earnings → NOWPayments crypto payout to wallet
-```
-
-### 4.3 Score Holder Journey
+### 4.2 Agent Economic Journey
 
 ```
-Score measures collection holdings externally
-  → Score data imported/synced to Arrakis
-    → Score-weighted rewards pool calculated (e.g., monthly)
-      → Higher Score = higher share of rewards pool
-        → Rewards distributed as credits to high-Score accounts
-          → Creates demand: projects want Score inclusion for their holders
-            → BD opportunity: "Get your collection into Score"
+Agent created (finnNFT minted, ERC-6551 TBA deployed)
+  → Agent account created in credit ledger (entity_type: 'agent')
+    → Agent earns referral revenue (recommends other agents to users)
+      → Earnings settle INSTANTLY (no 48h hold — deterministic validation)
+        → Agent spends on inference (budget cap enforced, circuit breaker active)
+          → If earnings > spending → economically self-sustaining
+          → If spending > earnings → budget cap prevents runaway
+            → Agent creator tops up or adjusts strategy
+```
+
+### 4.3 Constitutional Governance Journey
+
+```
+Protocol Governor proposes parameter change (e.g., raise KYC threshold to $200)
+  → Proposal enters 'draft' state in system_config governance
+    → Second governor approves (four-eyes, multi-sig)
+      → 7-day constitutional cooldown begins
+        → Community notification during cooldown
+          → After cooldown: parameter activated system-wide
 ```
 
 ---
 
 ## 5. Functional Requirements
 
-### FR-1: Referral Code System
+### 5.1 Agent Account Governance (Phase 1)
 
-| ID | Requirement | Acceptance Criteria |
-|----|-------------|-------------------|
-| FR-1.1 | Generate unique referral codes per account | Alphanumeric, 8-12 chars, collision-resistant. One active code per account. |
-| FR-1.2 | Track referral registrations | `referral_registrations` table binding referee → referrer. One referrer per user (UNIQUE constraint). |
-| FR-1.3 | Referral code lifecycle | States: `active → expired → revoked`. Admin can revoke. Optional expiry and max-use limits. |
-| FR-1.4 | API endpoints for referral management | `POST /api/referrals/code` (create), `GET /api/referrals/code` (get mine), `POST /api/referrals/register` (register as referee). |
-| FR-1.5 | Referral attribution persistence | Binding is permanent. Revenue share has 12-month attribution window. |
-| FR-1.6 | Attribution model: first-touch, lock-in at registration | **First-touch attribution**: the first referral code used at registration is the permanent binding. A user who registers without a code and later encounters a referral code CANNOT retroactively bind (lock-in is at registration). If a user attempts to register with a code but already has a binding, the request succeeds (idempotent) but does not change the existing referrer. Conflict resolution: earliest `referral_registrations.created_at` wins. Audit trail: all attribution attempts (successful and rejected) logged to `referral_attribution_log` with timestamp, code used, and outcome. |
+**FR-1**: Agent Entity-Specific Parameters
 
-### FR-2: Referral Rewards — Signup Bonus
+The system MUST support differentiated governance parameters per entity type. When an operation (payout, settlement, KYC check) is performed, it MUST consult entity-specific parameters rather than global constants.
 
-| ID | Requirement | Acceptance Criteria |
-|----|-------------|-------------------|
-| FR-2.1 | Fixed credit bonus on referee's first qualifying action | $5 in credits (5,000,000 micro-USD) when referee completes their **first** qualifying action: dNFT creation OR first credit purchase, whichever occurs first. Only one bonus per referee (not one per action type). |
-| FR-2.2 | One bonus per referee — idempotent | Enforced by `UNIQUE(referee_account_id)` on `referral_bonuses` table. Second qualifying action (e.g., credit purchase after dNFT) does NOT trigger another bonus. |
-| FR-2.3 | Bonus via campaign system | Uses existing `CampaignAdapter.batchGrant()` with `campaign_type: 'referral'`. |
-| FR-2.4 | Pool isolation for referral credits | Referral bonus credits deposited to `pool: 'referral:signup'`. May be spent on any inference. |
-| FR-2.5 | Campaign budget cap | Global budget for signup bonuses. Configurable. Stops granting when exhausted. |
-| FR-2.6 | Qualifying action minimum economic value | dNFT creation qualifies ONLY if it involves a paid mint (minimum cost configurable, e.g., ≥ $1). Free/zero-cost dNFT creation does NOT trigger the signup bonus. Credit purchase qualifies only if net payment ≥ configurable minimum (e.g., $5). This prevents farming bonuses via cheap qualifying actions. Per-referrer bonus cap: max N bonuses per referrer per 30-day window (configurable, default: 20) to limit individual farming velocity. |
-| FR-2.7 | Delayed bonus granting | Signup bonus is not granted immediately. It enters a **pending** state for a configurable hold period (default: 7 days). During the hold, fraud checks run (risk score evaluation, velocity checks). If the referral registration is flagged as suspicious, the bonus is withheld pending manual review. Only cleared bonuses are granted to the referrer. |
+| Parameter | Human Default | Agent Default | Source |
+|-----------|--------------|--------------|--------|
+| KYC required | Yes (tiered at $100/$600) | No (provenance verification only) | CreatorPayoutService.ts:67-68 |
+| Settlement hold | 48 hours | 0 hours (no human dispute window — automated fraud/clawback rules still apply) | SettlementService.ts:55 |
+| Payout rate limit | 1 per 24 hours | 10 per 24 hours | CreatorPayoutService.ts:71 |
+| Daily spending cap | None (budget pool limit) | Configurable per-agent hard cap | NEW |
+| Fee cap percent | 20% | 20% (same) | CreatorPayoutService.ts:77 |
+| Min payout | $1.00 | $0.01 (micro-transactions) | CreatorPayoutService.ts:64 |
 
-### FR-3: Referral Rewards — Ongoing Revenue Share
+**FR-2**: Agent Budget Caps and Circuit Breaker
 
-| ID | Requirement | Acceptance Criteria |
-|----|-------------|-------------------|
-| FR-3.1 | Referrer earns 10% of referee's inference revenue | Computed as `referrer_share = inference_cost × referrer_bps / 10000` where `referrer_bps = 1000` (10%). |
-| FR-3.2 | Revenue share is "off the top" — 4th party slice | Referrer share deducted before the 3-way split. The 3-way split (commons/community/foundation) applies to the **remainder** (total revenue − referrer share). Governance parameters `commons_bps`, `community_bps`, `foundation_bps` are redefined as "percentage of remainder" when a referrer is present. When no referrer is attributed, 100% flows to the 3-way split as before. Invariant: `referrer_share + commons_share + community_share + foundation_share == inference_revenue` (after deterministic rounding; foundation absorbs remainder). |
-| FR-3.3 | 12-month attribution window with precise anchor | Revenue share expires 12 months after `referral_registrations.created_at` (the moment the referee registered with the referral code). Eligibility check at finalization: `inference_event.finalized_at < referral_registration.created_at + 12 months`. After expiry, 100% flows to standard 3-way split. |
-| FR-3.4 | Idempotent revenue distribution | Distribution keyed by `(inference_charge_id, rule_version)`. Re-finalizing the same inference event (e.g., during backfill or replay) MUST NOT create additional referrer allocations. Existing allocation for the same key is a no-op. |
-| FR-3.5 | Revenue share via `RevenueDistributionService` extension | Extend existing service to support 4th party (referrer). New entry type or reuse `revenue_share`. |
-| FR-3.6 | Revenue share governed by `revenue_rules` | `referrer_bps` added to revenue rules schema. Changes follow existing governance (draft → cooling_down → active). |
-| FR-3.7 | Rate change applicability — grandfathered | When `referrer_bps` changes via governance, the new rate applies **prospectively only**: inference events finalized after the new rule's `active` timestamp use the new rate; existing referral bindings are NOT retroactively recalculated. This is "grandfathered" behavior. The `rule_version` recorded with each distribution entry enables audit of which rate was applied. A minimum 7-day cooling period provides notice before rate changes take effect. |
+Each agent account MUST have a configurable daily spending cap (`agent_spending_limits` table).
 
-### FR-4: Leaderboard
+**Cap accounting rules:**
+- The cap tracks **finalized spend** (not reserved amounts) as the conserved measure
+- Reservations are NOT counted toward the cap (they may release)
+- When a `finalize()` completes, the finalized amount is atomically added to the cap counter
+- When a reservation expires or is released, no cap adjustment occurs (reservations were never counted)
+- Cap updates are idempotent, keyed by `reservation_id` (prevents double-counting on retry)
+- Cap counter lives in the same SQLite transaction as the finalize() write (atomic, single-writer)
+- Redis read-through cache for fast cap checks on reserve() (advisory, not authoritative)
 
-| ID | Requirement | Acceptance Criteria |
-|----|-------------|-------------------|
-| FR-4.1 | Referral leaderboard with timeframes | `daily`, `weekly`, `monthly`, `all_time` views. |
-| FR-4.2 | Leaderboard fields | Rank, display name, referral count, total earnings (micro-USD), current streak (consecutive days with referrals). |
-| FR-4.3 | API endpoint | `GET /api/referrals/leaderboard?timeframe=weekly&limit=50`. |
-| FR-4.4 | Privacy controls | Opt-in display name. Default: anonymized (truncated wallet). |
+**Circuit breaker thresholds:**
+- At 80% of daily cap: `AgentBudgetWarning` event emitted
+- At 100% of daily cap: all `reserve()` operations for that agent are rejected until the 24h window resets
+- On TTL expiry or release: no cap change (reservations never counted)
 
-### FR-5: Score-Weighted Rewards Pool
+This design prevents the bypass where many small reserves are finalized later, and avoids deadlocks from outstanding-but-unreleased reservations.
 
-| ID | Requirement | Acceptance Criteria |
-|----|-------------|-------------------|
-| FR-5.1 | Score data import with identity resolution | Endpoint or scheduled job to import Score data. Canonical identifier: **EVM address**. Each Arrakis account may link N wallet addresses. Score rewards accrue per-account (sum of linked wallet scores). **Wallet linking protocol**: user signs EIP-191 personal_sign message containing `{ action: "link_wallet", account_id, wallet_address, chain_id, nonce, timestamp }`. Server verifies: (1) signature recovers to claimed address, (2) nonce is unique and unused (prevents replay), (3) timestamp within 5-minute window (prevents stale signatures), (4) chain_id matches expected network. Linked wallets can be unlinked by account owner (removes from Score accrual; does not affect already-distributed rewards). Max 10 linked wallets per account. |
-| FR-5.2 | Score-weighted reward calculation | `account_reward = (account_score / total_score_sum) × pool_size`. Pool size is the **lesser of** the configured amount and the available balance in the `foundation:score_rewards` funding account. |
-| FR-5.3 | Periodic distribution via campaign with hard budget | BullMQ cron job (weekly or monthly). Implemented as a campaign with `type: 'score_weighted'` and an **explicit budget cap** funded from a dedicated `foundation:score_rewards` pool. Budget is replenished by a configurable percentage of foundation revenue each period (e.g., 10% of foundation share). Invariant: `distributed_amount ≤ foundation:score_rewards.available_balance` enforced at distribution time. Distribution aborts (not partial) if budget insufficient. |
-| FR-5.4 | Score rewards are non-withdrawable credits | Score reward credits are deposited to `pool: 'score:rewards'` (non-withdrawable). They may be spent on inference but cannot be paid out. This prevents open-ended treasury liability from Score distributions. |
-| FR-5.5 | Score threshold and anti-Sybil | Minimum score per linked wallet to participate (prevents dust/Sybil). Minimum score per account to be eligible. Wallet-splitting attack mitigated: if a user splits holdings across N wallets, each wallet must independently meet the per-wallet minimum score threshold to contribute to the account total. |
+**FR-3**: Agent Provenance Verification and Beneficiary Model
 
-### FR-6: Creator Payouts
+**Beneficiary model:** Agent accounts are **controlled sub-ledgers of a KYC'd creator**. The legal/economic beneficiary is always the creator, not the agent. Agents accrue internal credits and spending capacity but cannot receive external payouts directly. Payout destination is always the creator's verified wallet.
 
-| ID | Requirement | Acceptance Criteria |
-|----|-------------|-------------------|
-| FR-6.1 | Payout request API | `POST /api/payouts/request` with `{ amount_micro, destination_address, currency }`. |
-| FR-6.2 | Payout state machine | `pending → processing → completed → failed`. Failed → `retry` allowed. |
-| FR-6.3 | Minimum payout threshold | Configurable minimum (e.g., $10 = 10,000,000 micro-USD). |
-| FR-6.4 | Credit classes — withdrawable vs non-withdrawable | Credits are classified by source: **earned credits** (referral revenue share) are withdrawable; **promotional credits** (signup bonuses, Score rewards, campaign grants) are non-withdrawable. Only earned credits may be used for payouts. Credit class tracked via `pool` tag on ledger lots (e.g., `pool: 'referral:revenue_share'` = withdrawable, `pool: 'referral:signup'` = non-withdrawable). |
-| FR-6.5 | Treasury backing for payouts with settlement finality | A `treasury:payout_reserve` account holds real funds collected from inference payments. Referrer revenue share is accrued as **pending earned credits** at finalization. Credits transition from pending → **settled** (withdrawable) only after the underlying payment is confirmed settled/cleared (configurable settlement delay, default: 48 hours for crypto payments via NOWPayments/x402). If a payment is refunded or reversed before settlement, the pending earned credits are clawed back via a `clawback` ledger entry (negative credit) and the reserve is debited accordingly. Invariant: `SUM(all_settled_withdrawable_balances) ≤ treasury:payout_reserve.balance` at all times. Negative earned balances are not permitted; clawback is capped at pending amount. |
-| FR-6.6 | Credit burn on payout | Atomic: deduct earned credits from creator account, create `withdrawal` ledger entry, debit `treasury:payout_reserve`. |
-| FR-6.7 | Asynchronous NOWPayments payout execution | Payout API creates `payout_request` (status: `pending`) and enqueues a BullMQ job. Job calls NOWPayments with an **idempotency key** (`payout_request_id`). Response updates status to `processing`. |
-| FR-6.8 | Payout webhook reconciliation | NOWPayments callback verified via **HMAC signature** (shared secret). Verified callback updates status to `completed` or `failed`. Unverified callbacks rejected (logged + alerted). |
-| FR-6.9 | Payout fee handling | Network/provider fees deducted from payout amount (creator receives net). `amount_micro` on payout request is gross; `net_amount_micro` and `fee_micro` recorded after provider quote. |
-| FR-6.10 | Payout audit trail | Immutable `payout_requests` table with full history including idempotency key, provider reference, fee breakdown. |
-| FR-6.11 | Payout rate limiting | Max 1 payout request per 24 hours per account. Admin override available. |
+This means:
+- Agent earnings credit the agent's internal account (for spending on inference)
+- When earnings exceed the agent's spending, surplus is **transferable to the creator's account** (not directly to external wallet)
+- Creator KYC level governs the payout threshold for earnings originating from agent activity
+- Agent cannot be an independent payout beneficiary (Phase 2 ERC-6551 may revisit this)
 
-### FR-7: Creator Dashboard API
+**Provenance verification** (replaces KYC for agent identity):
+- **Canonical agent identity anchor**: `(chain_id, contract_address, token_id)` — stable across Phase 1 and Phase 2
+- Agent configuration signed by the creator's wallet
+- Creator account has passed appropriate KYC level for their own earnings
+- All events and tables carry the canonical identity tuple (or a resolvable mapping via `agent_identity` table)
+- Phase 2 adds optional `tba_address` column — additive, not replacing the canonical anchor
 
-| ID | Requirement | Acceptance Criteria |
-|----|-------------|-------------------|
-| FR-7.1 | Earnings summary | `GET /api/creator/earnings` — total earned, pending, paid out, by timeframe. |
-| FR-7.2 | Referral stats | `GET /api/creator/referrals` — referral count, active referees, attribution window status. |
-| FR-7.3 | Revenue breakdown | Per-referee earnings with per-model attribution (leveraging ensemble accounting `model_breakdown`). |
-| FR-7.4 | Payout history | `GET /api/creator/payouts` — all payout requests with status. |
+This replaces identity verification with **chain-of-custody verification** — the agent is trusted because its creator is trusted, and the agent is identified by its on-chain provenance, not a mutable internal ID.
+
+**FR-2b**: Agent Settlement and Clawback Policy
+
+"Instant settlement" means **no human dispute window** — NOT "no clawback." Agent earnings are still subject to:
+- **Automated fraud rules**: If `FraudCheckService` flags the underlying transaction, the earning is withheld regardless of entity type
+- **Clawback**: If the source transaction is reversed (e.g., referee chargeback), the agent earning is clawed back via compensating ledger entry
+- **Agent accounts cannot go negative**: If a clawback would create a negative balance, the clawback is applied up to the available balance and the remainder is recorded as a `clawback_shortfall` event for admin review
+- **Spending against unsettled earnings**: Agents MAY spend against unsettled earnings (since settlement is instant). If a clawback occurs after spending, the deficit is deducted from future earnings (drip recovery, not hard block)
+
+This policy exploits the agent's deterministic nature: agents don't need time to dispute because their transactions are programmatic and auditable. But the system still protects against upstream fraud by the *humans* who trigger agent activity.
+
+### 5.2 Constitutional Governance Layer (Phase 1)
+
+**FR-4**: System Config Table with Governance Lifecycle
+
+A new `system_config` table governed by the same state machine as revenue rules (`draft → pending_approval → cooling_down → active → superseded`) but with:
+- **Multi-sig approval**: Requires 2+ admin approvals (not just four-eyes)
+- **Extended cooldown**: 7 days (vs 48h for revenue rules)
+- **Notification hooks**: Events emitted at proposal, approval, and activation stages
+
+**FR-5**: Constitutional Parameters
+
+All currently hardcoded governance constants MUST be migrated to the system_config table:
+
+| Parameter Key | Current Location | Current Value |
+|--------------|-----------------|---------------|
+| `kyc.basic_threshold_micro` | CreatorPayoutService.ts:67 | 100_000_000 |
+| `kyc.enhanced_threshold_micro` | CreatorPayoutService.ts:68 | 600_000_000 |
+| `settlement.hold_hours` | SettlementService.ts:55 | 48 |
+| `payout.min_micro` | CreatorPayoutService.ts:64 | 1_000_000 |
+| `payout.rate_limit_hours` | CreatorPayoutService.ts:71 | 24 |
+| `payout.fee_cap_percent` | CreatorPayoutService.ts:77 | 20 |
+| `revenue_rule.cooldown_hours` | RevenueRulesAdapter.ts:34 | 48 |
+| `fraud_rule.cooldown_hours` | FraudRulesService.ts:129 | 168 |
+| `reservation.default_ttl_seconds` | CreditLedgerAdapter.ts:48 | 300 |
+| `referral.attribution_window_months` | ReferralService | 12 |
+
+**FR-6**: Entity-Specific Parameter Overrides
+
+The system_config table MUST support entity-type-specific overrides:
+
+```
+system_config key: settlement.hold_hours
+  → global default: 48
+  → entity_override[agent]: 0
+  → entity_override[community]: 72
+```
+
+Resolution order: entity-specific override → global config → compile-time fallback.
+
+### 5.3 Unified Event Vocabulary (Phase 1)
+
+**FR-7**: EconomicEvent Union Type
+
+Define a discriminated union type in `packages/core/protocol/economic-events.ts`:
+
+```typescript
+type EconomicEvent =
+  | LotMinted | ReservationCreated | ReservationFinalized | ReservationReleased
+  | RevenueDistributed | ReferralRegistered | BonusGranted | BonusFlagged
+  | EarningSettled | EarningClawedBack
+  | PayoutRequested | PayoutApproved | PayoutCompleted | PayoutFailed
+  | ScoreDistributed | RuleProposed | RuleActivated | RuleSuperseded
+  | AgentBudgetWarning | AgentBudgetExhausted | AgentSettlementInstant
+  | ConfigProposed | ConfigApproved | ConfigActivated
+```
+
+Each event type MUST include: `timestamp`, `event_id` (UUID), `entity_type`, `entity_id`, `correlation_id` (for tracing across operations), and `idempotency_key` (for deduplication).
+
+**Ordering guarantees:** Events are ordered by `(entity_id, sqlite_rowid)` — the append-only table's auto-incrementing rowid provides total ordering within the single-writer SQLite database. No per-entity monotonic sequence number is required. Consumers that need per-entity ordering use `(entity_id, rowid)`. Consumers that need global ordering use `rowid` alone.
+
+**Delivery semantics:** At-least-once. The `idempotency_key` field enables consumers to deduplicate. Events are NOT guaranteed to be gap-free (failed transactions don't emit events).
+
+**FR-8**: Event Emission from Existing Operations
+
+All existing credit ledger operations MUST emit EconomicEvents alongside their current table writes. Event emission is **synchronous within the same SQLite transaction** — the `economic_events` INSERT happens inside the same `BEGIN IMMEDIATE` block as the source-of-truth write. This guarantees:
+- Events are never emitted for failed transactions
+- Event ordering matches transaction commit ordering (via SQLite rowid)
+- No orphan events (event exists iff source-of-truth write exists)
+
+Existing storage is unchanged. Events are published to a new `economic_events` append-only table within the existing transactional boundary. The latency cost is one additional INSERT per operation (estimated <2ms on SQLite WAL).
+
+### 5.4 Cross-System Reconciliation — ADR-008 (Phase 1)
+
+**FR-9**: Reconciliation Design Document
+
+Write ADR-008: "Account Balance Reconciliation — Credit Ledger vs. Budget Engine" addressing:
+
+- **Semantic distinction**: The credit ledger tracks **conserved funds** (earned, deposited, reserved, consumed). The budget engine tracks **authorized spending capacity** (not money). These are different quantities.
+- **Canonical bridge mechanism**: Budget capacity is created by a `CreditLedger.reserve()` call that locks credits 1:1. Budget consumption corresponds to `CreditLedger.finalize()`. Budget release corresponds to `CreditLedger.release()`. The credit ledger reservation is the **single source of truth** for the bridge — capacity = locked credits.
+- **Authority model**: Credit ledger is authoritative for "how much money exists." Budget engine is authoritative for "how much capacity is currently allocated." Reconciliation checks: `sum(locked_credits) == sum(allocated_capacity)`.
+- **Reconciliation protocol**: Periodic reconciliation job compares credit ledger reservation totals against budget engine allocation totals. Divergence > threshold triggers alert. Reconciliation NEVER auto-corrects — it reports for human/admin review.
+- **Clawback propagation**: When an agent earning is clawed back in the credit ledger, any budget capacity derived from that earning MUST be reduced. The EconomicEvent `EarningClawedBack` triggers a budget capacity reduction via the bridge.
+- **Event-based synchronization**: EconomicEvent stream is the integration layer. Budget engine subscribes to `ReservationCreated`, `ReservationFinalized`, `ReservationReleased`, `EarningClawedBack` events.
+
+**FR-10**: Reconciliation Test Harness
+
+A test harness that simulates the cross-system scenario with conserved quantities:
+1. Agent earns micro-USD in credit ledger (referral revenue → `LotMinted`)
+2. Credit ledger `reserve()` locks credits and creates budget capacity 1:1 (`ReservationCreated`)
+3. Budget engine allocates capacity equal to locked credits
+4. Agent spends via budget engine → credit ledger `finalize()` (`ReservationFinalized`)
+5. Reconciliation verifies: `locked_credits + available_credits + spent_credits == total_earned` (conservation within credit ledger)
+6. Cross-system check: `sum(budget_allocated) == sum(credit_locked)` (bridge conservation)
+
+### 5.5 ERC-6551 Token-Bound Accounts (Phase 2)
+
+**FR-11**: TBA ↔ Credit Ledger Binding
+
+When a finnNFT is minted with ERC-6551 TBA:
+1. Token-bound account address recorded in credit_accounts (new column: `tba_address`)
+2. Agent can authorize transactions signed by the TBA
+3. On-chain balance and credit ledger balance are independent but reconcilable
+
+**FR-12**: Agent Self-Authorization
+
+Agents with TBA can authorize their own economic operations within their budget cap:
+- `reserve()` for inference spending (up to daily cap)
+- Referral code generation (agents recommending agents)
+- Score rewards claiming (if agent's collection is Score-tracked)
+
+### 5.6 Cross-Sprint Coherence Protocol (Phase 1)
+
+**FR-13**: Bridgebuilder Review Enhancement
+
+Add a "cross-sprint coherence" stage to the Bridgebuilder review protocol:
+- After sprint-level findings, explicitly scan for cross-sprint patterns
+- Check for: naming divergence, format inconsistency, parameter drift, architectural tension
+- Output: coherence findings tagged with `severity: COHERENCE` and affected sprints
 
 ---
 
-## 6. Technical & Non-Functional Requirements
+## 6. Non-Functional Requirements
 
-### NFR-1: Financial Precision
+### 6.1 Performance
 
-All monetary values in BigInt micro-USD. No floating-point arithmetic. Matches existing credit ledger precision (ADR-001, ADR-002).
+- Agent settlement MUST complete in < 100ms (vs. batch for humans)
+- Budget cap check MUST add < 5ms to reserve() latency
+- Event emission MUST NOT increase credit ledger write latency by > 10%
+- Constitutional config lookup for **money-moving operations** MUST be read from SQLite within the transaction (not Redis cache) to ensure consistency. Redis is a read-through cache for **non-transactional reads** only (dashboards, API queries). Config records include a monotonically increasing `config_version` and an `active_from` timestamp. Operations MUST record the `config_version` used in their audit trail
 
-### NFR-2: Invariants
+### 6.2 Security
 
-| Invariant | Description |
-|-----------|-------------|
-| **Conservation** | `referrer_share + commons_share + community_share + foundation_share == inference_revenue` for every finalization (foundation absorbs deterministic rounding remainder). |
-| **Revenue share cap** | `SUM(referrer_rewards) ≤ SUM(inference_revenue × referrer_bps / 10000)` — creators cannot earn more than their share. |
-| **No double attribution** | `∀ referee: COUNT(referral_registrations WHERE referee_account_id = referee) ≤ 1`. |
-| **No phantom rewards** | `∀ reward: ∃ registration AND ∃ qualifying_action`. |
-| **Idempotent distribution** | `∀ (inference_charge_id, rule_version): COUNT(referrer_allocations) ≤ 1` — replay/backfill cannot double-pay. |
-| **Bounded signup liability** | `SUM(signup_bonuses) ≤ campaign.budget`. |
-| **Bounded Score liability** | `SUM(score_rewards_distributed) ≤ foundation:score_rewards.available_balance` at distribution time. |
-| **Treasury solvency** | `SUM(all_withdrawable_balances) ≤ treasury:payout_reserve.balance` at all times. Enforced via serializable transaction isolation (or row-level locking with SELECT FOR UPDATE) on `treasury:payout_reserve` during concurrent payout execution. Payout job must: (1) acquire lock on reserve row, (2) verify balance ≥ amount, (3) debit reserve + debit creator earned balance atomically, (4) release lock. Optimistic concurrency control (OCC) with version column as fallback for read-heavy paths. |
-| **Payout solvency** | `∀ payout: account.earned_balance ≥ payout.amount` at execution time (only earned/withdrawable credits eligible). |
+- Agent budget caps are defense-in-depth: Redis atomic counter + SQLite WAL as backup
+- Constitutional changes require multi-sig (2+ admin approvals) — no single actor can change KYC thresholds
+- Agent provenance verification is cryptographic (wallet signature, not human judgment)
+- Emergency override for constitutional changes requires 3+ admin approvals + immediate audit notification
 
-### NFR-3: Security
+### 6.3 Compatibility
 
-| Concern | Mitigation |
-|---------|------------|
-| Self-referral | Same-wallet detection. Same-IP heuristic (advisory, not blocking). |
-| Wash trading | Rate limit on referral registrations per code per time window. |
-| Referral code brute-force | Rate limit on `/api/referrals/register`. |
-| Payout to wrong address | Require address confirmation on first payout. |
-| Revenue share manipulation | Revenue share computed from actual inference cost in finalization path, not user-submitted values. |
-| Score Sybil (wallet splitting) | Per-wallet minimum score threshold; wallet ownership verified via EVM signature before linking. |
-| Payout webhook spoofing | NOWPayments callbacks verified via HMAC signature (shared secret). Unverified callbacks rejected. |
-| Referral privacy | Referrers see **aggregate** stats only (referral count, total earnings). Referrers CANNOT see individual referee identities, usage patterns, or transaction details. Referee activity is never exposed to referrer via API or dashboard. Referral bindings are retained for audit but subject to data retention policy (configurable, default: 24 months after attribution window expiry). Account deletion removes referee binding and anonymizes historical distribution records. |
-| Referral fraud — distributed attacks | **Velocity rules**: max N registrations per referral code per hour (configurable, default: 10). **Risk scoring**: referral registrations scored by signals (same IP cluster, similar user-agent, rapid sequential registration, referee has no subsequent paid activity). High-risk registrations flagged for manual review; bonus grant delayed until cleared. **Cooling-off period**: earned credits from revenue share become withdrawable only after 14-day hold from accrual date. This prevents hit-and-run fraud. **Sanctions**: accounts with >50% flagged referrals auto-suspended from referral program pending review. |
-| Payout KYC threshold | Payouts exceeding configurable threshold (e.g., $100 cumulative or $50 single) require additional verification (wallet ownership re-confirmation + admin approval queue). Below threshold: auto-processed. |
-
-### NFR-4: Performance
-
-| Metric | Target |
-|--------|--------|
-| Referral registration | < 200ms p99 |
-| Leaderboard query | < 500ms p99 (cached, 1-minute TTL) |
-| Revenue share calculation | < 50ms overhead per finalization |
-| Payout request (API acceptance) | < 200ms p99 (creates pending record + enqueues job; excludes NOWPayments call) |
-
-### NFR-5: Observability
-
-| Metric | Alert |
-|--------|-------|
-| `referral.registrations.count` | Spike detection (10× normal rate = potential abuse) |
-| `referral.rewards.distributed.total` | Budget utilization > 80% |
-| `payout.requests.failed.count` | Any failure in 5-minute window |
-| `revenue_share.referrer.total` | Monitoring only (no alert) |
+- All changes MUST be backwards-compatible with existing human accounts
+- New tables use migration pattern (030+ numbering)
+- EconomicEvent type is additive to existing protocol/ types
+- Existing tests MUST continue passing (439+ from cycle-029)
 
 ---
 
 ## 7. Scope & Prioritization
 
-### Phase 1A: MVP Core — Non-Withdrawable Earnings (This Cycle, First Half)
+### Phase 1: Constitutional Foundation (This Cycle)
 
-| Priority | Feature | Sprints |
-|----------|---------|---------|
-| P0 | Referral tracking tables + code system (FR-1) | 1-2 |
-| P0 | Signup bonus rewards with delayed granting (FR-2) | 1-2 |
-| P0 | Revenue share extension — 4th party referrer (FR-3) | 1-2 |
-| P0 | Leaderboard (FR-4) | 1 |
-| P0 | Creator dashboard API — earnings view (FR-7) | 1 |
+| Priority | Feature | Sprints (est) |
+|----------|---------|---------------|
+| P0 | Constitutional governance layer (system_config table + governance lifecycle) | 2 |
+| P0 | Agent entity-specific parameters (differentiated KYC, settlement, budget caps) | 2 |
+| P0 | EconomicEvent union type + event emission from credit ledger | 2 |
+| P1 | ADR-008 reconciliation design + test harness | 1 |
+| P1 | Cross-sprint coherence review stage | 1 |
+| P1 | Agent budget cap circuit breaker | 1 |
 
-**Phase 1A estimated: 5-7 sprints**
+**Estimated Phase 1**: 7-9 sprints
 
-Revenue share accrues as earned credits but payouts are not yet enabled. Creators can see their earnings and track referrals. This validates the referral flywheel with zero treasury risk.
+### Phase 2: Agent Sovereignty (Future Cycle)
 
-**Launch readiness checklist for Phase 1A:**
-- [ ] Fraud detection pipeline (velocity rules, risk scoring) operational
-- [ ] Settlement finality delay configured and tested
-- [ ] Revenue share conservation invariant property-tested
-- [ ] Admin tools for referral program management (revoke, suspend, review queue)
+| Priority | Feature | Sprints (est) |
+|----------|---------|---------------|
+| P1 | ERC-6551 TBA ↔ credit ledger binding | 2 |
+| P1 | Agent self-authorization within budget caps | 2 |
+| P2 | Agent-to-agent referral system | 1 |
+| P2 | Agent governance participation (proposing rule changes) | 2 |
+| P2 | Agent economic self-sustainability dashboard | 1 |
 
-### Phase 1B: Payouts + Score (This Cycle, Second Half)
+### Explicitly Out of Scope
 
-| Priority | Feature | Sprints |
-|----------|---------|---------|
-| P0 | Creator payouts via NOWPayments (FR-6) | 2-3 |
-| P0 | Payout reconciliation + provider risk tooling | 1 |
-| P1 | Score rewards pool — basic import + distribution (FR-5) | 1-2 |
-
-**Phase 1B estimated: 4-6 sprints** (closed beta with manual payout approval before general availability)
-
-**Launch readiness checklist for Phase 1B:**
-- [ ] Reconciliation job tested (provider ledger vs internal ledger match)
-- [ ] KYC threshold + admin approval queue operational
-- [ ] Manual payout fallback documented and tested
-- [ ] Treasury solvency invariant property-tested under concurrent load
-
-**Total estimated: 9-13 sprints (Phase 1A + 1B)**
-
-### Phase 2: Enhancement (Future Cycle)
-
-| Feature | Description |
-|---------|-------------|
-| Competition framework | Community-level metrics + competitive rewards |
-| On-chain payouts | x402 reverse flow (credits → USDC on Base) |
-| ERC-6551 TBA | Token-bound agent wallets with referral earnings |
-| Score API integration | Real-time Score sync instead of batch import |
-| Referral tiers | Bronze/Silver/Gold referrer status with increasing rates |
-| Multi-level referral | Second-degree referrals (referrer of referrer) |
-
-### Out of Scope
-
-- Direct ad revenue model (not pursuing YouTube-style ads)
-- Fiat payout rails (crypto-first for launch, fiat later)
-- Community governance voting on referral rates (use existing revenue_rules governance)
-- On-chain referral tracking (off-chain for speed, on-chain receipts deferred)
+- On-chain settlement (all settlement remains off-chain in SQLite)
+- Fiat payment rails for agents (agents operate in micro-USD only)
+- Agent personality or behavior changes (purely economic scope)
+- loa-finn code changes (this PRD covers arrakis only; ADR-008 is design only)
+- lobster.cash integration (deferred per issue #62)
 
 ---
 
 ## 8. Risks & Dependencies
 
-### Risks
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Referral abuse (self-referral, bots) | High | Medium | Rate limiting, same-wallet detection, graduated sanctions |
-| Low referral demand (no one uses codes) | Medium | High | BD push, leaderboard incentives, Score integration creates pull |
-| Payout failures (NOWPayments API) | Low | High | Retry queue with exponential backoff (max 3 retries), manual fallback ops runbook, audit trail. **Provider risk plan**: periodic reconciliation job (hourly) polls NOWPayments API to verify payout status matches internal ledger. Webhook retry/backoff + polling fallback for missed callbacks. Secondary payout path: manual admin payout for edge cases. Geo/compliance restrictions documented per NOWPayments ToS. Provider SLA timeout: if no webhook within 24 hours, payout marked `stalled` and escalated to admin queue. |
-| Revenue share creates unsustainable liability | Low | High | 12-month attribution window caps liability; `referrer_bps` governable via revenue_rules |
-| Score data quality/availability | Medium | Medium | Graceful degradation if Score data unavailable; rewards pool paused |
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Constitutional migration breaks existing governance | High | Compile-time fallback: if system_config lookup fails, use hardcoded defaults |
+| Agent budget cap race condition | Medium | Redis atomic counter with SQLite backup; same pattern as existing rate limiting |
+| Event emission increases write latency | Medium | Synchronous INSERT into `economic_events` within same SQLite transaction (outbox pattern). Estimated <2ms additional per operation on WAL mode. Async dispatcher reads from outbox after commit for external publication — DB insert is always synchronous |
+| Cross-system reconciliation reveals inconsistencies | Medium | ADR-008 defines reconciliation protocol before integration begins |
+| ERC-6551 standard instability | Low | Phase 2 only; credit ledger agent accounts work without on-chain binding |
 
 ### Dependencies
 
-| Dependency | Status | Impact |
-|-----------|--------|--------|
-| Credit ledger (PR #63) | Merged | Foundation for all credit operations |
-| Revenue distribution service | Merged | Needs extension for 4th party |
-| Campaign system | Merged | Used for signup bonuses |
-| NOWPayments integration | Built (adapter exists) | Needs payout API integration |
-| Score external system | Exists | Needs data import mechanism |
-| `FEATURE_BILLING_ENABLED=true` | Not yet | Must be enabled for any revenue flow |
+| Dependency | Blocks | Status |
+|------------|--------|--------|
+| cycle-029 PR #67 merged | All Phase 1 work | Pending merge |
+| loa-hounfour v4.6.0+ protocol types | FR-7 (event type alignment) | Available |
+| ERC-6551 implementation reference | Phase 2 only | Not started |
 
 ---
 
-## 9. Revenue Model
+## 9. Architectural Context
 
-### Revenue Flow with Referrals (referred user)
+### 9.1 Code Reality Grounding
 
-```
-User pays for inference: $0.10 (100,000 micro-USD)
-  Step 1 — Referrer slice (10% of total):
-    referrer_share = 100,000 × 1000 / 10000 = 10,000 micro-USD ($0.01)
-    → credited to referrer as EARNED (withdrawable) credits
-    → simultaneously reserved in treasury:payout_reserve
-  Step 2 — Remainder to 3-way split:
-    remainder = 100,000 - 10,000 = 90,000 micro-USD ($0.09)
-    ├── Commons (5% of remainder):     90,000 × 500 / 10000 = 4,500 ($0.0045)
-    ├── Community (70% of remainder):  90,000 × 7000 / 10000 = 63,000 ($0.0630)
-    └── Foundation (25% of remainder): 90,000 - 4,500 - 63,000 = 22,500 ($0.0225)
-  Invariant check: 10,000 + 4,500 + 63,000 + 22,500 = 100,000 ✓
-```
+| Component | File | Current State |
+|-----------|------|--------------|
+| Entity type enum | `billing-types.ts:83` | `'agent'` already included |
+| Schema CHECK | `030_credit_ledger.ts:27-29` | `'agent'` already in constraint |
+| Agent account creation | `AgentWalletPrototype.ts:172` | Working prototype exists |
+| State machine library | `state-machines.ts` | Reusable for system_config governance |
+| Four-eyes enforcement | `RevenueRulesAdapter.ts:170-171` | Reusable for constitutional multi-sig |
+| Credit ledger | `CreditLedgerAdapter.ts` | Entity-type agnostic — no changes needed |
+| Conservation invariant | Multiple files | Preserved — all changes are additive |
 
-### Revenue Flow without Referrals (organic user)
+### 9.2 Ostrom Principles Applied to Agent Governance
 
-```
-User pays for inference: $0.10 (100,000 micro-USD)
-  No referrer → 100% to 3-way split:
-    ├── Commons (5%):     5,000 micro-USD
-    ├── Community (70%):  70,000 micro-USD
-    └── Foundation (25%): 25,000 micro-USD
-```
+| Ostrom Principle | Human Implementation (cycle-029) | Agent Extension (cycle-030) |
+|-----------------|--------------------------------|---------------------------|
+| 1. Clear boundaries | Pool isolation | Agent-specific pools (`agent:*`) |
+| 2. Proportional equivalence | BPS revenue sharing | Budget cap proportional to earnings |
+| 3. Collective-choice | Four-eyes governance | Multi-sig constitutional governance |
+| 4. Monitoring | Audit trail, leaderboards | Event stream, budget cap alerts |
+| 5. Graduated sanctions | Fraud scoring (clear/flagged/withheld) | Circuit breaker (warning/exhausted/suspended) |
+| 6. Conflict resolution | Admin review + settlement hold | Deterministic validation (no conflict — rules are unambiguous for agents) |
+| 7. Minimal recognition of rights | 12-month attribution window | Agent-specific earning windows (configurable via system_config) |
+| 8. Nested enterprises | Pool hierarchy (system → community → campaign) | Agent → creator → community hierarchy |
 
-### Score Rewards Pool
+### 9.3 The Conservation Invariant — Preserved
 
-```
-Monthly rewards pool: min(configured_amount, foundation:score_rewards.balance)
-  Funded by: configurable % of foundation revenue each period
-  Credit class: NON-WITHDRAWABLE (spendable on inference only)
-  Distribution:
-      ├── Account A (Score: 500 / Total: 5000) → 10% of pool
-      ├── Account B (Score: 1500 / Total: 5000) → 30% of pool
-      └── Account C (Score: 3000 / Total: 5000) → 60% of pool
-  Anti-Sybil: per-wallet minimum score threshold; wallet ownership verified via signature
-```
+All changes in this PRD are **additive** to the existing conservation invariant:
 
-### Unit Economics Guardrails (SKP-001)
+- New event types don't change how money moves — they describe how it moved
+- Agent-specific parameters change governance thresholds, not the invariant
+- Constitutional config replaces compile-time constants with runtime values — same values, different source
+- ADR-008 reconciliation verifies conservation ACROSS systems, not within
 
-The 10% referral share + Score pool funding operates within a 2× inference markup. Guardrails:
-
-- **Dynamic `referrer_bps`**: Governable via `revenue_rules`. Can be reduced if margins compress (e.g., provider cost increases). Kill-switch: set `referrer_bps = 0` to halt all referrer payouts immediately.
-- **Margin floor**: If `(inference_price - provider_cost) / inference_price < 30%`, referrer share is automatically suspended for that model tier. Prevents negative-margin referral payouts.
-- **Launch pricing experiment**: First 30 days track CAC-per-referral (bonus cost / converted referrals), conversion rate (referrals → paying users), and gross margin after referrer share. Dashboard metric: `net_margin_after_referrals`.
-- **Score pool cap**: Foundation share funds Score pool; if foundation revenue < Score pool target, pool is reduced proportionally (never draws from other parties).
-
-### BD Value Proposition
-
-- **To creators:** "Earn 10% of every AI inference your referrals generate. Transparent rules. Crypto payouts."
-- **To projects:** "Get your collection into Score. Your holders earn passive rewards. Creates demand for your token."
-- **To communities:** "70% of inference revenue stays in your community. Add a referral program to grow usage."
+The invariant remains: **every micro-dollar that enters the system must be accounted for, and the sum of all parts must equal the whole.**
 
 ---
 
-## 10. Protocol Integration
+## 10. Success Criteria
 
-### loa-hounfour Types
-
-The referral system should use loa-hounfour protocol types where applicable:
-
-| Schema | Usage |
-|--------|-------|
-| `billing-entry` | Referral reward entries use existing wire format |
-| `credit-note` | Payout records as credit notes |
-| Escrow state machine | Payout holds (pending → confirmed → released) |
-| Economy flow verification | `verifyEconomyFlow()` validates referral revenue never exceeds total revenue |
-
-### Temporal Safety Properties
-
-From [loa-hounfour PR #2](https://github.com/0xHoneyJar/loa-hounfour/pull/2):
-
-1. **Safety:** No payout processed without matching credit burn
-2. **Safety:** No referral reward without qualifying referee action
-3. **Liveness:** Every approved payout completes within 72 hours
-4. **Conservation:** `referrer_rewards_total ≤ inference_revenue_total × referrer_bps / 10000`
+| Criterion | Verification |
+|-----------|-------------|
+| Agent accounts can be created, earn, and spend with differentiated governance | E2E test: agent account → earn referral → instant settle → spend via reserve/finalize |
+| Constitutional parameters are runtime-configurable | E2E test: propose KYC threshold change → multi-sig approve → 7-day cooldown → activation |
+| Economic events are emitted for all ledger operations | Unit test: every credit ledger method emits the correct EconomicEvent |
+| Budget cap prevents runaway agent spending | Property test: agent spending never exceeds daily cap across 100 random scenarios |
+| ADR-008 is written and reconciliation test passes | Integration test: agent earns in credit ledger + spends in budget engine → net balance conserved |
+| Cross-sprint coherence catches format divergence | Meta test: Bridgebuilder coherence stage detects sqliteNow() timestamp format divergence |
 
 ---
 
-## 11. Success Criteria
-
-| Criteria | Measurement |
-|----------|-------------|
-| System can track referral registrations end-to-end | Integration test: create code → register → verify binding |
-| Signup bonus distributes correctly | Test: referee creates dNFT → referrer receives $5 credit |
-| Revenue share computes correctly on finalization | Test: inference finalization → referrer receives 10% → remaining splits 3-way |
-| Leaderboard queries return in < 500ms | Load test with 1000+ referral records |
-| Payout executes successfully | Smoke test: request payout → NOWPayments API → confirmation |
-| Score rewards distribute proportionally | Test: import scores → trigger distribution → verify proportional grants |
-| Conservation invariant holds under concurrent load | Property-based test: 100 random scenarios, invariant checked after each |
+*"The Kwisatz Haderach — the one who can be many places at once. An agent that earns AND spends AND governs is many actors at once, yet unified through the conservation invariant."*
 
 ---
 
-*Generated with Loa Framework `/plan-and-analyze`*
-*Grounded in: [Bridgebuilder Rails Assessment](https://github.com/0xHoneyJar/arrakis/issues/64#issuecomment-3904364688), [Architectural Meditation](https://github.com/0xHoneyJar/arrakis/issues/64#issuecomment-3904367015), 27+ sprints of billing infrastructure*
+*PRD generated with Bridgebuilder Part 5 grounding — Claude Opus 4.6 — cycle-030 — 2026-02-16*
+*Context: [arrakis PR #67](https://github.com/0xHoneyJar/arrakis/pull/67) · [Bridgebuilder Part 5](https://github.com/0xHoneyJar/arrakis/pull/67#issuecomment-3906327673) · Code reality (billing-types.ts, CreditLedgerAdapter.ts, state-machines.ts, 030_credit_ledger.ts)*

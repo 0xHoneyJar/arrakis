@@ -1,49 +1,36 @@
 {
-  "plan_id": "plan-20260216-cycle029-phase2",
+  "plan_id": "plan-20260216-cycle030",
   "branch": "feature/creator-economy-release",
-  "state": "RUNNING",
+  "state": "JACKED_OUT",
   "timestamps": {
-    "started": "2026-02-16T02:50:00Z",
-    "last_activity": "2026-02-16T03:42:00Z"
+    "started": "2026-02-16T05:35:00Z",
+    "last_activity": "2026-02-16T07:20:00Z"
   },
   "sprints": {
-    "total": 18,
-    "completed": 18,
+    "total": 9,
+    "completed": 9,
     "current": null,
     "list": [
-      {"id": "sprint-1", "global_id": 257, "status": "completed", "cycles": 1},
-      {"id": "sprint-2", "global_id": 258, "status": "completed", "cycles": 1},
-      {"id": "sprint-3", "global_id": 259, "status": "completed", "cycles": 1},
-      {"id": "sprint-4", "global_id": 260, "status": "completed", "cycles": 1},
-      {"id": "sprint-5", "global_id": 261, "status": "completed", "cycles": 1},
-      {"id": "sprint-6", "global_id": 262, "status": "completed", "cycles": 1},
-      {"id": "sprint-7", "global_id": 263, "status": "completed", "cycles": 1},
-      {"id": "sprint-8", "global_id": 264, "status": "completed", "cycles": 1},
-      {"id": "sprint-9", "global_id": 265, "status": "completed", "cycles": 1},
-      {"id": "sprint-10", "global_id": 266, "status": "completed", "cycles": 1},
-      {"id": "sprint-11", "global_id": 267, "status": "completed", "cycles": 1},
-      {"id": "sprint-12", "global_id": 268, "status": "completed", "cycles": 1},
-      {"id": "sprint-13", "global_id": 269, "status": "completed", "cycles": 1},
-      {"id": "sprint-14", "global_id": 270, "status": "completed", "cycles": 1},
-      {"id": "sprint-15", "global_id": 271, "status": "completed", "cycles": 1},
-      {"id": "sprint-16", "global_id": 272, "status": "completed", "cycles": 1},
-      {"id": "sprint-17", "global_id": 273, "status": "completed", "cycles": 1},
-      {"id": "sprint-18", "global_id": 274, "status": "completed", "cycles": 1}
+      {"id": "sprint-1", "global_id": 275, "status": "completed", "cycles": 1},
+      {"id": "sprint-2", "global_id": 276, "status": "completed", "cycles": 1},
+      {"id": "sprint-3", "global_id": 277, "status": "completed", "cycles": 1},
+      {"id": "sprint-4", "global_id": 278, "status": "completed", "cycles": 1},
+      {"id": "sprint-5", "global_id": 279, "status": "completed", "cycles": 1},
+      {"id": "sprint-6", "global_id": 280, "status": "completed", "cycles": 1},
+      {"id": "sprint-7", "global_id": 281, "status": "completed", "cycles": 1},
+      {"id": "sprint-8", "global_id": 282, "status": "completed", "cycles": 1},
+      {"id": "sprint-9", "global_id": 283, "status": "completed", "cycles": 1}
     ]
   },
   "options": {
-    "from": 14,
-    "to": 18,
+    "from": 1,
+    "to": 9,
     "max_cycles": 20,
     "timeout_hours": 8
   },
   "metrics": {
-    "total_cycles": 17,
-    "total_files_changed": 514,
+    "total_cycles": 0,
+    "total_files_changed": 0,
     "total_findings_fixed": 0
-  },
-  "pr": {
-    "number": 67,
-    "url": "https://github.com/0xHoneyJar/arrakis/pull/67"
   }
 }

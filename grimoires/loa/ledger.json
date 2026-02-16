@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "next_sprint_number": 270,
-  "active_cycle": "cycle-029",
+  "next_sprint_number": 284,
+  "active_cycle": "cycle-030",
   "cycles": [
     {
       "id": "cycle-001",
@@ -966,11 +966,13 @@
     {
       "id": "cycle-029",
       "label": "Creator Economy — Referrals, Leaderboards & Score-Weighted Rewards",
-      "status": "active",
+      "status": "archived",
       "created": "2026-02-15T22:00:00Z",
-      "prd": "grimoires/loa/prd.md",
-      "sdd": "grimoires/loa/sdd.md",
-      "sprint_plan": "grimoires/loa/sprint.md",
+      "archived": "2026-02-16T12:00:00Z",
+      "archive_path": "grimoires/loa/archive/2026-02-16-creator-economy-complete",
+      "prd": "grimoires/loa/archive/2026-02-16-creator-economy-complete/prd.md",
+      "sdd": "grimoires/loa/archive/2026-02-16-creator-economy-complete/sdd.md",
+      "sprint_plan": "grimoires/loa/archive/2026-02-16-creator-economy-complete/sprint.md",
       "sprints": [
         {"global_id": 257, "local_label": "sprint-1", "status": "pending"},
         {"global_id": 258, "local_label": "sprint-2", "status": "pending"},
@@ -984,7 +986,32 @@
         {"global_id": 266, "local_label": "sprint-10", "status": "pending"},
         {"global_id": 267, "local_label": "sprint-11", "status": "pending"},
         {"global_id": 268, "local_label": "sprint-12", "status": "pending"},
-        {"global_id": 269, "local_label": "sprint-13", "status": "pending"}
+        {"global_id": 269, "local_label": "sprint-13", "status": "pending"},
+        {"global_id": 270, "local_label": "sprint-14", "status": "pending"},
+        {"global_id": 271, "local_label": "sprint-15", "status": "pending"},
+        {"global_id": 272, "local_label": "sprint-16", "status": "pending"},
+        {"global_id": 273, "local_label": "sprint-17", "status": "pending"},
+        {"global_id": 274, "local_label": "sprint-18", "status": "pending"}
+      ]
+    },
+    {
+      "id": "cycle-030",
+      "label": "The Kwisatz Haderach — Agent Economic Citizenship & Constitutional Governance",
+      "status": "active",
+      "created": "2026-02-16T12:00:00Z",
+      "prd": "grimoires/loa/prd.md",
+      "sdd": "grimoires/loa/sdd.md",
+      "sprint_plan": "grimoires/loa/sprint.md",
+      "sprints": [
+        {"global_id": 275, "local_label": "sprint-1", "status": "pending"},
+        {"global_id": 276, "local_label": "sprint-2", "status": "pending"},
+        {"global_id": 277, "local_label": "sprint-3", "status": "pending"},
+        {"global_id": 278, "local_label": "sprint-4", "status": "pending"},
+        {"global_id": 279, "local_label": "sprint-5", "status": "pending"},
+        {"global_id": 280, "local_label": "sprint-6", "status": "pending"},
+        {"global_id": 281, "local_label": "sprint-7", "status": "pending"},
+        {"global_id": 282, "local_label": "sprint-8", "status": "pending"},
+        {"global_id": 283, "local_label": "sprint-9", "status": "pending"}
       ]
     }
   ]

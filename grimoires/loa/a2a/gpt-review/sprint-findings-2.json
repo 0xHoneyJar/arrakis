@@ -1,38 +1,50 @@
 {
-  "verdict": "APPROVED",
-  "summary": "All previously blocking issues are addressed with concrete resequencing, explicit non-withdrawable pool enforcement, clarified Phase 1A vs 1B semantics, defined manual review operations, implemented cleanup jobs before validation, and an idempotent treasury seed approach—no new blocking problems introduced.",
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "Six of the seven prior blocking issues are addressed, but the migration ordering fix for 051 introduces a new truly-blocking deployment risk because Sprint 4 depends on a table whose migration number executes after Sprint 8’s 050.",
   "previous_issues_status": [
     {
-      "original_issue": "Migration numbering/order inconsistent (046 before 043; violated monotonic ordering requirement)",
+      "original_issue": "Clawback receivable table planned as a “047 addendum or included in 047” causing non-monotonic/unsafe migration ordering",
       "status": "fixed",
-      "notes": "Migrations are now strictly monotonic and aligned to sprint order: 042 (S1) → 043 (S2) → 044 (S3) → 045 (S8) → 046 (S11). Dependency diagram and references match."
+      "notes": "Dedicated migration `051_agent_clawback_receivables.ts` is explicitly named and the conditional language is removed."
     },
     {
-      "original_issue": "CampaignAdapter/pool isolation for `referral:signup` non-withdrawable not explicitly implemented/tested",
+      "original_issue": "Acceptance criteria mixes clawback receivables into credit-lot conservation equations without defining semantics",
       "status": "fixed",
-      "notes": "Sprint 3.4 explicitly registers pool IDs, configures `referral:signup` and `score:rewards` as non-withdrawable, verifies CampaignAdapter recognition, and adds an automated test proving exclusion from withdrawable queries."
+      "notes": "Receivables are now explicitly off-ledger IOUs with separate invariants; reconciliation checks are rewritten to match."
     },
     {
-      "original_issue": "Phase 1A 'non-withdrawable' contradicted by Sprint 6/7 withdrawable semantics",
+      "original_issue": "Sprint 6 requires transactional outbox inserts before outbox exists (Sprint 8)",
       "status": "fixed",
-      "notes": "Sprint 6 now explicitly labels Phase 1A as `settled_available_micro` (non-withdrawable) and defers the withdrawable concept to Phase 1B (Sprint 9). The dashboard and query ACs reflect this boundary."
+      "notes": "Sprint 6 uses injected `IEventEmitter` backed by existing in-memory `BillingEventEmitter`, and Sprint 8.5 backfills outbox wiring."
     },
     {
-      "original_issue": "Manual review queue referenced but not defined (no persistence/surfacing/approve-deny flow)",
+      "original_issue": "SQLite claim protocol used non-portable UPDATE...LIMIT RETURNING",
       "status": "fixed",
-      "notes": "Sprint 4.5 defines storage fields, admin list endpoint, approve/deny endpoints, and an integration test covering both flows with correct CampaignAdapter/ledger behavior."
+      "notes": "Sprint 8.4 now specifies a SQLite-compatible select->guarded update->reselect claim flow with concurrency tests."
     },
     {
-      "original_issue": "Cleanup validation existed without earlier implementation tasks (nonce cleanup + referral_events retention)",
+      "original_issue": "Reconciliation results required for history queries but no persistence table existed",
       "status": "fixed",
-      "notes": "Referral events retention cleanup is implemented in Sprint 7.5 and nonce cleanup in Sprint 11.4; Sprint 13.3 now correctly validates those implemented crons."
+      "notes": "Migration 052 adds `reconciliation_runs` and Sprint 9.2/9.3 AC/tests require persistence and retrieval."
     },
     {
-      "original_issue": "Treasury account creation in migration not concretely specified/idempotent across environments",
+      "original_issue": "Draft->pending_approval transition missing (propose creates draft but approvals expect pending_approval)",
       "status": "fixed",
-      "notes": "Sprint 8.1 specifies a deterministic SQL seed using `ON CONFLICT DO NOTHING` and adds an explicit AC that running the migration twice yields exactly one treasury account with the expected entity_id."
+      "notes": "`submit()` method and endpoint are added; approve is constrained to `pending_approval` and tests cover draft-approval rejection."
+    },
+    {
+      "original_issue": "Authoritative spend computation underspecified (windowing/index/boundaries)",
+      "status": "fixed",
+      "notes": "Precise half-open interval query is specified, index on `(account_id, finalized_at)` is required, and boundary tests are included."
     }
   ],
-  "new_blocking_concerns": [],
+  "new_blocking_concerns": [
+    {
+      "location": "Appendix B (Migration ordering) + Sprint 4 / Task 4.4 dependency on agent_clawback_receivables",
+      "description": "Migration numbering now implies `051_agent_clawback_receivables` executes after `050_economic_events` (Sprint 8). But Sprint 4 implements and tests clawback receivables in Sprint 4, which will run in environments where only migrations up through 047/048/049 may have been applied; the `agent_clawback_receivables` table will not exist until after Sprint 8 is deployed.",
+      "why_blocking": "This is a real deployment/CI blocker: Sprint 4 code and tests that write/read `agent_clawback_receivables` cannot run against a database that has not yet applied migration 051. In a typical incremental rollout, you cannot rely on a later-numbered migration (executed only when that later release is deployed) to support earlier sprint functionality. This will either force shipping Sprint 8 migrations early anyway or cause runtime failures (missing table) and failing CI for Sprint 4.",
+      "fix": "Make the migration number for clawback receivables execute before Sprint 4 code is deployed. Concretely: renumber the clawback migration to the next available number immediately after 047 in the actual release sequence (e.g., 048/049 depending on what’s already shipped), and renumber subsequent migrations accordingly, OR (if 048-050 are already shipped/locked) then ship migration 051 in the same release artifact as Sprint 4 code (i.e., include 050 as a no-op placeholder or move 050 earlier) so that the DB applying migrations for Sprint 4 includes 051. The key requirement: the release that introduces Sprint 4 code must also apply the migration that creates `agent_clawback_receivables`."
+    }
+  ],
   "iteration": 2
 }

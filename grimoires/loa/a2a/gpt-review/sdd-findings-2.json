@@ -1,70 +1,55 @@
 {
   "verdict": "CHANGES_REQUIRED",
-  "summary": "Most of the 10 prior blockers were fixed as described, but two fixes are incomplete/contradictory in ways that would still break solvency/idempotency under real concurrency (reserve backing not actually conserved in the shown flow; payout execution concurrency contradicts the new locking model).",
+  "summary": "Most prior blockers were addressed (idempotent budget finalizations, authoritative finalize-time accounting, tx-threading for settlement, config version uniqueness/sequence, typed param registry, outbox claim protocol, and clawback receivable modeling), but there are two remaining truly blocking inconsistencies that would break runtime behavior and/or safety guarantees.",
   "previous_issues_status": [
     {
-      "original_issue": "Treasury reserve double-mint (reserve funded by minting instead of allocating existing proceeds)",
-      "status": "not_fixed",
-      "notes": "The text in §3.3 claims conservation and says reserve is funded by transferring from the foundation share, but the §4.2 code still mints the referrer lot (increasing supply) and separately mints the 3-way lots, while also doing a transfer from foundation to treasury. As written, this double-counts: total minted = referrerShare + commonsShare + communityShare + foundationShare = totalMicro, and then an additional internal transfer moves value from foundation to treasury without reducing minted supply. Unless the existing system already mints charge proceeds into a source account and these are actually transfers (not mints), the snippet violates conservation/solvency. The fix is only correct if the ledger operation is a split of a single source-of-funds, not multiple mints."
+      "original_issue": "AgentBudgetService — idempotency + finalized-only accounting (`last_finalize_id` single value is incorrect)",
+      "status": "fixed",
+      "notes": "Replaced with `agent_budget_finalizations` keyed by (account_id, reservation_id) and `INSERT OR IGNORE` idempotency. This resolves retry/out-of-order double count."
     },
     {
-      "original_issue": "Revenue distribution idempotency + atomicity (race can double-mint)",
+      "original_issue": "Budget enforcement only as pre-check before reserve() (bypassable / raceable)",
       "status": "fixed",
-      "notes": "The referrer block is now wrapped in a single BEGIN IMMEDIATE transaction and uses INSERT ... ON CONFLICT DO NOTHING as the first write keyed by (inference_charge_id, rule_version). That addresses the double-mint race for the referrer side effects, assuming ledger calls participate in the same SQLite connection/transaction context."
+      "notes": "Now explicitly authoritative at finalize-time via `recordFinalizationInTransaction()` called inside the same `BEGIN IMMEDIATE` transaction as `finalizeInTransaction()`, plus a single finalize entrypoint (`AgentAwareFinalizer`) for agent accounts."
     },
     {
-      "original_issue": "SQLite SELECT FOR UPDATE misuse; payout concurrency unsafe",
+      "original_issue": "SettlementService modification — transaction boundaries (ledger postEntry not guaranteed to use same tx)",
       "status": "fixed",
-      "notes": "Replaced with BEGIN IMMEDIATE and an OCC version column on treasury_state. Also states payout-execution worker concurrency should be 1, which is consistent with SQLite writer serialization and reduces risk."
+      "notes": "SDD now requires and uses `postEntryInTransaction(tx, ...)` and states all writes (ledger entry, earning status, outbox insert) occur in the same transaction."
     },
     {
-      "original_issue": "Payout flow burns/debits before provider creation; no compensating path",
+      "original_issue": "system_config config_version monotonicity/uniqueness not enforced; MAX+1 race",
       "status": "fixed",
-      "notes": "Two-phase HOLD (escrow pools) then FINALIZE/RELEASE on webhook is the right pattern and includes a compensating release path for terminal failures and stalled reconciliation."
+      "notes": "Added `system_config_version_seq` and a UNIQUE index on (param_key, entity_type, config_version), which is the correct DB-level enforcement approach when combined with `BEGIN IMMEDIATE` allocation."
     },
     {
-      "original_issue": "Clawback linkage between earning and reserve; unsafe lot consumption",
+      "original_issue": "system_config JSON typing vs seeded overrides (floats/strings causing runtime coercion/errors)",
       "status": "fixed",
-      "notes": "Added earning_lot_id and reserve_entry_id linkage and uses postCompensatingEntry referencing originals, which is the correct reversible/auditable approach."
+      "notes": "Introduced a strict parameter schema registry and normalized durations to integer seconds/days; proposals validate before entering lifecycle."
     },
     {
-      "original_issue": "Settlement finality not represented in ledger (mutable table only)",
+      "original_issue": "Outbox dispatcher concurrency causes double-dispatch (no claim/lease)",
       "status": "fixed",
-      "notes": "SettlementService now writes a settlement ledger entry with idempotencyKey settlement:<earning.id> and metadata linking earning/lot, making ledger authoritative for finality."
+      "notes": "Added claim columns (`claimed_by`, `claimed_at`) and an atomic UPDATE...RETURNING claim step plus stale-claim recovery; this prevents concurrent workers from publishing the same rows."
     },
     {
-      "original_issue": "Wallet linking nonce issuance + JSON.stringify canonicalization problems",
+      "original_issue": "Agent clawback policy lacked ledger mechanism for unpaid remainder (conservation break)",
       "status": "fixed",
-      "notes": "Introduces wallet_link_nonces with expiry/used_at and consumes nonce atomically via UPDATE ... RETURNING; message format is deterministic SIWE-style string rather than JSON.stringify."
-    },
-    {
-      "original_issue": "isAttributionActive type mismatch (string vs Date; wrong parameter)",
-      "status": "fixed",
-      "notes": "Interface now uses isAttributionActive(registration: ReferralRegistration, at: Date) and the call site matches."
-    },
-    {
-      "original_issue": "referral_bonuses missing FKs and idempotency constraints",
-      "status": "fixed",
-      "notes": "Both account columns now reference credit_accounts(id) and UNIQUE(referee_account_id, qualifying_action, qualifying_action_id) provides retry safety for bonus granting."
-    },
-    {
-      "original_issue": "FraudCheckService required signals but no persistence model",
-      "status": "fixed",
-      "notes": "Adds referral_events with hashed IP/UA/fingerprint, indexes for clustering queries, and a retention policy with cleanup cron. This is sufficient to support delayed fraud evaluation."
+      "notes": "Added `agent_clawback_receivables` plus explicit receivable sub-account semantics and drip recovery transfers with idempotent keys; conservation is preserved by modeling the remainder."
     }
   ],
   "new_blocking_concerns": [
     {
-      "location": "§4.2 RevenueDistributionService Extension + §3.3 Treasury Account (conservation invariant)",
-      "description": "The revised narrative says reserve backing is an allocation of existing proceeds, but the provided code path still uses mintLot for referrer/commons/community/foundation and then additionally transfers from foundation to treasury, which (unless the existing ledger semantics are different than shown) breaks conservation and makes treasury solvency accounting incoherent.",
-      "why_blocking": "If mintLot is a true mint (creates new credits not tied to a debited source), then every charge both (a) mints totalMicro across recipients and (b) moves part of foundation’s minted amount into treasury, meaning the treasury is funded by minted credits rather than by a conserved split of the original charge proceeds. This reintroduces the original solvency hole in a different form: the system can appear fully reserved while still not being backed by real inflows, and reconciliation against payment processor receipts will not balance.",
-      "fix": "Make the distribution of a finalized charge a single conserved flow from a charge-proceeds source. Concretely either: (A) create/identify a \"charge proceeds\" account/lot credited exactly once for totalMicro when the payment finalizes, then use transferInternal to move slices to referrer/commons/community/foundation/treasury (no mintLot in postDistribution); or (B) if mintLot is being used as a convenience wrapper for \"credit from charge source\", rename/replace it with a transfer-from-source API and ensure the sum of all credits equals totalMicro with no additional reserve transfer beyond that split. If treasury backing is meant to come out of foundationShare, then reduce the foundation credit by shareMicro (i.e., foundation receives foundationShare - shareMicro and treasury receives shareMicro) so the overall credited amounts still sum to totalMicro."
+      "location": "§4.4 SettlementService code sample + §3.4/§3.5 parameter keys",
+      "description": "SettlementService resolves `settlement.hold_hours` and multiplies by 3600, but the SDD’s normalized key is `settlement.hold_seconds` (and schema registry defines `settlement.hold_seconds`). The API example also proposes `settlement.hold_hours`.",
+      "why_blocking": "This is not a cosmetic mismatch: it will cause runtime lookups to miss active config rows (falling back unexpectedly or throwing depending on implementation), breaking FR-5/FR-6 and potentially changing settlement timing (agents not instant-settled, or humans incorrectly instant-settled) in production.",
+      "fix": "Make the key consistent everywhere: update SettlementService to resolve `settlement.hold_seconds` and remove the hours conversion; update API examples, migration seed, and any references to `settlement.hold_hours` to `settlement.hold_seconds`. Add/keep a compatibility alias only if you must support legacy proposals, but canonicalize to seconds at write-time."
     },
     {
-      "location": "§7.1 BullMQ Queues vs §4.3 CreatorPayoutService (payout-execution concurrency)",
-      "description": "Queue table still specifies payout-execution concurrency = 2, while §4.3 states concurrency = 1 for correctness.",
-      "why_blocking": "This is not a cosmetic doc mismatch: if implemented as per §7.1 (concurrency 2), two payout executions can run concurrently and contend on treasury_state/escrow transitions. Even with BEGIN IMMEDIATE, you can still get duplicated provider calls and inconsistent state transitions unless every step is strictly idempotent and serialized per payout id. The design intent explicitly relies on serialization as a safety measure.",
-      "fix": "Set payout-execution concurrency to 1 everywhere (SDD + config). If you truly need >1, then require strict per-payout idempotency at the worker level (dedupe by payout_request_id), and ensure all state transitions are guarded by conditional updates (e.g., UPDATE ... WHERE status = 'pending') so concurrent workers cannot both advance the same payout."
+      "location": "§6.2 Agent Budget Security + §11 Risks table vs §4.2 implementation",
+      "description": "Security/Risks sections still claim idempotency via `last_finalize_id` and version allocation via `MAX(config_version)+1`, both of which contradict the revised authoritative designs (`agent_budget_finalizations` and `system_config_version_seq`).",
+      "why_blocking": "These contradictions are operationally dangerous: implementers/operators will follow the security/risk guidance and reintroduce the exact failure modes previously identified (double-counting budget spend; config version collisions). In an SDD, contradictory instructions are a deployment blocker because they create a high probability of implementing the wrong mechanism in adjacent code/tests and breaking economic safety controls.",
+      "fix": "Update §6.2 and §11 to reflect the actual mechanisms: idempotency is via `agent_budget_finalizations (PK account_id,reservation_id)`; config versions are allocated via `system_config_version_seq` under `BEGIN IMMEDIATE` with UNIQUE(param_key, entity_type, config_version). Remove all mentions of `last_finalize_id` and `MAX+1`."
     }
   ],
   "iteration": 2

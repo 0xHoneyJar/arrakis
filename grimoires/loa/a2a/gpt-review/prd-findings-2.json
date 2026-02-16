@@ -1,43 +1,50 @@
 {
-  "verdict": "APPROVED",
-  "summary": "All previously blocking inconsistencies (split math, signup bonus trigger, credit backing/withdrawability, Score pool liability, identity binding, attribution anchoring/idempotency, and NOWPayments async+security) are addressed in a way that is implementable and financially reconcilable.",
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "Most prior blocking issues are fixed (bridge semantics, event ordering/atomicity, KYC/beneficiary model, cap semantics, config consistency, identity anchor), but one fix introduces a truly blocking contradiction: FR-8 requires synchronous in-transaction event emission while the Risks section reintroduces async/fire-and-forget emission, which would break the ordering/atomicity guarantees the rest of the PRD now depends on.",
   "previous_issues_status": [
     {
-      "original_issue": "Revenue-share math inconsistent vs existing governed 3-way split (referrer cut applied then 3-way split example changed effective shares)",
+      "original_issue": "Cross-system conservation check mixed money vs budget capacity without a defined bridge instrument/semantics (FR-10 + §9.3)",
       "status": "fixed",
-      "notes": "FR-3.2 explicitly chooses the model: referrer is a 4th slice taken off the top, and the 3-way split is redefined as % of the remainder when a referrer is present; Section 9 example matches and adds a conservation invariant with deterministic rounding (foundation absorbs remainder)."
+      "notes": "ADR-008/FR-9 now explicitly defines the bridge as credit-ledger reservations (capacity = locked credits 1:1), authority boundaries, and reconciliation checks that compare locked credits to allocated capacity; FR-10 now reconciles conserved quantities within the credit ledger and separately checks the bridge equality."
     },
     {
-      "original_issue": "Signup bonus trigger contradictory (could imply two $5 bonuses) vs one-bonus rule",
+      "original_issue": "Monotonic per-entity sequence_number requirement incompatible with async emission and multi-writer reality (FR-7/FR-8)",
       "status": "fixed",
-      "notes": "FR-2.1 clarifies first qualifying action (dNFT OR first purchase, whichever first) and FR-2.2 enforces one bonus per referee with idempotency/uniqueness; user journey now aligns."
+      "notes": "Per-entity monotonic sequence_number is removed; ordering is defined via SQLite rowid. FR-8 now states events are inserted synchronously within the same SQLite transaction as the source-of-truth write, restoring achievable ordering/atomicity."
     },
     {
-      "original_issue": "Payout flow not reconcilable: unclear what credits represent, which are withdrawable, and how NOWPayments is funded/backed",
+      "original_issue": "Agents don’t need KYC conflicted with creator KYC and payout/settlement beneficiary ambiguity (FR-1/FR-3)",
       "status": "fixed",
-      "notes": "FR-6.4 defines withdrawable vs non-withdrawable credit classes via pool tags; FR-6.5 introduces a treasury reserve backing model and a solvency invariant tying withdrawable balances to treasury:payout_reserve; FR-6.6 makes payout an atomic burn + treasury debit."
+      "notes": "FR-3 defines the beneficiary model: agent is a controlled sub-ledger of a KYC’d creator; payout destination is always the creator’s verified wallet; agent is not an independent beneficiary in Phase 1."
     },
     {
-      "original_issue": "Score-weighted rewards pool liability not bounded / unclear funding source and withdrawability",
+      "original_issue": "Budget cap semantics undefined with reserve/finalize/release/TTL and concurrency (FR-2)",
       "status": "fixed",
-      "notes": "FR-5.2/5.3 hard-cap pool size to min(config, available balance) and require a dedicated funding account/pool with enforcement; FR-5.4 makes Score rewards non-withdrawable, preventing treasury drain."
+      "notes": "FR-2 now defines cap accounting on finalized spend only, idempotent updates keyed by reservation_id, and atomic cap counter updates in the same SQLite transaction as finalize()."
     },
     {
-      "original_issue": "Score identity resolution undefined and Sybil via wallet splitting not addressed",
+      "original_issue": "Constitutional parameters + Redis caching risk inconsistent enforcement across nodes; missing versioning/activation semantics (FR-4/5/6 + NFR)",
       "status": "fixed",
-      "notes": "FR-5.1 defines canonical identifier as EVM address, requires wallet linking with signature verification, and accrues per-account across linked wallets; FR-5.5 adds per-wallet and per-account minimum thresholds to mitigate wallet-splitting/dust."
+      "notes": "NFR now requires SQLite reads within the transaction for money-moving operations, Redis only for non-transactional reads, plus config_version and active_from, and recording config_version in audit trail; emergency override requires 3+ approvals with audit notification."
     },
     {
-      "original_issue": "12-month attribution window lacked precise anchor and idempotent finalization behavior",
+      "original_issue": "“Instant settlement” and “agents can’t dispute” ignored clawback/withhold flows and could create negative balances/invariant breaks (FR-1 + settlement policy)",
       "status": "fixed",
-      "notes": "FR-3.3 anchors expiry to referral_registrations.created_at and specifies the eligibility check at finalization; FR-3.4 adds idempotency keyed by (inference_charge_id, rule_version) to prevent replay/backfill double-pay."
+      "notes": "FR-2b clarifies instant settlement = no human dispute window, not no clawback; defines fraud withhold, clawback handling, non-negative agent balances, and deficit recovery from future earnings."
     },
     {
-      "original_issue": "NOWPayments payout execution mixed synchronous latency targets and lacked idempotency/webhook verification/fee handling",
+      "original_issue": "Phase 1 provenance verification keyed to token_id conflicted with Phase 2 TBA binding; identity anchor mismatch risk (FR-11 vs FR-3)",
       "status": "fixed",
-      "notes": "FR-6.7 makes payout execution async via BullMQ with idempotency key; FR-6.8 requires HMAC verification for callbacks; FR-6.9 specifies fee accounting and gross vs net; NFR-4 explicitly excludes provider latency from API p99."
+      "notes": "FR-3 establishes canonical identity anchor (chain_id, contract_address, token_id) for Phase 1 with optional tba_address added in Phase 2, explicitly additive."
     }
   ],
-  "new_blocking_concerns": [],
+  "new_blocking_concerns": [
+    {
+      "location": "Section 8 Risks & Dependencies — row 'Event emission doubles write latency' vs FR-8",
+      "description": "The PRD now contains mutually exclusive requirements: FR-8 mandates synchronous in-transaction event emission to guarantee 'no orphan events' and rowid-based ordering, but the Risks section states 'Async event emission (fire-and-forget to append-only table); sync write to ledger is source of truth'.",
+      "why_blocking": "If implemented as async/fire-and-forget, the system can emit events for failed transactions, miss events for committed writes, or reorder events relative to ledger commits—breaking the integration contract for loa-finn, undermining reconciliation (FR-9/FR-10), and invalidating the ordering guarantees in FR-7. This reintroduces the exact atomicity/ordering failure mode that was previously blocking.",
+      "fix": "Make the document consistent by removing/rewriting the Risks mitigation to match FR-8: event INSERT must be in the same SQLite transaction as the ledger write (outbox-style). If you want async publication, specify: synchronous DB insert into economic_events (outbox) + async dispatcher that reads/publishes after commit. Do not describe async insertion into economic_events."
+    }
+  ],
   "iteration": 2
 }
