@@ -146,6 +146,8 @@ function getCeilingMicro(): bigint {
  * Assert that a BigInt value is a valid micro-USD amount.
  * @throws {RangeError} if value is negative or exceeds ceiling
  */
+export function assertMicroUSD(value: MicroUSD): void;
+export function assertMicroUSD(value: bigint): void;
 export function assertMicroUSD(value: bigint): void {
   if (value < 0n) {
     throw new RangeError(`micro-USD value must be non-negative, got ${value}`);
