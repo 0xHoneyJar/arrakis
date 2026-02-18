@@ -1,41 +1,41 @@
 {
   "verdict": "APPROVED",
-  "summary": "All previously blocking contradictions and unverifiable success criteria were corrected with concrete, Phase-3-scoped, testable requirements, and no new truly blocking issues were introduced.",
+  "summary": "All previously blocking inconsistencies (auth, tenancy, billing primitive, dogfood gating, contract source of truth, SLA language, and BYOK metering) are now explicitly surfaced as decisions with coherent recommended paths, and no new truly blocking issues were introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "Contradictory versioning strategy: semver range (^7.0.0) vs GitHub tag installs",
+      "original_issue": "Auth model contradictory (JWT/JWKS vs API keys) causing onboarding/SDK/CLI ambiguity",
       "status": "fixed",
-      "notes": "G-1/FR-1 now explicitly target GitHub tag v7.0.0, assert CONTRACT_VERSION === '7.0.0', and require lockfile commit SHA recording—consistent with the GitHub-install constraint."
+      "notes": "Added D1 with clear options (API key primary, OAuth/OIDC primary, hybrid) and an explicit recommended hybrid pattern (API key for S2S + OAuth for portal) mapping both to internal JWT. This resolves the contradiction and makes the implementation path explicit."
     },
     {
-      "original_issue": "“Zero runtime regressions / invisible to production” conflicted with wire-visible schema changes and Phase 4 being out of scope",
+      "original_issue": "Undefined/ambiguous account model (community vs developer/project/NFT collection) breaking onboarding/billing/isolation",
       "status": "fixed",
-      "notes": "Reframed to 'zero arrakis-internal regressions' and explicitly states boundary changes are version-gated with backward compatibility during transition (NFR-2, G-6, Success #9). This is now enforceable within Phase 3 via boundary tests."
+      "notes": "Added D2 with a canonical hierarchy (Account → Project → optional Community → End-user) and explicitly moves budgets/rate limits to Project, with communities as optional sub-resources. This directly addresses the tenancy join-key ambiguity."
     },
     {
-      "original_issue": "Priority mismatch: breaking-change handling was P0 goal but FRs were P1; unsafe reliance on grep for trust_scopes impact",
+      "original_issue": "Billing requirements conflicted (prepaid topups vs subscription+overage) with no ledger/enforcement clarity",
       "status": "fixed",
-      "notes": "FR-5 and FR-6 are now P0 and explicitly call out that grep is insufficient; they require JWT/coordination schema audits and encode/decode + compat tests."
+      "notes": "Added D3 with explicit billing primitives and a recommended MVP path (prepaid first, postpaid later for enterprise), aligned to existing enforcement (budget engine hard stops) and existing endpoints/flags. This is sufficient to launch paid self-serve without internal contradiction."
     },
     {
-      "original_issue": "Semver-based drift detection incorrect/underspecified under GitHub tag installs; CONTRACT_VERSION alone doesn’t detect retagging",
+      "original_issue": "Dogfooding success criteria depended on 'public API' components not guaranteed to exist before Pillar 2",
       "status": "fixed",
-      "notes": "FR-7 now requires a two-layer assertion: CONTRACT_VERSION exact match plus lockfile-resolved commit SHA match to an expected constant, with an explicit upgrade procedure."
+      "notes": "Added D4 defining a minimal 'Public API MVP Gate' and updates sequencing to Phase 1.0 → Phase 2 → Phase 1.1 iteration. This prevents false-positive dogfood validation via internal shortcuts."
     },
     {
-      "original_issue": "Test-count preservation conflicted with deleting redundant equivalence/hash tests; replacement tests not specified",
+      "original_issue": "API contract source of truth unclear (Zod vs OpenAPI vs NATS schemas vs ports), risking spec drift",
       "status": "fixed",
-      "notes": "NFR-4 is now coverage-based for protocol modules and explicitly defines 1:1 replacements for the specific deleted tests; also preserves the 32 property tests and 14 conformance assertions."
+      "notes": "Added D5 declaring Zod REST schemas as canonical for external API, with CI conformance and NATS schemas explicitly internal-only; SDK types generated from OpenAPI. This resolves the drift risk at the strategy level."
     },
     {
-      "original_issue": "Conservation equivalence not defined/measurable; risk of changing the oracle to match canonical and masking regressions",
+      "original_issue": "99.9% SLA commitment without operational definition/controls created legal/expectation risk",
       "status": "fixed",
-      "notes": "FR-3 now mandates freezing the local evaluator for test-only dual-run, running identical generated traces through both, failing on any unenumerated disagreement, plus adding an evaluator-independent conserved-quantity property test."
+      "notes": "Added D6 to defer contractual SLA to Phase 3 and publish SLOs first with required operational prerequisites and explicit exclusions. This removes the premature SLA blocker."
     },
     {
-      "original_issue": "Version negotiation acceptance criteria ambiguous; could implement wrong behavior for Phase 3 interop",
+      "original_issue": "BYOK 'key never seen' promise conflicted with metering/budget enforcement; unclear operating mode",
       "status": "fixed",
-      "notes": "FR-6 now defines concrete Phase 3 negotiation behavior (supported range, preferred version) and requires inbound acceptance for both v4.6.0 and v7.0.0 formats with explicit tests."
+      "notes": "Added D7 specifying proxy-mode token metering with deny-by-default content redaction, and clarifies what is/ isn’t observed plus what must be documented as a trust policy. This resolves the metering vs BYOK tension for MVP."
     }
   ],
   "new_blocking_concerns": [],
