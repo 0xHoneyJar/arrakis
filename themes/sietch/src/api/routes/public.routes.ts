@@ -10,7 +10,7 @@ import {
   publicRateLimiter,
   ValidationError,
 } from '../middleware.js';
-import { PROTOCOL_VERSION } from '../../packages/core/protocol/compatibility.js';
+import { CONTRACT_VERSION, negotiateVersion } from '../../packages/core/protocol/arrakis-compat.js';
 import {
   // SQLite queries (fallback)
   getCurrentEligibility,
@@ -153,11 +153,26 @@ publicRouter.get('/health', async (_req: Request, res: Response) => {
     last_successful_query: lastSuccessTime?.toISOString() ?? null,
     next_query: nextQuery.toISOString(),
     grace_period: health.inGracePeriod,
-    protocol_version: PROTOCOL_VERSION,
+    protocol_version: CONTRACT_VERSION,
   };
 
   // Use 200 even for degraded - it's still functioning
   res.json(response);
+});
+
+/**
+ * GET /api/v1/compat
+ * Returns protocol version negotiation info for coordination schema.
+ * Sprint 302, Task 302.4: Coordination schema migration + version negotiation
+ */
+publicRouter.get('/api/v1/compat', (_req: Request, res: Response) => {
+  const negotiation = negotiateVersion();
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json({
+    preferred: negotiation.preferred,
+    supported: [...negotiation.supported],
+    contract_version: CONTRACT_VERSION,
+  });
 });
 
 /**

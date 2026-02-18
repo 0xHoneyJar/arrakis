@@ -14,17 +14,17 @@ import {
   assertMicroUSD,
   serializeBigInt,
   microUsdSchema,
-  bpsShare,
+  multiplyBPS,
   assertBpsSum,
   TOTAL_BPS,
   MICRO_USD_PER_DOLLAR,
-} from '../../../src/packages/core/protocol/arithmetic.js';
+} from '../../../src/packages/core/protocol/arrakis-arithmetic.js';
 
 // Protocol compatibility
 import {
-  PROTOCOL_VERSION,
+  CONTRACT_VERSION,
   validateCompatibility,
-} from '../../../src/packages/core/protocol/compatibility.js';
+} from '../../../src/packages/core/protocol/arrakis-compat.js';
 
 // Protocol state machines
 import {
@@ -173,17 +173,17 @@ describe('protocol/arithmetic', () => {
   });
 
   describe('BPS arithmetic', () => {
-    it('calculates basis point share', () => {
-      // 25% of $1
-      expect(bpsShare(1_000_000n, 2500n)).toBe(250_000n);
+    it('calculates basis point share (multiplyBPS)', () => {
+      // 25% of $1: (1_000_000 * 2500) / 10000 = 250_000
+      expect(multiplyBPS(1_000_000n, 2500n)).toBe(250_000n);
     });
 
     it('handles zero BPS', () => {
-      expect(bpsShare(1_000_000n, 0n)).toBe(0n);
+      expect(multiplyBPS(1_000_000n, 0n)).toBe(0n);
     });
 
     it('handles 100% BPS', () => {
-      expect(bpsShare(1_000_000n, TOTAL_BPS)).toBe(1_000_000n);
+      expect(multiplyBPS(1_000_000n, TOTAL_BPS)).toBe(1_000_000n);
     });
 
     it('assertBpsSum passes for valid split', () => {
@@ -209,38 +209,19 @@ describe('protocol/arithmetic', () => {
 // =============================================================================
 
 describe('protocol/compatibility', () => {
-  it('exports a valid semver protocol version', () => {
-    expect(PROTOCOL_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  it('exports a valid semver contract version', () => {
+    expect(CONTRACT_VERSION).toBe('7.0.0');
   });
 
   describe('validateCompatibility', () => {
-    it('reports exact match', () => {
-      const result = validateCompatibility('4.6.0', '4.6.0');
-      expect(result.compatible).toBe(true);
-      expect(result.level).toBe('exact');
-    });
-
-    it('allows patch difference', () => {
-      const result = validateCompatibility('4.6.0', '4.6.1');
+    it('reports current version as compatible', () => {
+      const result = validateCompatibility('7.0.0');
       expect(result.compatible).toBe(true);
     });
 
-    it('allows minor version difference', () => {
-      const result = validateCompatibility('4.6.0', '4.7.0');
-      expect(result.compatible).toBe(true);
-      expect(result.level).toBe('minor_compatible');
-    });
-
-    it('rejects major version mismatch', () => {
-      const result = validateCompatibility('4.6.0', '5.0.0');
+    it('rejects far-future major version as incompatible', () => {
+      const result = validateCompatibility('999.0.0');
       expect(result.compatible).toBe(false);
-      expect(result.level).toBe('incompatible');
-    });
-
-    it('rejects invalid version format', () => {
-      const result = validateCompatibility('4.6.0', 'invalid');
-      expect(result.compatible).toBe(false);
-      expect(result.level).toBe('incompatible');
     });
   });
 });

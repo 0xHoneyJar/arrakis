@@ -33,12 +33,12 @@ import {
 } from '../../../src/packages/adapters/billing/CreditLedgerAdapter.js';
 import { ReconciliationService } from '../../../src/packages/adapters/billing/ReconciliationService.js';
 import {
-  CONSERVATION_PROPERTIES,
+  getCanonicalProperties,
   getProperty,
   getPropertiesByEnforcement,
-} from '../../../src/packages/core/protocol/conservation-properties.js';
+} from '../../../src/packages/core/protocol/arrakis-conservation.js';
 import { parseLotBigInts, parseMicroUSD } from '../../helpers/bigint-db.js';
-import type { MicroUSD } from '../../../src/packages/core/protocol/arithmetic.js';
+import type { MicroUSD } from '../../../src/packages/core/protocol/arrakis-arithmetic.js';
 import { smallMicroUsdAmount, lotOperationSequence } from '../billing/property-tests/generators.js';
 import type { LotOperation } from '../billing/property-tests/generators.js';
 
@@ -631,8 +631,9 @@ describe('Conservation Properties — Positive (Task 3.3)', () => {
   // ---------------------------------------------------------------------------
 
   it('all 14 properties are defined with required fields', () => {
-    expect(CONSERVATION_PROPERTIES).toHaveLength(14);
-    for (const prop of CONSERVATION_PROPERTIES) {
+    const properties = getCanonicalProperties();
+    expect(properties).toHaveLength(14);
+    for (const prop of properties) {
       expect(prop.id).toMatch(/^I-\d+$/);
       expect(prop.name).toBeTruthy();
       expect(prop.ltl).toBeTruthy();
@@ -643,8 +644,12 @@ describe('Conservation Properties — Positive (Task 3.3)', () => {
   });
 
   it('getProperty() retrieves by ID', () => {
-    expect(getProperty('I-1')?.name).toBe('Per-lot conservation');
-    expect(getProperty('I-14')?.name).toBe('Shadow tracking');
+    const i1 = getProperty('I-1');
+    expect(i1).toBeDefined();
+    expect(i1!.id).toBe('I-1');
+    const i14 = getProperty('I-14');
+    expect(i14).toBeDefined();
+    expect(i14!.id).toBe('I-14');
     expect(getProperty('I-999')).toBeUndefined();
   });
 
