@@ -1,17 +1,17 @@
-# Arrakis
+# Freeside
 
 [![Version](https://img.shields.io/badge/version-7.0.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE.md)
 
 Engagement intelligence platform for Web3 communities. Conviction scoring and tiered progression delivered as Discord and Telegram roles.
 
-## What is Arrakis?
+## What is Freeside?
 
-Arrakis is a multi-tenant community infrastructure platform built for Web3. It connects to your Discord server and Telegram group, reads on-chain token holdings (BGT on Berachain), and automatically assigns roles based on a 9-tier progression system.
+Freeside is a multi-tenant community infrastructure platform built for Web3. It connects to your Discord server and Telegram group, reads on-chain token holdings (BGT on Berachain), and automatically assigns roles based on a 9-tier progression system.
 
-Members earn conviction scores based on holding duration, accumulation patterns, and on-chain activity. Scores drive tier placement, which drives role assignment, which drives channel access. The entire pipeline is automated — communities configure their rules once and Arrakis handles the rest.
+Members earn conviction scores based on holding duration, accumulation patterns, and on-chain activity. Scores drive tier placement, which drives role assignment, which drives channel access. The entire pipeline is automated — communities configure their rules once and Freeside handles the rest.
 
-For communities running existing verification bots (Collab.Land, Matrica, Guild.xyz), Arrakis offers a Shadow Mode that runs in parallel without disrupting your current setup. Compare role assignments in real-time, tune thresholds, and switch over when ready.
+For communities running existing verification bots (Collab.Land, Matrica, Guild.xyz), Freeside offers a Shadow Mode that runs in parallel without disrupting your current setup. Compare role assignments in real-time, tune thresholds, and switch over when ready.
 
 ## Features
 
@@ -75,7 +75,7 @@ Interactive testing environment for administrators:
 ## Architecture
 
 ```
-arrakis/
+Freeside/
 ├── packages/
 │   ├── core/               # Port interfaces + domain types
 │   │   ├── ports/          # IChainProvider, IStorageProvider, etc.
@@ -125,8 +125,8 @@ arrakis/
 
 ```bash
 # Clone
-git clone https://github.com/0xHoneyJar/arrakis.git
-cd arrakis
+git clone https://github.com/0xHoneyJar/Freeside.git
+cd Freeside
 
 # Install dependencies
 npm install
@@ -198,6 +198,11 @@ npm run dev
 | [INSTALLATION.md](INSTALLATION.md) | Developers | Detailed setup and deployment guide |
 | [CHANGELOG.md](CHANGELOG.md) | Everyone | Version history and release notes |
 
+## Maintainer
+
+[@janitooor](https://github.com/janitooor)
+
+
 ## License
 
 [AGPL-3.0](LICENSE.md) — Use, modify, distribute freely. Network service deployments must release source code.
@@ -207,4 +212,7 @@ Commercial licenses are available for organizations that wish to use loa-freesid
 ## Links
 
 - [Discord](https://discord.gg/thehoneyjar)
-- [The HoneyJar](https://thehoneyjar.xyz)
+- [The HoneyJar](https://0xhoneyjar.xyz)
+
+
+Ridden with [Loa](https://github.com/0xHoneyJar/loa)
