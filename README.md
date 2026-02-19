@@ -63,11 +63,10 @@ On-chain conviction scoring drives capability access:
 <!-- cite: loa-freeside:packages/shared/nats-schemas/ -->
 
 ### Billing & Payments
-<!-- cite: loa-freeside:themes/sietch/src/api/routes/billing.routes.ts -->
+<!-- cite: loa-freeside:themes/sietch/src/api/routes/ -->
 
 - **Paddle integration** — checkout, subscriptions, webhooks, customer portal
 - **Crypto payments** — NOWPayments integration (feature-flagged)
-<!-- cite: loa-freeside:themes/sietch/src/api/routes/crypto-billing.routes.ts -->
 - **Shadow billing** — parallel billing tracking for migration testing
 - **Entitlements caching** — feature access with audit logging
 
@@ -267,6 +266,12 @@ pnpm run dev        # Start with hot reload
 ## Historical Note
 
 This repository evolved from a single-purpose engagement bot with Dune-themed naming to a multi-model agent economy infrastructure. Naming transitioned to Neuromancer trilogy references (Freeside, Sietch, Wintermute, etc.) to reflect the expanded scope. Some internal package prefixes remain from the original naming for backwards compatibility.
+
+## Next Steps
+
+- [docs/ECOSYSTEM.md](docs/ECOSYSTEM.md) — How Freeside fits into the 5-repo Loa protocol
+- [docs/API-QUICKSTART.md](docs/API-QUICKSTART.md) — Make your first agent call in 5 minutes
+- [docs/DEVELOPER-GUIDE.md](docs/DEVELOPER-GUIDE.md) — Full learning path and document index
 
 ## License
 

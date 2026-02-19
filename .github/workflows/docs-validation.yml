@@ -1,0 +1,45 @@
+name: Documentation Validation
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '*.md'
+      - 'scripts/*validate*'
+      - 'scripts/*routes*'
+      - 'scripts/*citations*'
+      - 'BUTTERFREEZONE.md'
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 06:00 UTC
+
+jobs:
+  rtfm-validate:
+    name: RTFM Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Run RTFM validation
+        run: scripts/rtfm-validate.sh
+
+  butterfreezone-validate:
+    name: BUTTERFREEZONE Validation (Advisory)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Run BUTTERFREEZONE validation
+        run: |
+          if [[ -x ".claude/scripts/butterfreezone-validate.sh" ]]; then
+            .claude/scripts/butterfreezone-validate.sh
+          else
+            echo "BUTTERFREEZONE validator not found — skipping"
+          fi
