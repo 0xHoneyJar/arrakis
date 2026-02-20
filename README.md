@@ -273,12 +273,21 @@ This repository evolved from a single-purpose engagement bot with Dune-themed na
 - [docs/API-QUICKSTART.md](docs/API-QUICKSTART.md) — Make your first agent call in 5 minutes
 - [docs/DEVELOPER-GUIDE.md](docs/DEVELOPER-GUIDE.md) — Full learning path and document index
 
+## Maintainer
+
+[@janitooor](https://github.com/janitooor)
+
 ## License
 
-[AGPL-3.0](LICENSE.md)
+[AGPL-3.0](LICENSE.md) — Use, modify, distribute freely. Network service deployments must release source code.
+
+Commercial licenses are available for organizations that wish to use Loa without AGPL obligations.
 
 ## Links
 
 - [Discord](https://discord.gg/thehoneyjar)
-- [The HoneyJar](https://thehoneyjar.xyz)
+- [The HoneyJar](https://0xhoneyjar.xyz)
 - [Loa Protocol](https://github.com/0xHoneyJar/loa)
+
+
+Ridden with [Loa](https://github.com/0xHoneyJar/loa)
