@@ -196,6 +196,13 @@ validate_agent_context() {
         fi
     done
 
+    # Advisory checks for discovery fields (sprint-312, S312-T2)
+    for field in stability_contract economic_model protocol_version discovery_endpoints; do
+        if ! echo "$context_block" | grep -q "^${field}:" 2>/dev/null; then
+            log_warn "agent_context_discovery" "AGENT-CONTEXT missing discovery field: $field (advisory)" "missing: $field"
+        fi
+    done
+
     log_pass "agent_context" "AGENT-CONTEXT block valid (all required fields present)"
     return 0
 }
