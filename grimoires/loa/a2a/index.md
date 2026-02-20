@@ -4,6 +4,26 @@ Audit trail for the Arrakis Scaling Initiative.
 
 ## Active Sprints
 
+### Cycle 035: The Neuromancer Codex — Documentation as Product Surface
+
+| Sprint | Global ID | Title | Status |
+|--------|-----------|-------|--------|
+| 10 | 313 | Final Excellence & Merge | COMPLETED |
+| 9 | 312 | Protocol Formalization & Discovery | COMPLETED |
+| 8 | 311 | Cross-Repo Education & Glossary | COMPLETED |
+| 7 | 310 | Stability Tiers & Governance | COMPLETED |
+| 6 | 309 | Bridge Iteration 1 Fixes | COMPLETED |
+| 5 | 308 | CLI Documentation | COMPLETED |
+| 4 | 307 | Infrastructure & Deployment Docs | COMPLETED |
+| 3 | 306 | API Surface Documentation | COMPLETED |
+| 2 | 305 | BUTTERFREEZONE Regeneration | COMPLETED |
+| 1 | 304 | Documentation Grounding & Naming | COMPLETED |
+
+- **Documents**: [sprint-310/reviewer.md](sprint-310/reviewer.md), [sprint-311/reviewer.md](sprint-311/reviewer.md), [sprint-312/reviewer.md](sprint-312/reviewer.md), [sprint-313/reviewer.md](sprint-313/reviewer.md)
+- **Key Deliverables**: 12 managed docs, 14-concept GLOSSARY, LTL formal specification, agent discovery fields, RTFM 8/8 PASS
+
+---
+
 ### Sprint 229 (Sprint 3): Docker Compose E2E + Final Integration
 - **Status**: COMPLETED
 - **Phase**: The Golden Path (cycle-024)
