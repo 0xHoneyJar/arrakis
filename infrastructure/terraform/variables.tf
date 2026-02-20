@@ -215,9 +215,31 @@ variable "ensemble_enabled" {
 }
 
 variable "loa_finn_base_url" {
-  description = "loa-finn service base URL"
+  description = "loa-finn service base URL (overridden by Cloud Map in production)"
   type        = string
   default     = "http://loa-finn:3000"
+}
+
+# =============================================================================
+# loa-finn Service (Cycle 036)
+# =============================================================================
+
+variable "finn_cpu" {
+  description = "loa-finn task CPU units"
+  type        = number
+  default     = 512
+}
+
+variable "finn_memory" {
+  description = "loa-finn task memory (MB)"
+  type        = number
+  default     = 1024
+}
+
+variable "finn_desired_count" {
+  description = "Desired loa-finn task count"
+  type        = number
+  default     = 1
 }
 
 # SNS Alarm Topic

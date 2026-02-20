@@ -475,7 +475,8 @@ resource "aws_ecs_task_definition" "api" {
         { name = "AGENT_ENABLED", value = var.agent_enabled },
         { name = "ENSEMBLE_ENABLED", value = var.ensemble_enabled },
         { name = "BYOK_ENABLED", value = var.byok_enabled ? "true" : "false" },
-        { name = "LOA_FINN_BASE_URL", value = var.loa_finn_base_url }
+        # Cycle 036: Use Cloud Map DNS for finn discovery in ECS
+        { name = "LOA_FINN_BASE_URL", value = var.enable_service_discovery ? "http://finn.${local.name_prefix}.local:3000" : var.loa_finn_base_url }
       ]
 
       secrets = [
@@ -628,6 +629,12 @@ resource "aws_ecs_service" "api" {
     target_group_arn = aws_lb_target_group.api.arn
     container_name   = "api"
     container_port   = 3000
+  }
+
+  # Cloud Map service discovery — resolves as freeside.arrakis-{env}.local
+  # Cycle 036: Enables finn → freeside S2S communication via DNS
+  service_registries {
+    registry_arn = aws_service_discovery_service.freeside.arn
   }
 
   deployment_maximum_percent         = 200
