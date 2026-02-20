@@ -48,6 +48,9 @@ SYNTAX_SCRIPTS=(
   "$PROJECT_ROOT/.claude/scripts/flatline-orchestrator.sh"
   "$PROJECT_ROOT/.claude/scripts/bridge-orchestrator.sh"
   "$PROJECT_ROOT/.claude/scripts/bridge-github-trail.sh"
+  "$PROJECT_ROOT/.claude/scripts/construct-attribution.sh"
+  "$PROJECT_ROOT/.claude/scripts/feedback-redaction.sh"
+  "$PROJECT_ROOT/.claude/scripts/scoring-engine.sh"
 )
 
 for script in "${SYNTAX_SCRIPTS[@]}"; do

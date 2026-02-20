@@ -33,6 +33,7 @@ class CompletionResult:
     model: str  # Actual model used (may differ from requested)
     latency_ms: int
     provider: str
+    interaction_id: Optional[str] = None  # Deep Research interaction ID for deduplication
 
 
 @dataclass
@@ -93,7 +94,10 @@ class ModelConfig:
 
     capabilities: List[str] = field(default_factory=list)
     context_window: int = 128000
+    token_param: str = "max_tokens"  # Wire name for max output tokens param (e.g., "max_completion_tokens" for GPT-5.2+)
     pricing: Optional[Dict[str, int]] = None  # {input_per_mtok, output_per_mtok} in micro-USD
+    api_mode: Optional[str] = None  # "standard" (default) | "interactions" (Deep Research)
+    extra: Optional[Dict[str, Any]] = None  # Provider-specific config (thinking_level, api_version, etc.)
 
 
 # --- Error Types ---

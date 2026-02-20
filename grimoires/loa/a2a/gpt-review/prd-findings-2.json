@@ -1,41 +1,41 @@
 {
   "verdict": "APPROVED",
-  "summary": "All previously blocking contradictions and unverifiable success criteria were corrected with concrete, Phase-3-scoped, testable requirements, and no new truly blocking issues were introduced.",
+  "summary": "All seven previously-blocking contradictions/verification gaps were addressed with concrete contracts, measurement/validation methods, and scoped acceptance criteria, and the changes did not introduce any new truly blocking issues.",
   "previous_issues_status": [
     {
-      "original_issue": "Contradictory versioning strategy: semver range (^7.0.0) vs GitHub tag installs",
+      "original_issue": "API Quick-Start/Reference requirements were unverifiable due to missing public contract (base URL/env, credential issuance, streaming protocol, public vs admin endpoints, smoke tests)",
       "status": "fixed",
-      "notes": "G-1/FR-1 now explicitly target GitHub tag v7.0.0, assert CONTRACT_VERSION === '7.0.0', and require lockfile commit SHA recording—consistent with the GitHub-install constraint."
+      "notes": "The PRD now includes a clear Developer-Facing API Contract (localhost:3000 target, JWT ES256+JWKS, SSE, endpoint classification, credential acquisition paths) plus an explicit curl-based smoke-test checklist as a validation gate."
     },
     {
-      "original_issue": "“Zero runtime regressions / invisible to production” conflicted with wire-visible schema changes and Phase 4 being out of scope",
+      "original_issue": "Auth method ambiguity (JWT vs API keys) risked shipping incorrect onboarding steps",
       "status": "fixed",
-      "notes": "Reframed to 'zero arrakis-internal regressions' and explicitly states boundary changes are version-gated with backward compatibility during transition (NFR-2, G-6, Success #9). This is now enforceable within Phase 3 via boundary tests."
+      "notes": "JWT (ES256 + JWKS) is declared primary with operational steps; API keys are explicitly marked Planned with no operational steps, aligning with the quick-start and acceptance criteria."
     },
     {
-      "original_issue": "Priority mismatch: breaking-change handling was P0 goal but FRs were P1; unsafe reliance on grep for trust_scopes impact",
+      "original_issue": "Ecosystem stats (LOC/tests/versions) lacked a defined measurement method and would drift / be unverifiable",
       "status": "fixed",
-      "notes": "FR-5 and FR-6 are now P0 and explicitly call out that grep is insufficient; they require JWT/coordination schema audits and encode/decode + compat tests."
+      "notes": "A canonical measurement approach is specified (cloc + test runner output), with required generated_at + commit SHA/tag anchoring and acceptance criteria tying published numbers to script output."
     },
     {
-      "original_issue": "Semver-based drift detection incorrect/underspecified under GitHub tag installs; CONTRACT_VERSION alone doesn’t detect retagging",
+      "original_issue": "BUTTERFREEZONE content hashes were underspecified (algorithm, file set/normalization, validation mode), making validation unreliable",
       "status": "fixed",
-      "notes": "FR-7 now requires a two-layer assertion: CONTRACT_VERSION exact match plus lockfile-resolved commit SHA match to an expected constant, with an explicit upgrade procedure."
+      "notes": "Hashing is now defined as SHA-256, per-section hashing, normalization rules, explicit exclusion of the meta block, and a validation mode tied to the generating commit/working tree at generation time."
     },
     {
-      "original_issue": "Test-count preservation conflicted with deleting redundant equivalence/hash tests; replacement tests not specified",
+      "original_issue": "Naming migration policy was contradictory (zero Arrakis vs theme references) and lacked enforceable boundaries",
       "status": "fixed",
-      "notes": "NFR-4 is now coverage-based for protocol modules and explicitly defines 1:1 replacements for the specific deleted tests; also preserves the 32 property tests and 14 conformance assertions."
+      "notes": "The PRD now enumerates zero-tolerance files, exempt/theme directories, and a single-mention historical pattern, with a grep-based validation command integrated into FR-8."
     },
     {
-      "original_issue": "Conservation equivalence not defined/measurable; risk of changing the oracle to match canonical and masking regressions",
+      "original_issue": "IaC acceptance implied production-grade deploy while production deployment was out of scope",
       "status": "fixed",
-      "notes": "FR-3 now mandates freezing the local evaluator for test-only dual-run, running identical generated traces through both, failing on any unenumerated disagreement, plus adding an evaluator-independent conserved-quantity property test."
+      "notes": "Scope is narrowed to staging/non-production deployment with production hardening as checklist-only; acceptance criteria are aligned (staging deployability + terraform plan validation)."
     },
     {
-      "original_issue": "Version negotiation acceptance criteria ambiguous; could implement wrong behavior for Phase 3 interop",
+      "original_issue": "Truth-grounded citation requirement was impossible for cross-repo claims without stable link rules",
       "status": "fixed",
-      "notes": "FR-6 now defines concrete Phase 3 negotiation behavior (supported range, preferred version) and requires inbound acceptance for both v4.6.0 and v7.0.0 formats with explicit tests."
+      "notes": "Cross-repo citation rules now require tags or commit-SHA permalinks and prohibit branch links, with a grep-based acceptance check to prevent drift/link rot."
     }
   ],
   "new_blocking_concerns": [],
