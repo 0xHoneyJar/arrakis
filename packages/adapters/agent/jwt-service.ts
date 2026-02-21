@@ -143,6 +143,7 @@ export class JwtService {
       platform: context.platform,
       channel_id: context.channelId,
       idempotency_key: context.idempotencyKey,
+      budget_reservation_id: context.idempotencyKey, // Sprint 4.1: explicit claim for finn-side finalization
       req_hash: reqHash,
       pool_mapping_version: CONTRACT_VERSION,
       contract_version: CONTRACT_VERSION, // AC-2.20: fail-fast version negotiation
