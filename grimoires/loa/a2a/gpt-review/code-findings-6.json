@@ -1,20 +1,35 @@
 {
   "verdict": "CHANGES_REQUIRED",
-  "summary": "The legacy_alter_table PRAGMA can be left ON if the rename fails, which is a migration safety bug; wrap it in try/finally and split the rename into its own SQL.",
-  "issues": [
+  "summary": "Auth guards and safe list mapping are present, but the async service calls are no longer awaited, reintroducing the original blocking issues.",
+  "previous_issues_status": [
     {
-      "severity": "major",
-      "file": "migration056.ts",
-      "line": 78,
-      "description": "PRAGMA legacy_alter_table is set inside a multi‑statement SQL string; if the RENAME fails, the PRAGMA OFF will never run, leaving the connection in legacy mode and risking unintended behavior in subsequent statements.",
-      "current_code": "```typescript\nexport const CREDIT_LEDGER_REBUILD_SQL = `\n-- Step 1: Rename existing table\n-- legacy_alter_table=ON prevents SQLite from auto-updating FK references\n-- in dependent tables to follow the rename (prophylactic — see migration 060).\nPRAGMA legacy_alter_table = ON;\nALTER TABLE credit_ledger RENAME TO _credit_ledger_056_backup;\nPRAGMA legacy_alter_table = OFF;\n\n-- Step 2: Create new table with 'transfer_out' in entry_type CHECK\nCREATE TABLE credit_ledger (\n  id TEXT PRIMARY KEY,\n  account_id TEXT NOT NULL REFERENCES credit_accounts(id),\n  pool_id TEXT,\n  lot_id TEXT REFERENCES credit_lots(id),\n  reservation_id TEXT,\n  entry_seq INTEGER NOT NULL,\n  entry_type TEXT NOT NULL CHECK (entry_type IN (\n    'deposit', 'reserve', 'finalize', 'release', 'refund',\n    'grant', 'shadow_charge', 'shadow_reserve', 'shadow_finalize',\n    'commons_contribution', 'revenue_share',\n    'marketplace_sale', 'marketplace_purchase',\n    'escrow', 'escrow_release',\n    'transfer_out', 'transfer_in'\n  )),\n  amount_micro INTEGER NOT NULL,\n  idempotency_key TEXT UNIQUE,\n  description TEXT,\n  metadata TEXT,\n  pre_balance_micro INTEGER,\n  post_balance_micro INTEGER,\n  created_at TEXT NOT NULL DEFAULT (datetime('now')),\n  UNIQUE(account_id, pool_id, entry_seq)\n);\n\n-- Step 3: Copy all existing data\nINSERT INTO credit_ledger SELECT * FROM _credit_ledger_056_backup;\n\n-- Step 4: Drop backup\nDROP TABLE _credit_ledger_056_backup;\n\n-- Step 5: Recreate indexes\nCREATE INDEX IF NOT EXISTS idx_credit_ledger_account\n  ON credit_ledger(account_id, created_at DESC);\n\nCREATE INDEX IF NOT EXISTS idx_credit_ledger_reservation\n  ON credit_ledger(reservation_id)\n  WHERE reservation_id IS NOT NULL;\n`;\n\nexport function up(db: { exec(sql: string): void; pragma(sql: string): unknown }): void {\n  // Disable foreign keys for table rebuild\n  db.pragma('foreign_keys = OFF');\n\n  try {\n    // Create transfers table\n    db.exec(PEER_TRANSFERS_SQL);\n\n    // Rebuild credit_ledger with updated CHECK constraint\n    db.exec(CREDIT_LEDGER_REBUILD_SQL);\n\n    // Verify foreign key integrity after rebuild\n    db.pragma('foreign_key_check');\n  } finally {\n    // Re-enable foreign keys\n    db.pragma('foreign_keys = ON');\n  }\n}\n```",
-      "fixed_code": "```typescript\nexport const CREDIT_LEDGER_RENAME_SQL = `\n-- Step 1: Rename existing table\nALTER TABLE credit_ledger RENAME TO _credit_ledger_056_backup;\n`;\n\nexport const CREDIT_LEDGER_REBUILD_SQL = `\n-- Step 2: Create new table with 'transfer_out' in entry_type CHECK\nCREATE TABLE credit_ledger (\n  id TEXT PRIMARY KEY,\n  account_id TEXT NOT NULL REFERENCES credit_accounts(id),\n  pool_id TEXT,\n  lot_id TEXT REFERENCES credit_lots(id),\n  reservation_id TEXT,\n  entry_seq INTEGER NOT NULL,\n  entry_type TEXT NOT NULL CHECK (entry_type IN (\n    'deposit', 'reserve', 'finalize', 'release', 'refund',\n    'grant', 'shadow_charge', 'shadow_reserve', 'shadow_finalize',\n    'commons_contribution', 'revenue_share',\n    'marketplace_sale', 'marketplace_purchase',\n    'escrow', 'escrow_release',\n    'transfer_out', 'transfer_in'\n  )),\n  amount_micro INTEGER NOT NULL,\n  idempotency_key TEXT UNIQUE,\n  description TEXT,\n  metadata TEXT,\n  pre_balance_micro INTEGER,\n  post_balance_micro INTEGER,\n  created_at TEXT NOT NULL DEFAULT (datetime('now')),\n  UNIQUE(account_id, pool_id, entry_seq)\n);\n\n-- Step 3: Copy all existing data\nINSERT INTO credit_ledger SELECT * FROM _credit_ledger_056_backup;\n\n-- Step 4: Drop backup\nDROP TABLE _credit_ledger_056_backup;\n\n-- Step 5: Recreate indexes\nCREATE INDEX IF NOT EXISTS idx_credit_ledger_account\n  ON credit_ledger(account_id, created_at DESC);\n\nCREATE INDEX IF NOT EXISTS idx_credit_ledger_reservation\n  ON credit_ledger(reservation_id)\n  WHERE reservation_id IS NOT NULL;\n`;\n\nexport function up(db: { exec(sql: string): void; pragma(sql: string): unknown }): void {\n  // Disable foreign keys for table rebuild\n  db.pragma('foreign_keys = OFF');\n\n  try {\n    // Create transfers table\n    db.exec(PEER_TRANSFERS_SQL);\n\n    // Ensure legacy_alter_table is only enabled around the rename\n    db.pragma('legacy_alter_table = ON');\n    try {\n      db.exec(CREDIT_LEDGER_RENAME_SQL);\n    } finally {\n      db.pragma('legacy_alter_table = OFF');\n    }\n\n    // Rebuild credit_ledger with updated CHECK constraint\n    db.exec(CREDIT_LEDGER_REBUILD_SQL);\n\n    // Verify foreign key integrity after rebuild\n    db.pragma('foreign_key_check');\n  } finally {\n    // Re-enable foreign keys\n    db.pragma('foreign_keys = ON');\n  }\n}\n```",
-      "explanation": "Wrapping the PRAGMA in a try/finally guarantees it is restored even if the rename fails, preventing unintended legacy alter behavior from leaking into subsequent statements. Splitting the rename into its own SQL preserves the minimal PRAGMA scope required by the migration."
+      "original_issue": "Missing auth guard allows unauthenticated create and createApiKey not awaited",
+      "status": "not_fixed",
+      "notes": "Auth guard is present, but createApiKey is called without await, reintroducing the async handling issue."
+    },
+    {
+      "original_issue": "List endpoint may return secrets and lacked auth/await",
+      "status": "not_fixed",
+      "notes": "Secrets are filtered and auth is enforced, but listApiKeys is called without await."
+    },
+    {
+      "original_issue": "Delete endpoint lacks auth guard and does not await revokeApiKey",
+      "status": "not_fixed",
+      "notes": "Auth guard is present, but revokeApiKey is called without await."
+    },
+    {
+      "original_issue": "Rotate endpoint lacks auth guard and does not await rotateApiKey",
+      "status": "not_fixed",
+      "notes": "Auth guard is present, but rotateApiKey is called without await."
     }
   ],
-  "fabrication_check": {
-    "passed": true,
-    "concerns": []
-  },
-  "iteration": 1
+  "new_blocking_concerns": [
+    {
+      "location": "api/routes/api-keys.ts",
+      "description": "Service calls (createApiKey, listApiKeys, revokeApiKey, rotateApiKey) are not awaited; responses may contain Promises and errors may escape try/catch.",
+      "why_blocking": "If these services are async (as previously assumed), unawaited Promises cause incorrect responses and bypass error handling, breaking endpoint functionality and reliability.",
+      "fix": "Mark handlers async and await each service call, as in the prior fixes."
+    }
+  ],
+  "iteration": 2
 }

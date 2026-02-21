@@ -3,19 +3,19 @@
   "summary": "All previously reported issues have been addressed and no new blocking problems were introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "Indexes not recreated due to name conflicts after rename",
+      "original_issue": "Dev pepper mismatch breaks validation for pepper_version=0 keys",
       "status": "fixed",
-      "notes": "Old index names are dropped before recreating on new credit_lots."
+      "notes": "Validation now uses the same dev fallback pepper for version 0 in non-production, matching creation behavior."
     },
     {
-      "original_issue": "FK verification incomplete for lot_id/source_lot_id and backup names",
+      "original_issue": "createApiKey fails on UNIQUE key_prefix collisions without retry",
       "status": "fixed",
-      "notes": "Now enforces lot-related FK columns point to credit_lots and detects any credit_lots-named backups."
+      "notes": "Collision retry loop added with bounded attempts and proper error handling."
     },
     {
-      "original_issue": "foreign_keys state not restored to prior value",
+      "original_issue": "timingSafeEqual compares UTF-8 strings instead of hex bytes",
       "status": "fixed",
-      "notes": "Captures prior state and restores it in finally block."
+      "notes": "Comparison now decodes hex to bytes before constant-time comparison."
     }
   ],
   "new_blocking_concerns": [],

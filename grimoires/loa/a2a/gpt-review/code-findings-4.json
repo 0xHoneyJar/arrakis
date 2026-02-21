@@ -1,16 +1,31 @@
 {
   "verdict": "APPROVED",
-  "summary": "Both previously flagged INSERT statements were updated to include pool_id and reserved/consumed values, isolating the CHECK constraint behavior as requested.",
+  "summary": "All previously reported issues have been addressed or are no longer applicable given the synchronous validation/usage updates, with no new blocking problems introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "tba_deposit CHECK test could fail due to NULL pool_id and omitted reserved/consumed columns",
+      "original_issue": "validateApiKey was called synchronously despite possibly returning a Promise; missing error handling",
       "status": "fixed",
-      "notes": "Insert now provides pool_id='general' and reserved_micro/consumed_micro=0."
+      "notes": "The middleware now wraps validation in a try/catch and documents that validateApiKey is synchronous (better-sqlite3), so the async concern is resolved."
     },
     {
-      "original_issue": "invalid source_type test could fail due to NULL pool_id and omitted reserved/consumed columns",
+      "original_issue": "Middleware not declared async while using await",
       "status": "fixed",
-      "notes": "Insert now provides pool_id='general' and reserved_micro/consumed_micro=0."
+      "notes": "No await is used anymore; the middleware remains synchronous, which is consistent with synchronous validation."
+    },
+    {
+      "original_issue": "Logging token.slice(0, 20) leaks secret material",
+      "status": "fixed",
+      "notes": "Logging now uses safeKeyPrefix(), which avoids including any secret portion."
+    },
+    {
+      "original_issue": "Missing helper to safely extract non-secret key prefix",
+      "status": "fixed",
+      "notes": "safeKeyPrefix() helper is present and used."
+    },
+    {
+      "original_issue": "touchKeyUsage may be async; fire-and-forget without handling can cause unhandled rejections",
+      "status": "rejected_with_valid_reason",
+      "notes": "Given the synchronous DB access pattern (better-sqlite3) used here, touchKeyUsage appears to be synchronous; thus the async rejection concern does not apply."
     }
   ],
   "new_blocking_concerns": [],

@@ -1,13 +1,28 @@
 {
-  "verdict": "APPROVED",
-  "summary": "The legacy_alter_table handling was moved out of the SQL string and wrapped in try/finally, so the original safety issue is resolved.",
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "Previous feedback about awaiting async service calls was not addressed; the service calls are still unawaited.",
   "previous_issues_status": [
     {
-      "original_issue": "PRAGMA legacy_alter_table set inside multi-statement SQL could remain ON if RENAME fails",
-      "status": "fixed",
-      "notes": "The PRAGMA is now set in code and restored in a try/finally, so it can’t leak on error."
+      "original_issue": "Missing auth guard allows unauthenticated create and createApiKey not awaited",
+      "status": "not_fixed",
+      "notes": "Auth guard remains, but createApiKey is still called without await."
+    },
+    {
+      "original_issue": "List endpoint may return secrets and lacked auth/await",
+      "status": "not_fixed",
+      "notes": "Secrets are filtered and auth is enforced, but listApiKeys is still called without await."
+    },
+    {
+      "original_issue": "Delete endpoint lacks auth guard and does not await revokeApiKey",
+      "status": "not_fixed",
+      "notes": "Auth guard is present, but revokeApiKey is still called without await."
+    },
+    {
+      "original_issue": "Rotate endpoint lacks auth guard and does not await rotateApiKey",
+      "status": "not_fixed",
+      "notes": "Auth guard is present, but rotateApiKey is still called without await."
     }
   ],
   "new_blocking_concerns": [],
-  "iteration": 2
+  "iteration": 3
 }
