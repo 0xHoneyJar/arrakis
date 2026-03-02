@@ -1,13 +1,59 @@
-# Sprint Plan: Armitage Platform — Terraform Consolidation & DNS Authority
+# Sprint Plan: Autopoietic Infrastructure — From Hardening to Self-Examination
 
-> **Cycle**: cycle-046
-> **PRD**: `grimoires/loa/prd.md` (GPT-APPROVED, 4 iter; Flatline: 1 HIGH + 2 BLOCKER + 7 DISPUTED)
-> **SDD**: `grimoires/loa/sdd.md` (GPT-APPROVED, 4 iter; Flatline: 4 BLOCKER + 10 DISPUTED)
-> **Sprint Plan**: GPT-APPROVED (3 iter, sprints 1-5; 2 iter, sprint 6); Flatline: 4 HIGH + 6 BLOCKER (3-model: Opus 4.6 + GPT-5.3-Codex + Gemini 2.5 Pro)
-> **Delivery**: 6 sprints (global IDs: 380-385)
-> **Team**: 1 platform engineer (solo; named approvers pre-assigned per Change Approval Protocol — SKP-001)
-> **Sprint Duration**: ~1 day each (infrastructure sprints, not application code)
-> **Critical Path** (IMP-003): Sprint 1 (import) → Sprint 2 (pipeline) → Sprint 3 (DNS) → Sprint 4 (validation) → Sprint 5 (hardening). Sprint 1 is the longest (import verification is serial). If Sprint 1 exceeds 1 day, subsequent sprints shift — build 0.5-day buffer after Sprint 1 and Sprint 4 (highest-risk sprints).
+> **Cycle**: cycle-047
+> **Source**: Bridgebuilder Field Report #52 (PR #115 review), loa-finn #24 (Persona Genesis, 51 advances)
+> **PRD Reference**: `grimoires/loa/prd.md` (cycle-046, extended by Bridgebuilder findings)
+> **SDD Reference**: `grimoires/loa/sdd.md` (cycle-046, extended by capability-orchestration-design.md + cross-repo-compliance-design.md)
+> **Delivery**: 5 sprints (global IDs: 386-390)
+> **Team**: 1 engineer (solo)
+> **Sprint Duration**: ~1 day each
+> **Critical Path**: Sprint 1 (merge gate) → Sprint 2 (knowledge) → Sprint 3 (capability manifest) → Sprint 4 (economic feedback). Sprint 5 integrates all.
+> **Toolchain baseline**: `yq` v4+, `jq` 1.6+, `bash` 4+. All are present in CI (verified in `.github/workflows/`). Eval scripts run via `.claude/evals/run-all.sh` (add if missing).
+> **Merge prerequisites**: PR #115 requires 1 approving review + CI green. Approval to be requested at Sprint 1 start; if approval is delayed, Sprint 1 deliverable is "ready-to-merge with approvals requested."
+
+---
+
+## Cycle Thesis
+
+> *"There is a pattern that recurs in every system that survives long enough to matter. The system starts as a thing that does work. Then it becomes a thing that watches itself doing work. Then it becomes a thing that can question whether it's doing the right work."*
+> — Bridgebuilder Field Report #52
+
+PR #115 surfaces as "infrastructure hardening" but the Bridgebuilder review reveals a phase transition: the system has developed self-examination capability (pipeline self-review, constitutional change detection, compliance library extraction). This cycle makes that transition deliberate and structural.
+
+**Driving findings from Field Report #52:**
+
+| ID | Severity | Title | Sprint |
+|----|----------|-------|--------|
+| HIGH-1 | HIGH | ALB HTTP simplification — verify east-west threat model | 1 |
+| HIGH-2 | HIGH | Supply chain: form-data CVE via node-vault | 1 |
+| MEDIUM-1 | MEDIUM | Eval regression — 10 tasks at 50% pass rate | 1 |
+| MEDIUM-2 | MEDIUM | Unused imports in protocol conformance tests | 1 |
+| SPECULATION-1 | SPECULATION | Capability registry as economic protocol | 3 |
+| REFRAME-1 | REFRAME | Is this infrastructure hardening or autopoietic maturation? | 5 |
+
+**Driving conditions from loa-finn #24 (Conditions for Flourishing):**
+
+| Condition | Status | Sprint |
+|-----------|--------|--------|
+| 1. Permission (MAY constraints, REFRAME) | Active | — |
+| 2. Memory (lore patterns, grimoire) | Active but missing failure stories | 2 |
+| 3. Diversity (3-model Flatline, multi-persona) | Active | — |
+| 4. Stakes (economic loop, production deploy) | Active | — |
+| 5. Exploration budget (Vision Registry activation) | Missing | 4 |
+| 6. System must be able to surprise itself | Missing — requires structural mechanism | 3, 5 |
+
+---
+
+## Goals
+
+| ID | Goal | Metric | Source |
+|----|------|--------|--------|
+| G-1 | PR #115 merge-ready with all HIGH findings addressed | 0 HIGH findings unresolved; threat model documented; CVE triaged | HIGH-1, HIGH-2 |
+| G-2 | Failure lore captures experiential knowledge | ≥3 failure lore entries with root cause, lesson, and recurrence pattern | REFRAME-1, Condition 2 |
+| G-3 | Capability manifests enable dynamic review composition | 3 reference manifests validated; discovery function returns ordered chain | SPECULATION-1 |
+| G-4 | Economic feedback signal enables cost-aware termination | DIMINISHING_RETURNS signal emitted when marginal value drops below threshold | cross-repo-compliance-design.md T4.3 |
+| G-5 | Exploration budget activates one Vision Registry entry | 1 vision entry prototyped with measurable outcome | Condition 5 |
+| G-6 | Autopoietic verification — system can measure its own self-referential properties | Health check reports on all 6 conditions for flourishing | REFRAME-1, Condition 6 |
 
 ---
 
@@ -15,740 +61,428 @@
 
 | Sprint | Global ID | Title | Focus | Key Deliverable |
 |--------|-----------|-------|-------|-----------------|
-| 1 | 380 | Stateful Resource Consolidation | FR-1 Phase 1 | 8 new .tf files + import workflow |
-| 2 | 381 | Deploy Pipeline & Observability | FR-2, FR-3, NFR-4 | deploy-ring.sh, wiring tests, alarms |
-| 3 | 382 | DNS Module | FR-4 | 13-file DNS root, zone + records |
-| 4 | 383 | Migration Validation & Cutover Prep | FR-5, SKP-001 | Validation scripts, cutover playbook |
-| 5 | 384 | Hardening & Drift Detection | FR-6, IMP-004 | DNSSEC, drift check, DMARC ramp |
-| 6 | 385 | Hounfour v8.3.1 Upgrade + Docker Redeploy | Issues #108, #110 | Pin update, conformance fix, ECR push, ECS redeploy |
+| 1 | 386 | PR #115 Excellence Gate | HIGH-1, HIGH-2, MEDIUM-1, MEDIUM-2 | PR #115 merge-ready |
+| 2 | 387 | Knowledge Architecture | Failure lore, ecosystem synthesis, Ostrom formalization | ≥3 failure lore entries + cross-ecosystem synthesis doc |
+| 3 | 388 | Capability Manifest v0.1 | SPECULATION-1 prototype | YAML schema + 3 reference manifests + discovery function |
+| 4 | 389 | Economic Feedback & Exploration Budget | DIMINISHING_RETURNS signal + Vision Registry activation | Economic signal in bridge orchestrator + 1 vision prototype |
+| 5 | 390 | Integration & Autopoietic Verification | Wire capabilities into orchestrator, verify 6 conditions | Autopoietic health check + E2E integration test |
 
 ---
 
-## Pre-Flight Requirements
+## Sprint 1: PR #115 Excellence Gate (Global: 386)
 
-Before sprint execution begins, verify these prerequisites (IMP-005):
+> **Focus**: Address all actionable Bridgebuilder findings so PR #115 meets the quality bar that the review itself establishes.
+> **Duration**: ~0.5 day
+> **Risk**: LOW — mechanical fixes and documentation, no architectural changes
+> **Goal traceability**: G-1
 
-- [ ] **IAM permissions**: Confirm the executing role has `terraform:*`, `elasticache:*`, `dynamodb:*`, `s3:*`, `kms:*`, `route53:*`, `ecs:*`, `ssm:*`, `cloudwatch:*`, `logs:*`, `secretsmanager:*`, `ec2:CreateVpcEndpoint` — run `aws sts get-caller-identity` and validate role ARN. **SKP-004**: Use time-limited session credentials; prefer task-scoped role assumptions where feasible
-- [ ] **State backend access**: `terraform init` succeeds for both compute and DNS roots
-- [ ] **Registrar access**: Gandi login confirmed (covered in Task 4.0 but verify credentials exist early)
-- [ ] **Secret handling protocol** (IMP-008): `.gitignore` includes `*.tfstate`, `backup-*.tfstate`, `*.tfplan`; no credential values in commit messages or PR descriptions; backup files stored in encrypted S3 bucket (not local)
+### Task 1.1: Document ALB HTTP Threat Model Rationale (HIGH-1)
 
-## Change Approval Protocol
+- **File**: `infrastructure/terraform/alb-internal.tf` (add comment block) + `docs/adr/` (new ADR)
+- **Action**: Create an Architecture Decision Record documenting:
+  - Why HTTP was chosen over HTTPS for internal ALB (ACM DNS validation doesn't work with private hosted zones)
+  - Explicit threat model: security groups protect routing, not content; east-west lateral movement accepted as low-risk given VPC isolation
+  - Future path: service mesh sidecar (Envoy/Istio) if east-west encryption becomes required
+  - Reference: Netflix BeyondCorp parallel, Google's internal mTLS migration
+- **AC**: (a) ADR exists at `docs/adr/NNN-internal-alb-http.md` with rationale, threat model, and future path; (b) `alb-internal.tf` has inline comment referencing the ADR; (c) PR #115 description updated with threat model summary
 
-High-risk operations require peer review before execution (SKP-001a, SKP-002b):
+### Task 1.2: Triage node-vault Supply Chain CVE (HIGH-2)
 
-| Operation | Approval Required | Approver |
-|-----------|-------------------|----------|
-| `terraform import` (any resource) | PR review + explicit approval | Team lead or senior engineer |
-| `terraform apply` on production | PR review + explicit approval | Team lead or senior engineer |
-| DNS NS cutover at Gandi | Written approval (Slack/email) | Domain owner + team lead |
-| DNSSEC DS record upload | Written approval | Domain owner + team lead |
-| `bootstrap-redis-auth.sh` execution | Pair session or screen share | Any second engineer |
+- **File**: PR #115 description (add accepted-risk section)
+- **Action**: Investigate `form-data@2.3.3` CVE (GHSA-fjxv-7rqg-78g4) blast radius:
+  1. Trace the dependency: `node-vault` → `form-data` — does our usage invoke multipart upload paths?
+  2. If NOT exploitable in our context: document as accepted risk with rationale
+  3. If exploitable: pin `form-data@4.x` or find alternative to `node-vault@0.10.9`
+  4. Check if `node-vault` has a newer release that bumps `form-data`
+- **AC**: (a) CVE triage documented in PR #115 comment with exploit path analysis; (b) Risk acceptance or fix committed; (c) Decision is explicit and reviewable
 
-**Bus factor mitigation**: Document all manual steps in DEPLOYMENT.md with enough detail that any engineer can execute them. Critical path tasks (1.3, 4.4, 5.3) require a buddy observer during execution.
+### Task 1.3: Fix Unused Imports in Protocol Conformance Tests (MEDIUM-2)
 
----
+- **File**: `themes/sietch/tests/unit/protocol-conformance.test.ts:110-116`
+- **Action**: Either add test cases that exercise `ConsumerContractSchema` and `TransitionResultSchema`, or remove the imports. Prefer adding tests — these are conformance tests, so more coverage is valuable.
+- **AC**: (a) Code scanning alerts #630 and #631 resolved; (b) If tests added: they pass and validate the schemas against known-good inputs; (c) `npm test` passes
 
-## Sprint 1: Stateful Resource Consolidation (Global: 380)
+### Task 1.4: Investigate Eval Regression (MEDIUM-1)
 
-**Goal**: Add all missing Finn/Dixie infrastructure to the freeside compute root and safely import stateful resources from loa-finn state.
+- **Action**: Investigate 10 new eval tasks at 50% pass rate (2 trials each):
+  1. Run the failing tasks with 5+ trials to distinguish flakiness from genuine regression
+  2. Check if task definitions match the current infrastructure state (Hounfour v8.3.1 changes may affect expected outputs)
+  3. If flaky: add `@flaky` annotation or increase trial count in eval config
+  4. If genuine regression: create follow-up issue with root cause
+- **AC**: (a) Each of 10 tasks run with ≥5 trials; (b) Tasks classified as flaky (>80% pass at 5 trials) or genuine regression (<80%); (c) Genuine regressions have follow-up issues created
 
-**PRD Trace**: FR-1 (Issue #105 Phase 1)
-**SDD Trace**: §3.1-§3.5, §4.1-§4.4
+### Task 1.5: Merge PR #115
 
-**Exit Gate** (IMP-002): `terraform plan` shows 0 changes on compute root. All imported resources verified. Checkpoint commit pushed. Peer review approved.
-
-### Tasks
-
-#### 1.0 Inventory Existing Finn Resources
-
-**Description**: Export canonical resource identifiers from loa-finn Terraform state and AWS to ensure HCL definitions match exactly for zero-change imports.
-
-**Acceptance Criteria**:
-- [ ] `replication_group_id` for ElastiCache: confirmed from `terraform state show` in loa-finn
-- [ ] `parameter_group_name` for ElastiCache: confirmed (`arrakis-staging-finn-redis-params` or actual)
-- [ ] DynamoDB table names: confirmed for both `finn-scoring-path-log` and `finn-x402-settlements`
-- [ ] S3 bucket names: confirmed for `finn-audit-anchors` and `finn-calibration`
-- [ ] KMS key ID and alias: confirmed from loa-finn state
-- [ ] CloudWatch log group name: confirmed (`/ecs/arrakis-staging/finn` or actual)
-- [ ] SSM parameter paths: all 13 confirmed from AWS SSM console or `aws ssm describe-parameters`
-- [ ] All identifiers documented in `DEPLOYMENT.md` import inventory section
-- [ ] HCL in task 1.1 uses these exact identifiers (prevents drift on import)
-
-**Dependencies**: Access to loa-finn Terraform state
-**Effort**: Small
-
-#### 1.1 Create Finn Stateful Resource Files
-
-**Description**: Create 5 new .tf files for Finn's dedicated infrastructure: `elasticache-finn.tf`, `dynamodb-finn.tf`, `s3-finn.tf`, `kms-finn.tf`, `env-finn.tf`. All resource names/IDs must match identifiers from task 1.0.
-
-**Acceptance Criteria**:
-- [ ] `elasticache-finn.tf` defines replication group with exact `replication_group_id` from 1.0, `noeviction`, AOF, TLS, `prevent_destroy` — auth token managed externally per SKP-003 (no `random_password`)
-- [ ] `dynamodb-finn.tf` defines tables with exact names from 1.0, GSI, PITR, KMS encryption, `prevent_destroy`
-- [ ] `s3-finn.tf` defines buckets with exact names from 1.0, `finn_audit_anchors` with `object_lock_enabled = true`, both with versioning and `prevent_destroy`
-- [ ] `kms-finn.tf` defines audit signing key with least-privilege policy per SKP-002 (no root `kms:*`)
-- [ ] `env-finn.tf` defines 13 SSM parameters with exact paths from 1.0. Uses `ignore_changes = [value]` with documented rationale: values are managed by CI/application deploy pipeline, Terraform owns structure/paths only. Non-sensitive values tracked in `environments/staging/terraform.tfvars` as source of truth for audit (SKP-003b)
-- [ ] `terraform plan` shows "will be created" for all new resources (pre-import expected state)
-
-**Dependencies**: 1.0 (identifiers must be confirmed first)
-**Effort**: Medium
-
-#### 1.2 Create Bootstrap Redis Auth Script
-
-**Description**: Create `scripts/bootstrap-redis-auth.sh` for external Redis auth token provisioning per SKP-003.
-
-**Acceptance Criteria**:
-- [ ] Script accepts `--replication-group-id`, `--secret-name`, `--region` as required inputs
-- [ ] Generates cryptographically strong token: 64-char from `/dev/urandom` using `[A-Za-z0-9!@#%^&*]` character set (SKP-003a)
-- [ ] **Atomic ordering** (SKP-001b): (1) generate token → (2) rotate ElastiCache auth token via `modify-replication-group --auth-token-update-strategy ROTATE` → (3) verify rotation succeeded via `describe-replication-groups` → (4) only then update Secrets Manager. If step 2 or 3 fails, DO NOT update Secrets Manager (old credential remains valid)
-- [ ] Stores minimal secret payload: `{"auth_token": "..."}` only — host/port derived from Terraform outputs, not duplicated in secret (SKP-003a)
-- [ ] Creates Secrets Manager secret if missing (`create-secret` with `kms-key-id`), otherwise updates via `put-secret-value`
-- [ ] Reads current replication group auth-token status; no-ops if already matching stored token
-- [ ] Secret resource policy restricts access to ECS task roles + terraform role only (SKP-003a)
-- [ ] Script is idempotent (safe to re-run)
-- [ ] Passes shellcheck
-- [ ] Rotation cadence documented: recommend quarterly rotation via scheduled pipeline (SKP-003a)
-
-**Dependencies**: Replication group must exist in AWS (pre-existing, confirmed in 1.0) and be imported (1.3). Execution requires peer session per Change Approval Protocol.
-**Effort**: Small
-
-#### 1.3 Import Stateful Resources
-
-**Description**: Execute the safe import workflow per SDD §4.1-§4.4 for all 22 resources.
-
-**Acceptance Criteria**:
-- [ ] **Secure backup** (SKP-002a): Pre-import state snapshot uploaded to encrypted S3 bucket (`aws s3 cp backup-*.tfstate s3://<state-bucket>/backups/ --sse aws:kms`), sha256 checksum recorded alongside
-- [ ] **Restore drill**: Before first import batch, verify restore works: download backup from S3, run `terraform state push` to a scratch workspace, confirm `terraform plan` matches expected state
-- [ ] All 8 stateful resources imported (ElastiCache, 2x DynamoDB, 2x S3, KMS key + alias, parameter group)
-- [ ] All 13 SSM parameters imported
-- [ ] CloudWatch log group imported (if legacy exists)
-- [ ] Post-import: `terraform plan` shows 0 changes for all imported resources. If non-zero diff: adjust HCL to match existing resource attributes before proceeding to next batch (SDD §4.4 rollback: `terraform state rm` to un-import, fix definition, retry)
-- [ ] Post-import validation: wiring test subset passes (W-8 for Redis)
-- [ ] Checkpoint commit after each verified batch
-- [ ] All local `*.tfstate` backup files deleted after S3 upload confirmed (no state files in git)
-
-**Dependencies**: 1.0 (identifiers), 1.1 (HCL files)
-**Effort**: Large (most time-consuming task — per-resource verification)
-
-#### 1.4 Add Compute Root Variables
-
-**Description**: Add new variables to `infrastructure/terraform/variables.tf` and tfvars files.
-
-**Acceptance Criteria**:
-- [ ] `finn_redis_node_type` variable added with staging default `cache.t3.micro`
-- [ ] `dixie_max_count`, `dixie_desired_count` variables added
-- [ ] `autoscaling_cpu_target`, `autoscaling_scale_in_cooldown`, `autoscaling_scale_out_cooldown` variables added
-- [ ] `environments/staging/terraform.tfvars` updated with all new values
-- [ ] `terraform plan` executes without variable errors
-
-**Dependencies**: None
-**Effort**: Small
+- **Depends on**: Tasks 1.1-1.4
+- **Action**: Push hardening commits to feature branch, verify CI green, merge PR #115
+- **AC**: (a) PR #115 merged to main; (b) All HIGH findings resolved; (c) MEDIUM findings resolved or tracked
 
 ---
 
-## Sprint 2: Deploy Pipeline & Observability (Global: 381)
+## Sprint 2: Knowledge Architecture — Failure Lore & Ecosystem Synthesis (Global: 387)
 
-**Goal**: Create the canonical deploy pipeline with health gates, wiring tests, monitoring alarms, and CI safety gates.
+> **Focus**: Build the missing knowledge infrastructure that the Bridgebuilder review identified. Failure lore, cross-ecosystem synthesis, and Ostrom governance formalization.
+> **Duration**: ~1 day
+> **Risk**: LOW — documentation and knowledge capture, no application code changes
+> **Goal traceability**: G-2
+> **FAANG Parallel**: Google's postmortem culture — "blameless postmortems are the foundation of reliability engineering" (SRE Book, Ch. 15). The premise: failures are more educational than successes. Our lore captures patterns and governance principles but not failures.
 
-**PRD Trace**: FR-2, FR-3, NFR-3, NFR-4 (Issue #105 Phase 2-3)
-**SDD Trace**: §3.6-§3.8, §5.1-§5.3, §6.1-§6.3
+### Task 2.1: Create Failure Lore Schema
 
-**Exit Gate** (IMP-002): `deploy-ring.sh` executes successfully on staging. All 10 wiring tests pass. `tf-plan-guard.sh` passes. DEPLOYMENT.md reviewed and approved.
+- **File**: `grimoires/loa/lore/failures.yaml` (new)
+- **Action**: Define schema for failure lore entries:
+  ```yaml
+  entries:
+    - id: failure-NNN
+      title: "Descriptive title"
+      category: compile-runtime-gap | governance-drift | integration-boundary | ...
+      root_cause: "What actually went wrong"
+      surface_symptom: "How it manifested"
+      lesson: "What we learned"
+      recurrence_pattern: "When this could happen again"
+      source: "PR/issue where discovered"
+      faang_parallel: "Industry precedent"
+      tags: [esm, docker, runtime, ...]
+      status: Active | Superseded
+  ```
+- **AC**: (a) Schema defined with required fields; (b) Index updated (`grimoires/loa/lore/index.yaml`) with `failures` category; (c) Schema documented in lore index comments
 
-### Tasks
+### Task 2.2: Capture Docker ESM Failure Story (First Failure Lore Entry)
 
-#### 2.1 Create Monitoring & Autoscaling Files
+- **File**: `grimoires/loa/lore/failures.yaml`
+- **Action**: Document the three Docker runtime failures from PR #115 as failure lore:
+  1. **failure-001**: Lua scripts missing from `dist/` — `readFileSync(__dirname)` resolves differently in container vs dev
+  2. **failure-002**: ESM `.js` extension gap — TypeScript compiles without extensions but Node.js ESM requires them
+  3. **failure-003**: `.d.ts` stubs satisfy tsc but not runtime — esbuild as type-check-free transpilation workaround
+- **FAANG Parallel**: Google Closure→TypeScript migration hit the same compile-time/runtime module resolution divergence
+- **AC**: (a) 3 failure entries with root cause, lesson, and recurrence pattern; (b) Each entry has a `faang_parallel` field grounded in specific industry precedent
 
-**Description**: Create `monitoring-finn.tf`, `monitoring-dixie.tf`, `autoscaling-dixie.tf`.
+### Task 2.3: Cross-Ecosystem Synthesis Document
 
-**Acceptance Criteria**:
-- [ ] `monitoring-finn.tf`: 6 CloudWatch alarms (CPU, memory, 5xx, task count, latency p99, Redis connection) + 2 metric filters
-- [ ] `monitoring-dixie.tf`: 4 CloudWatch alarms (CPU, memory, 5xx, task count) + 2 metric filters
-- [ ] `autoscaling-dixie.tf`: AppAutoScaling target + CPU-based scaling policy
-- [ ] All alarms route to existing SNS topic
-- [ ] **Alarm response ownership** (IMP-010): Each alarm has documented owner and response procedure in DEPLOYMENT.md (who gets paged, what to check, escalation path)
-- [ ] `terraform plan` shows creates only
+- **File**: `grimoires/loa/lore/ecosystem-synthesis.md` (new)
+- **Action**: Synthesize the cross-ecosystem patterns identified across 11 constellation sources into a persistent artifact:
+  - **Conway's Automaton** (loa-finn #80): Parallel agent infrastructure, NFT-bound identity, autonomous economic actors
+  - **Web4 Universal Seigniorage** (meow.bio/web4.html): Democratized money creation maps to democratized review creation
+  - **ERC-6551/EIP-7702** (loa-finn #66): Token-bound accounts as agent identity primitive
+  - **Ostrom's 8 Principles**: Governance is governance regardless of substrate — the 1:1 mapping to review infrastructure
+  - **Governance Isomorphism**: The same pattern (multi-perspective evaluation with fail-closed semantics) appears in Flatline, Red Team, and on-chain multisig
+- **AC**: (a) Synthesis document exists with section for each cross-ecosystem source; (b) Each section cites specific structural parallels, not just analogies; (c) Identifies at least 2 insights neither project reaches alone
 
-**Dependencies**: Sprint 1 complete (resources imported)
-**Effort**: Medium
+### Task 2.4: Formalize Ostrom Governance Mapping as Lore Pattern
 
-#### 2.2 Define Health Gate Metric Contract
+- **File**: `grimoires/loa/lore/patterns.yaml` (extend)
+- **Action**: Add `ostrom-commons-governance` pattern with the full 8-principle mapping from Field Report #52:
+  - Clearly defined boundaries → compliance gate profiles
+  - Proportional equivalence → token budget allocation
+  - Collective choice arrangements → self-declared capability manifests
+  - Monitoring → pipeline self-review, constitutional change detection
+  - Graduated sanctions → severity escalation
+  - Conflict resolution → multi-model consensus via Flatline
+  - Recognized rights → MAY constraints (Permission Amendment)
+  - Nested enterprises → cross-repo compliance checking
+- **AC**: (a) Pattern entry with all 8 principles mapped; (b) Lifecycle metadata (status: Active, references: 2+); (c) Lore index updated; (d) `related` field links to `governance-isomorphism` and `deliberative-council`
 
-**Description**: Define and validate the exact CloudWatch metrics consumed by deploy-ring.sh health gates.
+### Task 2.5: Update Lore Index
 
-**Acceptance Criteria**:
-- [ ] Metric source documented: ALB `TargetResponseTime` (p99 statistic) for per-service latency, or log-derived metric with exact namespace/name/dimensions
-- [ ] `aws cloudwatch get-metric-statistics --namespace AWS/ApplicationELB --metric-name TargetResponseTime --statistics p99 --dimensions Name=TargetGroup,Value=<tg-arn>` returns non-empty datapoints for each service in staging
-- [ ] 5xx metric source: ALB `HTTPCode_Target_5XX_Count` or log-derived `Finn5xxErrors`/`Dixie5xxErrors` namespace confirmed
-- [ ] Health gate script will use curl-based probing (not CloudWatch query) for real-time gating, with CloudWatch as verification fallback
-- [ ] Documented in DEPLOYMENT.md: exact metric names, namespaces, dimensions per service
-
-**Dependencies**: 2.1 (alarms define metric filters)
-**Effort**: Small
-
-#### 2.3 Create Deploy Pipeline Script
-
-**Description**: Create `scripts/deploy-ring.sh` — sequential orchestrator with sliding-window p99 health gates per SKP-004.
-
-**Acceptance Criteria**:
-- [ ] 6-phase deployment: build → TF apply → Dixie → Finn → Freeside → wiring tests
-- [ ] Health gate function tracks sliding-window p99 latency from curl probes (not just per-request)
-- [ ] Health gate counts 5xx errors over gate duration
-- [ ] **Quantified thresholds** (IMP-007): p99 latency < 2000ms, 5xx count < 3 over gate window, 10 consecutive healthy checks required. Thresholds configurable via environment variables (`HEALTH_P99_THRESHOLD_MS`, `HEALTH_5XX_LIMIT`, `HEALTH_CONSECUTIVE_CHECKS`)
-- [ ] 5-minute timeout with actionable error messages
-- [ ] **Automated rollback** (SKP-004): On health gate failure, script automatically redeploys the previous known-good task definition for the failed service (`aws ecs update-service --task-definition <previous-td-arn> --force-new-deployment`). Captures previous task definition ARN before each phase starts. Logs rollback action.
-- [ ] On rollback trigger, script exits with non-zero code and summary of which phase failed and which services were rolled back
-- [ ] Script is executable and passes shellcheck
-
-**Dependencies**: 2.2 (metric contract defined)
-**Effort**: Medium
-
-#### 2.4 Create Wiring Test Script
-
-**Description**: Create `scripts/staging-wiring-test.sh` — validates all 10 service-to-service connectivity paths.
-
-**Acceptance Criteria**:
-- [ ] W-1 through W-3: External health checks (Freeside, Finn, Dixie)
-- [ ] W-4 through W-7: Internal Cloud Map connectivity via ECS Exec
-- [ ] W-8: Finn → Redis (dedicated ElastiCache) via ECS Exec
-- [ ] W-9, W-10: DB connectivity via PgBouncer
-- [ ] Clear pass/fail reporting with service name and HTTP code
-- [ ] Non-zero exit on any failure
-
-**Dependencies**: None (can be written in parallel with 2.1)
-**Effort**: Medium
-
-#### 2.5 Enable ECS Exec & VPC Endpoints
-
-**Description**: Add ECS Exec configuration to cluster, task role IAM permissions, and ssmmessages VPC endpoint per IMP-007.
-
-**Acceptance Criteria**:
-- [ ] `ecs.tf` updated with `execute_command_configuration`
-- [ ] Task roles for finn, dixie, freeside have ssmmessages IAM permissions
-- [ ] VPC endpoint for `com.amazonaws.us-east-1.ssmmessages` created with private DNS
-- [ ] Security group for VPC endpoint allows HTTPS from ECS task SGs
-- [ ] Verify: `aws ecs execute-command` succeeds for each service in staging
-
-**Dependencies**: 2.1 (infra must be applied first)
-**Effort**: Medium
-
-#### 2.6 Create CI Plan Guard Script
-
-**Description**: Create `scripts/tf-plan-guard.sh` per IMP-009 — CI gate blocking replace/destroy on critical resources.
-
-**Acceptance Criteria**:
-- [ ] Scans `terraform show -json` output for destructive actions on `prevent_destroy` resource types
-- [ ] Blocks: ElastiCache replication groups, DynamoDB tables, S3 buckets, KMS keys, Route 53 zones
-- [ ] Passes when plan contains only creates or in-place updates
-- [ ] Clear error message identifying the blocked resource type and action count
-- [ ] Integrated into CI workflow after `terraform plan`
-
-**Dependencies**: None
-**Effort**: Small
-
-#### 2.7 Update DEPLOYMENT.md
-
-**Description**: Document import procedure, deploy-ring usage, rollback commands, and Finn cutover procedure.
-
-**Acceptance Criteria**:
-- [ ] Import procedure with per-resource commands
-- [ ] deploy-ring.sh usage with all service options
-- [ ] **Concrete rollback procedures** (IMP-004): Each rollback includes exact CLI commands, expected output, time limit (e.g., "revert ECS service to previous TD within 5 min"), and verification step
-- [ ] Phase 1 rollback plan documented per IMP-001 with trigger criteria (e.g., "5xx rate > 1% for > 2 min", "import produces force-replacement on any resource")
-- [ ] Finn cutover step-by-step with verification gates
-- [ ] **Secret handling protocol** (IMP-008): Document that no credential values appear in commit messages, PR descriptions, or logs. `.tfstate` backups excluded from git. `bootstrap-redis-auth.sh` output not piped to log files.
-- [ ] Prohibition of local `terraform apply` during migration documented
-- [ ] Health gate metric contract per 2.2
-- [ ] Alarm response runbook per IMP-010: table of alarm → owner → first-response action → escalation
-
-**Dependencies**: 2.3, 2.4 (scripts must exist to document)
-**Effort**: Small
+- **File**: `grimoires/loa/lore/index.yaml`
+- **Action**: Add `failures` category and `ostrom-commons-governance` pattern entry. Update tags to include `failure-analysis`, `cross-ecosystem`, `ostrom`, `web4`.
+- **AC**: (a) Index reflects all new entries; (b) All referenced files exist; (c) Tags are consistent across index and entry files
 
 ---
 
-## Sprint 3: DNS Module (Global: 382)
+## Sprint 3: Capability Manifest v0.1 — Review as Economic Protocol (Global: 388)
 
-**Goal**: Create the complete DNS Terraform root with zone, records, email, agent wildcard, and security configuration.
+> **Focus**: Prototype the SPECULATION-1 finding — a capability registry where review capabilities declare themselves via manifests and compose into deliberation chains with budget allocation.
+> **Duration**: ~1 day
+> **Risk**: MEDIUM — new schema and discovery mechanism, but isolated from production paths
+> **Goal traceability**: G-3
+> **FAANG Parallel**: Kubernetes ValidatingWebhookConfiguration + Google Tricorder (ISSTA 2018). Both use declarative capability registration, pattern-based matching, and ordered execution. The key insight from both: **adding a new analyzer should not require modifying the framework.**
+> **Design Source**: `grimoires/loa/lore/capability-orchestration-design.md`
 
-**PRD Trace**: FR-4 (Issue #106)
-**SDD Trace**: §7.1-§7.9
+### Task 3.1: Define Capability Manifest YAML Schema
 
-**Exit Gate** (IMP-002): `terraform apply` succeeds on staging DNS. All `dig` validation queries return expected results. Zone records verified.
+- **File**: `.claude/data/capability-schema.yaml` (new)
+- **Action**: Define the manifest schema per the design doc, with fields:
+  ```yaml
+  capability:
+    id: string (required, unique)
+    type: review (required)
+    version: integer (required)
+    description: string (required)
+    trigger:
+      files: string[] (glob patterns)
+      tags: string[] (semantic tags for matching)
+    input:
+      requires: string[] (required input channels: sdd, diff, prior_findings)
+      optional: string[] (optional context)
+    output:
+      format: findings-json | text | structured
+      severity_range: [min, max]
+    budget:
+      min_tokens: integer (minimum useful budget)
+      optimal_tokens: integer (sweet spot)
+      max_tokens: integer (upper bound)
+    dependencies:
+      before: string[] (must run before these capabilities)
+      after: string[] (must run after these capabilities)
+  ```
+- **Validation**: Schema must be parseable by `yq` (no jq dependency for YAML)
+- **AC**: (a) Schema file exists with all fields documented; (b) `yq eval '.' .claude/data/capability-schema.yaml` succeeds; (c) Comments explain each field's purpose and constraints
 
-### Tasks
+### Task 3.2: Create 3 Reference Capability Manifests
 
-#### 3.1 Create DNS Root Structure
+- **Files**: `.claude/capabilities/pipeline-self-review.yaml`, `.claude/capabilities/bridgebuilder-review.yaml`, `.claude/capabilities/red-team-code.yaml` (all new)
+- **Action**: Create manifests for the three existing review capabilities:
+  1. **pipeline-self-review**: triggers on `.claude/scripts/**`, `.claude/skills/**`; requires `sdd`, `diff`; budget 4K-50K-150K
+  2. **bridgebuilder-review**: triggers on `**/*`; requires `sdd`, `diff`, `prior_findings`; budget 10K-50K-150K; runs after pipeline-self-review
+  3. **red-team-code**: triggers on `.claude/scripts/**`, `packages/**`; requires `sdd`, `diff`; budget 4K-20K-80K; runs after pipeline-self-review, before bridgebuilder-review
+- **AC**: (a) All 3 manifests validate against schema; (b) Trigger patterns match actual file scopes; (c) Dependency ordering is consistent (no cycles); (d) Budget ranges are calibrated from actual usage in bridge orchestrator
 
-**Description**: Create `infrastructure/terraform/dns/` directory with `main.tf`, `variables.tf`, `outputs.tf`, and environment-specific backend/tfvars files.
+### Task 3.3: Capability Discovery Function
 
-**Acceptance Criteria**:
-- [ ] `main.tf` with provider version `~> 5.82.0` per IMP-002, S3 backend with `-backend-config` pattern
-- [ ] `variables.tf` with all variables including feature flags (`enable_production_api`, `enable_dnssec`) with safe defaults per IMP-008
-- [ ] `outputs.tf` exposing zone_id, nameservers, ds_record
-- [ ] `environments/staging/backend.tfvars` with `key = "dns/staging.tfstate"`
-- [ ] `environments/staging/terraform.tfvars` with staging values
-- [ ] `environments/production/backend.tfvars` with `key = "dns/production.tfstate"`
-- [ ] `environments/production/terraform.tfvars` with production values (flags default off)
-- [ ] `terraform init -backend-config=environments/staging/backend.tfvars` succeeds
+- **File**: `.claude/scripts/lib/capability-lib.sh` (new)
+- **Action**: Implement discovery and validation functions:
+  ```bash
+  validate_capability_manifest(file)  # Validate manifest against schema rules
+  discover_capabilities()             # Scan .claude/capabilities/*.yaml → array
+  match_capabilities(files)           # Filter by trigger.files glob patterns
+  resolve_ordering(matches)           # Topological sort by dependencies
+  allocate_budgets(chain, total)      # Proportional allocation with min/max
+  ```
+- **Validation rules for `validate_capability_manifest()`**:
+  - Required keys: `capability.id` (string, non-empty), `capability.type` (must be "review"), `capability.version` (integer ≥ 1), `capability.description` (string)
+  - Required nested: `capability.trigger.files` (non-empty array), `capability.budget.min_tokens` (integer > 0), `capability.budget.max_tokens` (integer ≥ min_tokens)
+  - Optional with defaults: `capability.input.requires` (default []), `capability.dependencies.before` (default []), `capability.dependencies.after` (default [])
+  - Validation via `yq` assertions (e.g., `yq '.capability.id | length > 0'`); returns exit 0 on pass, exit 1 with specific field-level error messages on fail
+  - `discover_capabilities()` calls `validate_capability_manifest()` on each file and skips invalid manifests with a warning (does not abort)
+- **Implementation notes**:
+  - Use `yq` for YAML parsing (already a dependency)
+  - Topological sort via dependency adjacency + Kahn's algorithm (or simpler: iterate until stable order, error on cycle)
+  - Budget allocation: guarantee `min_tokens` first, distribute remaining proportionally by `optimal_tokens`, cap at `max_tokens`
+  - All functions sourceable with no side effects (same pattern as `compliance-lib.sh`)
+- **AC**: (a) All 5 functions implemented; (b) `validate_capability_manifest` rejects manifests missing required keys with specific error; (c) `discover_capabilities` returns 3 manifests from reference files, skipping any invalid ones; (d) `match_capabilities` filters correctly by glob; (e) `resolve_ordering` produces pipeline-self-review → red-team-code → bridgebuilder-review; (f) `allocate_budgets` respects min/max constraints; (g) Cycle detection returns error on circular dependencies
 
-**Dependencies**: None
-**Effort**: Medium
+### Task 3.4: Integration Test — Discovery to Report
 
-#### 3.2 Create Zone & Record Files
+- **File**: `.claude/evals/capability-discovery.sh` (new)
+- **Action**: End-to-end test that:
+  1. Discovers capabilities from `.claude/capabilities/`
+  2. Matches against a synthetic changed-file list
+  3. Resolves ordering
+  4. Allocates budget with a test total
+  5. Outputs a JSON report: `{ chain: [{id, budget, ...}], unmatched: [...] }`
+- **Toolchain**: Requires `jq` 1.6+ (see toolchain baseline in header). JSON output validated by `jq '.' >/dev/null 2>&1 || exit 1`.
+- **Runner**: Registered in `.claude/evals/run-all.sh` (create if missing). Pattern: `run-all.sh` iterates `*.sh` in evals dir, runs each, aggregates exit codes.
+- **AC**: (a) Test script exits 0 with correct chain ordering; (b) Budget sum ≤ total; (c) Each capability budget ≥ min_tokens; (d) JSON output parseable by `jq`; (e) Script registered in `.claude/evals/run-all.sh`
 
-**Description**: Create `honeyjar-xyz.tf`, `honeyjar-xyz-email.tf`, `honeyjar-xyz-vercel.tf`, `honeyjar-xyz-agents.tf`, `honeyjar-xyz-backend.tf`.
+### Task 3.5: Documentation — Capability Registry Guide
 
-**Acceptance Criteria**:
-- [ ] `honeyjar-xyz.tf`: Zone resource + apex A record pointing to Vercel anycast IP
-- [ ] `honeyjar-xyz-email.tf`: MX (Google Workspace 5 records), SPF, DKIM (gated on `var.dkim_key`), DMARC with corrected `dmarc@0xhoneyjar.xyz`
-- [ ] `honeyjar-xyz-vercel.tf`: Wildcard CNAME + `_acme-challenge` NS delegation to Vercel
-- [ ] `honeyjar-xyz-agents.tf`: `*.agents` wildcard CNAME, bare `agents` A record, `_acme-challenge.agents` NS delegation
-- [ ] `honeyjar-xyz-backend.tf`: `api` A alias record using `data.aws_lbs` → `data.aws_lb` pattern (gated on `enable_production_api`)
-- [ ] `terraform plan` shows all creates, no errors
-
-**Dependencies**: 3.1
-**Effort**: Medium
-
-#### 3.3 Create Security File
-
-**Description**: Create `dns/security.tf` with CAA records and feature-flagged DNSSEC resources.
-
-**Acceptance Criteria**:
-- [ ] CAA records restrict issuance to Let's Encrypt + Amazon
-- [ ] KSK resource gated by `enable_dnssec` variable
-- [ ] DNSSEC KMS key uses least-privilege policy per SKP-002 (no root `kms:*`)
-- [ ] Zone signing depends on KSK creation
-- [ ] `terraform plan` with `enable_dnssec=false` shows only CAA record
-- [ ] `terraform plan` with `enable_dnssec=true` shows KSK + zone signing + KMS
-
-**Dependencies**: 3.1, 3.2
-**Effort**: Small
-
-#### 3.4 Apply DNS Module to Staging
-
-**Description**: Apply the DNS module to create the staging Route 53 zone and all records.
-
-**Acceptance Criteria**:
-- [ ] `terraform init -backend-config=environments/staging/backend.tfvars` succeeds
-- [ ] `terraform plan` shows all creates (zone + records)
-- [ ] `terraform apply` succeeds
-- [ ] `dig @<r53-ns> 0xhoneyjar.xyz A` returns Vercel anycast IP
-- [ ] `dig @<r53-ns> 0xhoneyjar.xyz MX` returns Google Workspace MX records
-- [ ] `dig @<r53-ns> test.agents.0xhoneyjar.xyz CNAME` returns Vercel CNAME (wildcard expansion)
-- [ ] `dig @<r53-ns> agents.0xhoneyjar.xyz A` returns Vercel anycast IP
-- [ ] `dig @<r53-ns> _acme-challenge.agents.0xhoneyjar.xyz NS` returns Vercel nameservers
-
-**Dependencies**: 3.2, 3.3
-**Effort**: Small
-
----
-
-## Sprint 4: Migration Validation & Cutover Prep (Global: 383)
-
-**Goal**: Create validation scripts and prepare the formal DNS cutover playbook per SKP-001.
-
-**PRD Trace**: FR-5 (Issue #106 Sprint 2)
-**SDD Trace**: §8.1-§8.2, §10 Phase 3
-
-**Exit Gate** (IMP-002): `dns-pre-migration.sh` passes with zero mismatches. Cutover playbook reviewed and approved by domain owner. Gandi access confirmed.
-
-### Tasks
-
-#### 4.0 Confirm Gandi Registrar Access
-
-**Description**: Verify registrar access and capabilities before migration scripts depend on it.
-
-**Acceptance Criteria**:
-- [ ] Can log into Gandi registrar dashboard and view NS records for `0xhoneyjar.xyz`
-- [ ] Can edit NS records (confirmed via UI review, not actual change)
-- [ ] Can view/export current zone records (for cross-reference with dns-pre-migration.sh)
-- [ ] Can add/remove DS records (required for Sprint 5 DNSSEC)
-- [ ] Registrar NS update SLA documented (Gandi: typically <15 min)
-- [ ] Access credentials and MFA confirmed with domain owner
-
-**Dependencies**: None
-**Effort**: Small (manual verification, no code)
-
-#### 4.1 Create Pre-Migration Validation Script
-
-**Description**: Create `scripts/dns-pre-migration.sh` — validates Route 53 records match Gandi.
-
-**Acceptance Criteria**:
-- [ ] Compares all record types: A, AAAA, MX, TXT, CAA, CNAME
-- [ ] Checks all critical subdomains: www, *.agents, agents, _dmarc, google._domainkey
-- [ ] Checks ACME delegation: `_acme-challenge` NS, `_acme-challenge.agents` NS
-- [ ] Uses actual Gandi authoritative nameservers (not fixed hostname)
-- [ ] Diff allowlist for expected SOA/NS differences
-- [ ] Non-zero exit on any unexpected mismatch
-- [ ] Passes shellcheck
-
-**Dependencies**: Sprint 3 complete (zone exists to validate against)
-**Effort**: Medium
-
-#### 4.2 Create Post-Migration Check Script
-
-**Description**: Create `scripts/dns-post-migration-check.sh` — monitors propagation after NS change.
-
-**Acceptance Criteria**:
-- [ ] Queries 8+ diverse public resolvers
-- [ ] Tracks A record and MX record propagation percentage
-- [ ] ≥95% agreement threshold for success
-- [ ] 4-hour timeout with rollback alert
-- [ ] 1-minute check interval with progress reporting
-- [ ] Passes shellcheck
-
-**Dependencies**: None (can be written in parallel)
-**Effort**: Medium
-
-#### 4.3 Validate Record Equivalence
-
-**Description**: Run `dns-pre-migration.sh` against the staging Route 53 zone and Gandi production records.
-
-**Acceptance Criteria**:
-- [ ] Script runs without errors
-- [ ] All records MATCH or EXPECTED_DIFF (SOA, NS only)
-- [ ] Zero MISMATCH results
-- [ ] Email records (MX, SPF, DKIM, DMARC) specifically confirmed
-
-**Dependencies**: 4.1, Sprint 3 (zone applied)
-**Effort**: Small
-
-#### 4.4 Document Cutover Playbook in DEPLOYMENT.md
-
-**Description**: Add the formal DNS cutover playbook from SDD §10 Phase 3 (SKP-001) to DEPLOYMENT.md.
-
-**Acceptance Criteria**:
-- [ ] T-72h: TTL reduction steps with verification commands
-- [ ] T-0: NS cutover steps with pre-flight check
-- [ ] T+1h: Verification gate criteria
-- [ ] T+24h: Enable API record steps
-- [ ] Rollback procedure with trigger criteria and recovery time
-- [ ] Owner assignments for each step
-
-**Dependencies**: 4.1, 4.2 (scripts referenced in playbook)
-**Effort**: Small
-
-#### 4.5 Execute DNS Cutover Dry Run (IMP-009)
-
-**Description**: Rehearse the full DNS cutover procedure in staging to validate scripts, timing, and team coordination before production execution.
-
-**Acceptance Criteria**:
-- [ ] Execute `dns-pre-migration.sh` against staging zone and record results
-- [ ] Simulate T-72h TTL reduction on staging zone, verify propagation timing
-- [ ] Walk through T-0 NS cutover steps (read-only — do not change production NS) with buddy observer
-- [ ] Execute `dns-post-migration-check.sh` against staging zone and verify resolver propagation tracking works
-- [ ] Time each step and compare to playbook estimates — update playbook if actuals differ by >50%
-- [ ] Document any issues encountered during rehearsal and update playbook accordingly
-- [ ] Rehearsal completion signed off by domain owner
-
-**Dependencies**: 4.1, 4.2, 4.4 (playbook must exist to rehearse)
-**Effort**: Small
+- **File**: `docs/capability-registry.md` (new)
+- **Action**: Document how to:
+  1. Create a new capability manifest
+  2. Register trigger patterns
+  3. Declare dependencies
+  4. Set budget ranges
+  5. Test the manifest locally
+- **Include**: FAANG parallels (K8s admission controllers, Tricorder, Chromium OWNERS), the economic protocol framing (bids, market maker, clearing price), and the connection to web4's universal seigniorage
+- **AC**: (a) Guide covers all 5 steps; (b) Example manifest included; (c) At least 2 FAANG parallels grounded in specific systems
 
 ---
 
-## Sprint 5: Hardening & Drift Detection (Global: 384)
+## Sprint 4: Economic Feedback & Exploration Budget (Global: 389)
 
-**Goal**: Enable DNSSEC (feature-flagged), activate nightly drift detection, and prepare post-cutover hardening steps.
+> **Focus**: Build the DIMINISHING_RETURNS signal for cost-aware bridge termination, and create the exploration budget mechanism for Vision Registry activation.
+> **Duration**: ~1 day
+> **Risk**: MEDIUM — modifies bridge orchestrator behavior (config-gated, disabled by default)
+> **Goal traceability**: G-4, G-5
+> **Design Source**: `grimoires/loa/lore/cross-repo-compliance-design.md` T4.3 (Economic Feedback)
+> **FAANG Parallel**: AWS's cost anomaly detection uses marginal spend analysis to flag runaway resources. The same principle applied to review iterations: when each additional iteration costs more but finds less, the rational response is to stop.
 
-**PRD Trace**: FR-6 (Issue #106 Sprint 3)
-**SDD Trace**: §7.8, §8.3, §10 Phase 3 (IMP-004)
+### Task 4.1: Bridge State Contract Verification & Marginal Value Computation
 
-**Exit Gate** (IMP-002): Full validation suite passes (5.4). Production DNS zone applied. Drift check workflow active and clean. DNSSEC playbook reviewed.
+- **File**: `.claude/scripts/lib/economic-lib.sh` (new)
+- **Action**:
+  1. **Contract verification**: Before computing marginal value, verify the `bridge-state.json` data contract:
+     - Expected shape: `.metrics.cost_estimates[]` — array of `{ iteration: int, cost_micro: int, findings_count: int, findings_addressed: int }`
+     - Defensive parsing: if `cost_estimates` is missing, empty, or has unexpected shape → return `{ signal: "NO_DATA", reason: "..." }` (no crash, no false signal)
+     - Include a fixture file at `.claude/evals/fixtures/bridge-state-economic.json` with known-good test data
+  2. **Marginal value computation**:
+  ```bash
+  verify_bridge_state_contract(state_file)
+  # Returns: exit 0 if contract satisfied, exit 1 with missing-field details
 
-### Tasks
+  compute_marginal_value(iteration_costs, iteration_findings)
+  # Returns: { marginal_cost, marginal_value, value_ratio, signal }
+  #
+  # marginal_cost = cost[N] - cost[N-1]
+  # marginal_value = findings_addressed[N] / cost[N]
+  # value_ratio = marginal_value[N] / marginal_value[N-1]
+  # signal = "DIMINISHING_RETURNS" if value_ratio < threshold
+  # signal = "NO_DATA" if cost_estimates missing/empty
+  ```
+- **Data source**: `.run/bridge-state.json:metrics.cost_estimates[]` (populated by bridge orchestrator)
+- **AC**: (a) `verify_bridge_state_contract` returns exit 1 with specific message when `cost_estimates` is missing/empty/malformed; (b) `compute_marginal_value` returns `NO_DATA` signal (not crash) when cost data is absent; (c) Signal emitted when ratio < threshold (default 0.2); (d) No signal before `min_iterations` (default 2); (e) Fixture file used by unit tests; (f) Sourceable with no side effects
 
-#### 5.1 Create DNS Drift Check Workflow
+### Task 4.2: DIMINISHING_RETURNS Signal in Bridge Orchestrator
 
-**Description**: Create `.github/workflows/dns-drift-check.yml` — nightly Terraform plan for drift detection.
+- **File**: `.claude/scripts/bridge-orchestrator.sh` (modify)
+- **Action**: After each bridge iteration's cost tracking, call `compute_marginal_value()` and:
+  1. Log the marginal value computation to bridge state
+  2. If `DIMINISHING_RETURNS` signal: add to iteration metadata
+  3. In autonomous mode: treat as additive termination signal alongside flatline score
+  4. In simstim/HITL: present to user: "Continuing costs ~$X for ~Y expected findings. Continue?"
+- **Config gate**: `run_bridge.economic_feedback.enabled: false` (default off)
+- **AC**: (a) Signal appears in `bridge-state.json` iteration metadata when triggered; (b) Does NOT trigger before `min_iterations`; (c) Config gate respected — no behavior change when disabled; (d) Existing bridge orchestrator tests pass unchanged
 
-**Acceptance Criteria**:
-- [ ] Runs daily at 06:00 UTC via cron schedule
-- [ ] Also supports manual `workflow_dispatch`
-- [ ] Uses `terraform plan -detailed-exitcode` to detect drift
-- [ ] Exit code 2 (changes detected) produces GitHub warning annotation
-- [ ] Concurrency group prevents parallel runs
-- [ ] Uses OIDC for AWS credential assumption
+### Task 4.3: Configuration Schema for Economic Feedback
 
-**Dependencies**: Sprint 3 (DNS module must be applied)
-**Effort**: Small
+- **File**: `.loa.config.yaml.example` (extend)
+- **Action**: Add configuration block:
+  ```yaml
+  run_bridge:
+    economic_feedback:
+      enabled: false                    # Master toggle
+      value_threshold: 0.2              # Marginal value ratio below which to signal
+      min_iterations: 2                 # Don't signal before N iterations
+  ```
+- **AC**: (a) Config block documented in example file; (b) `economic-lib.sh` reads config via `yq` with fallback defaults; (c) Comments explain each parameter
 
-#### 5.2 Document DNSSEC Activation Playbook
+### Task 4.4: Vision Registry Exploration Mechanism
 
-**Description**: Add the DNSSEC activation playbook from SDD §10 Phase 3 (IMP-004) to DEPLOYMENT.md.
+- **File**: `.claude/scripts/vision-explorer.sh` (new)
+- **Action**: Create a mechanism to activate vision entries:
+  1. Read visions from `grimoires/loa/visions/` (the existing Vision Registry)
+  2. Score by relevance to current work (keyword match against recent bridge findings)
+  3. Present top-3 candidates with context and estimated exploration effort
+  4. For the selected vision: create a structured exploration plan (hypothesis, experiment, success criteria, time budget)
+- **Scope**: Standalone CLI tool only (`./vision-explorer.sh [--context bridge-state.json]`). Does NOT wire into bridge orchestrator in this sprint — orchestrator integration deferred to a future cycle after the standalone mechanism is validated. The "Horizon Voice" register from loa-finn #24 is the conceptual framing; this sprint builds the voice, not the stage it speaks from.
+- **AC**: (a) Script scans vision registry and returns ranked candidates as JSON; (b) Exploration plan has measurable success criteria; (c) Time budget prevents unbounded exploration; (d) Script is callable standalone without requiring active bridge state (uses `--context` flag for optional bridge context enrichment)
 
-**Acceptance Criteria**:
-- [ ] Prerequisites documented (NS stable for ≥48h, drift check clean for ≥2 days)
-- [ ] Step-by-step: enable flag → plan → apply → extract DS → upload to Gandi → validate chain
-- [ ] Rollback procedure: remove DS → disable flag → apply → verify unsigned resolution
-- [ ] Monitoring: `dig +dnssec` verification command, dnsviz.net URL
-- [ ] SERVFAIL rollback trigger criteria documented
+### Task 4.5: Prototype One Vision Entry
 
-**Dependencies**: Sprint 3 (security.tf exists with DNSSEC resources)
-**Effort**: Small
-
-#### 5.3 Apply DNS Module to Production
-
-**Description**: Apply the DNS root to production (creates zone and records, does NOT change NS — that's a manual cutover step).
-
-**Acceptance Criteria**:
-- [ ] `terraform init -backend-config=environments/production/backend.tfvars` succeeds
-- [ ] `terraform plan` shows all creates (identical structure to staging)
-- [ ] `terraform apply` succeeds
-- [ ] `enable_production_api=false` and `enable_dnssec=false` confirmed in production tfvars
-- [ ] Production zone nameservers noted for registrar cutover step
-
-**Dependencies**: Sprint 4 complete (validation scripts proven in staging)
-**Effort**: Small
-
-#### 5.4 Run Full Validation Suite
-
-**Description**: Execute the complete validation pipeline on staging to confirm deployment readiness.
-
-**Acceptance Criteria**:
-- [ ] `deploy-ring.sh --ring staging --services all` passes with all health gates green
-- [ ] `staging-wiring-test.sh staging` passes all 10 tests (W-1 through W-10)
-- [ ] `tf-plan-guard.sh` passes on both compute and DNS plans
-- [ ] `dns-pre-migration.sh` passes (staging zone vs Gandi)
-- [ ] `terraform plan` on compute root shows 0 unexpected changes
-- [ ] `terraform plan` on DNS root shows 0 changes (already applied)
-
-**Dependencies**: All previous sprints
-**Effort**: Medium
-
----
-
-## Risk Assessment
-
-| Risk | Sprint | Mitigation | SDD Reference |
-|------|--------|------------|---------------|
-| Import fails for stateful resource | 1 | Per-batch verification, pre-import backups, `terraform state rm` rollback | §4.2 (Backup), §4.3 (Import), §4.4 (Rollback/Safeguards) |
-| Health gate false positive/negative | 2 | Sliding-window p99 (not per-request), 5xx counting, tunable thresholds | §5.2 (Health Gate) |
-| DNS record mismatch missed | 4 | Comprehensive record comparison including ACME, agents, DKIM | §8.1 (Pre-Migration Validation) |
-| DNSSEC breaks resolution | 5 | Feature-flagged, separate from NS cutover, documented rollback | §7.8 (DNSSEC), §10 Phase 3 (IMP-004 Playbook) |
-| ECS Exec unavailable in staging | 2 | VPC endpoint provisioned (IMP-007), fallback to CloudWatch log verification | §6.3 (ECS Exec Network Prerequisites) |
-
-## Flatline Finding Traceability
-
-### SDD Findings (Flatline SDD Review)
-
-Maps each Flatline SDD finding (SKP/IMP) to the sprint task(s) that implement or address it.
-
-| Finding | SDD Section | Sprint Task(s) | Description |
-|---------|-------------|-----------------|-------------|
-| SKP-001 | §10 Phase 3 | 4.4 (cutover playbook) | Formal DNS cutover playbook with rollback triggers |
-| SKP-002 | §3.4, §7.8 | 1.1 (kms-finn.tf), 3.3 (security.tf) | KMS least-privilege policy (no root `kms:*`) |
-| SKP-003 | §3.1 | 1.1 (elasticache-finn.tf), 1.2 (bootstrap script) | External Redis auth provisioning (not in TF state) |
-| SKP-004 | §5.2 | 2.2 (metric contract), 2.3 (deploy-ring.sh) | Sliding-window p99 health gate |
-| IMP-001 | §10 Phase 1, Phase 3 | 2.7 (DEPLOYMENT.md), 4.4 (cutover playbook) | Executable rollback plans |
-| IMP-002 | §7.1 | 3.1 (DNS main.tf) | Exact provider version pin `~> 5.82.0` |
-| IMP-003 | §4.4 | 1.3 (import workflow) | Import procedural safeguards (backup/verify/checkpoint) |
-| IMP-004 | §10 Phase 3 | 5.2 (DNSSEC playbook) | DNSSEC activation playbook with rollback |
-| IMP-005 | §9.4 | 1.3 (import backup), 2.7 (DEPLOYMENT.md) | RPO/RTO targets for stateful components |
-| IMP-006 | §5.2 | 2.2 (metric contract), 2.3 (deploy-ring.sh) | Merged with SKP-004 (sliding-window p99) |
-| IMP-007 | §6.3 | 2.5 (ECS Exec + VPC endpoints) | ssmmessages VPC endpoint for ECS Exec |
-| IMP-008 | §7.2 | 3.1 (variables.tf feature flags) | Feature flag safety defaults per environment |
-| IMP-009 | §5.3 | 2.6 (tf-plan-guard.sh) | CI gate blocking destructive plan actions |
-| IMP-010 | §12 | This table | Traceability mapping |
-
-### Sprint Findings (Flatline Sprint Review)
-
-| Finding | Category | Sprint Task(s) | Description |
-|---------|----------|-----------------|-------------|
-| FL-SKP-001a | BLOCKER | Change Approval Protocol, all sprints | Peer review gates for high-risk operations |
-| FL-SKP-001b | BLOCKER | 1.2 (bootstrap script) | Atomic auth rotation: ElastiCache first, then Secrets Manager |
-| FL-SKP-002a | BLOCKER | 1.3 (import) | Encrypted backup storage, checksum, restore drill |
-| FL-SKP-002b | BLOCKER | Change Approval Protocol | Bus factor mitigation, buddy observer for critical tasks |
-| FL-SKP-003a | BLOCKER | 1.2 (bootstrap script) | Stronger token generation, minimal secret, rotation cadence |
-| FL-SKP-003b | BLOCKER | 1.1 (env-finn.tf) | SSM ignore_changes rationale documented |
-| FL-SKP-004 | BLOCKER | 2.3 (deploy-ring.sh) | Automated rollback on health gate failure |
-| FL-IMP-001 | HIGH | 1.2 (bootstrap script) | Auth bootstrap sequencing after import |
-| FL-IMP-002 | DISPUTED | All sprints (exit gates) | Explicit go/no-go exit gates per sprint |
-| FL-IMP-003 | DISPUTED | Sprint header | Critical path analysis with buffer days |
-| FL-IMP-004 | DISPUTED | 2.7 (DEPLOYMENT.md) | Concrete rollback CLI commands and time limits |
-| FL-IMP-005 | DISPUTED | Pre-Flight Requirements | IAM permissions pre-flight check |
-| FL-IMP-006 | DISPUTED | Sprint overview | Deliverable count consistency |
-| FL-IMP-007 | DISPUTED | 2.3 (deploy-ring.sh) | Quantified health gate thresholds (2000ms p99, <3 5xx) |
-| FL-IMP-008 | DISPUTED | 2.7 (DEPLOYMENT.md), Pre-Flight | Secret handling protocol (.gitignore, no creds in commits) |
-| FL-IMP-009 | DISPUTED | 4.5 (cutover dry run) | Mandatory DNS cutover rehearsal in staging |
-| FL-IMP-010 | DISPUTED | 2.1 (monitoring), 2.7 (DEPLOYMENT.md) | Alarm response ownership and runbook |
-
-**Out-of-scope findings**: None — all SDD findings (14) and sprint findings (17) are addressed.
-
-## Success Criteria
-
-This sprint plan is complete when:
-1. All 8 new .tf files exist in compute root with correct HCL
-2. All 22 resources imported with 0-change plan verification
-3. Deploy pipeline with health gates operational
-4. 10/10 wiring tests passing
-5. DNS zone created in both staging and production
-6. Pre-migration validation script confirms record equivalence
-7. Cutover and DNSSEC playbooks documented
-8. Drift detection workflow active
+- **Depends on**: Task 4.4
+- **Action**: Select the most relevant vision entry from the registry and prototype it:
+  1. Use the exploration plan from Task 4.4
+  2. Build a minimal prototype (code, schema, or script)
+  3. Evaluate against success criteria
+  4. Document outcome as lore (success → pattern entry; failure → failure lore entry)
+- **AC**: (a) One vision entry prototyped; (b) Outcome documented with measurable results; (c) Entry either elevated to lore pattern or captured as failure lore
 
 ---
 
-## Bridge Sprint B1: Bridgebuilder Iteration 1 Findings
+## Sprint 5: Integration & Autopoietic Verification (Global: 390)
 
-> **Source**: bridge-20260228-049956, Iteration 1
-> **Findings**: 3 HIGH, 4 MEDIUM, 1 LOW (7 actionable)
-> **Delivery**: 1 sprint (single pass through all findings)
+> **Focus**: Wire capability manifests into the bridge orchestrator, and verify that all 6 conditions for flourishing are measurably present.
+> **Duration**: ~0.5 day
+> **Risk**: LOW — integration of Sprint 3-4 work, config-gated
+> **Goal traceability**: G-6
+> **REFRAME-1 Validation**: This sprint tests the thesis that the system has achieved autopoietic maturation — not as a metaphor, but as a measurable structural property.
 
-### Sprint B1: Address Bridgebuilder Findings
+### Task 5.1: Wire Capability Discovery into Bridge Orchestrator
 
-**Goal**: Fix all actionable findings from Bridgebuilder iteration 1 review.
+- **File**: `.claude/scripts/bridge-orchestrator.sh` (modify)
+- **Action**: At the beginning of each bridge iteration:
+  1. Call `discover_capabilities()` → `match_capabilities(changed_files)` → `resolve_ordering()`
+  2. Log the discovered chain to bridge state metadata
+  3. **Do NOT execute dynamically yet** — this sprint adds discovery and logging only. Execution dispatch remains hardcoded for now (Phase 1 per the migration path in capability-orchestration-design.md)
+- **Config gate**: `capabilities.discovery.enabled: false` (default off)
+- **AC**: (a) Bridge state shows discovered capability chain per iteration; (b) No change to execution behavior when disabled; (c) When enabled, chain logged with budget allocations; (d) Existing bridge tests pass unchanged
 
-#### Task B1.1: Add S3 public access blocks (HIGH — high-3)
-- **File**: `infrastructure/terraform/s3-finn.tf`
-- **Action**: Add `aws_s3_bucket_public_access_block` for both `finn_audit_anchors` and `finn_calibration` with all four flags set to `true`
-- **AC**: Both buckets have explicit public access block resources; `terraform plan` shows 2 new resources, 0 changes to existing
+### Task 5.2: Autopoietic Health Check
 
-#### Task B1.2: Normalize pre-migration record comparison (HIGH — high-4)
-- **File**: `infrastructure/terraform/scripts/dns-pre-migration.sh`
-- **Action**: In `compare_record()`, apply canonicalization pipeline to both data sources:
-  1. AWS CLI: `--output text` → `tr '\t' '\n'` → one-value-per-line
-  2. dig: already newline-separated
-  3. Both: strip trailing dots (`sed 's/\.$//'`), strip surrounding TXT quotes (`sed 's/^"//;s/"$//'`), collapse whitespace, `sed '/^$/d' | sort`
-  4. Create a `canonicalize_dns_value()` function that encapsulates all normalization steps
-- **AC**: (a) Canonical normalization in a named function applied to both sources; (b) MX records with 5 priority-value pairs compare correctly; (c) TXT records with quoted strings (SPF `v=spf1...`, DKIM long key, DMARC `v=DMARC1...`) compare correctly after quote stripping; (d) CNAME/NS trailing dots handled consistently; (e) Add inline test: run `compare_record "MX" "$DOMAIN"` against live DNS and verify MATCH (not MISMATCH) for known-good records
+- **File**: `.claude/scripts/autopoietic-health.sh` (new)
+- **Action**: Create a health check that measures the 6 conditions for flourishing with exact authoritative sources:
+  1. **Permission**: Count MAY constraints in `.claude/data/constraints.json` (path: `.permission_grants[]`); verify ≥4 exist. Score = min(count/4, 1.0). If file absent: score=0, remediation="constraints.json not found — run Loa update"
+  2. **Memory**: Check lore entry count in `grimoires/loa/lore/`; verify `patterns.yaml`, `failures.yaml`, and `ecosystem-synthesis.md` all exist. Score = files_found/3. If dir absent: score=0
+  3. **Diversity**: Check `.loa.config.yaml` for `flatline_protocol.models` array (path: `.flatline_protocol.models[]`); verify ≥2 distinct model providers. Score = min(providers/2, 1.0). If flatline config absent: score=0, remediation="flatline_protocol not configured in .loa.config.yaml"
+  4. **Stakes**: Check for production deployment artifacts at exact paths: `infrastructure/terraform/*.tf` (≥1 file), `packages/services/*/Dockerfile` OR `Dockerfile` (≥1 file). Score = artifacts_found/2. If dir absent: score=0
+  5. **Exploration budget**: Check `grimoires/loa/visions/` for ≥1 `.md` file with `status: explored`; check `.loa.config.yaml` has `run_bridge.economic_feedback` key. Score = conditions_met/2. If visions dir absent: score=0
+  6. **Surprise capacity**: Count `.yaml` files in `.claude/capabilities/`; verify ≥3 exist. Score = min(count/3, 1.0). If dir absent: score=0, remediation="no capability manifests — run Sprint 3"
+- **Fallback rule**: For every source file check, if the file/directory is absent, score=0 with a specific remediation message in the JSON output (never crash, never leave score undefined)
+- **Output**: JSON report with each condition scored 0-1 and an overall "flourishing score" (average of 6 condition scores)
+- **AC**: (a) All 6 conditions measured from exact file paths listed above; (b) JSON output parseable by `jq`; (c) Score correctly reflects actual state (not hardcoded); (d) Missing sources produce score=0 with actionable remediation message; (e) Overall score is arithmetic mean of 6 condition scores
 
-#### Task B1.3: Fix deploy-ring.sh health check URL scheme (HIGH — high-2)
-- **File**: `infrastructure/terraform/scripts/deploy-ring.sh`
-- **Action**: Define a single source of truth for health check URLs per service:
-  1. Create a `HEALTH_URLS` associative array at top of script mapping service→full URL (scheme+host+path)
-  2. Derive scheme from actual service routing configuration: check existing Terraform ALB listener rules and target groups to determine whether each service endpoint terminates TLS externally or not. Freeside is behind public ALB (HTTPS), Finn/Dixie are staging-only or internal (HTTP)
-  3. Add `-L` flag to curl to handle unexpected redirects gracefully without masking failures
-  4. After constructing each URL, validate reachability: add a `--dry-run` mode that curls each health URL once and reports scheme/status/redirect chain before proceeding with deploy
-- **AC**: (a) Health URLs centralized in `HEALTH_URLS` array; (b) URLs verified against actual Terraform ALB/listener config; (c) `curl -sfL` used in health gate; (d) `--dry-run` mode prints each URL + HTTP status + redirect chain; (e) Script header documents URL scheme contract per service
+### Task 5.3: E2E Integration Test
 
-#### Task B1.4: Add explicit `shell: bash` to drift-check workflow (MEDIUM — medium-3)
-- **File**: `.github/workflows/dns-drift-check.yml`
-- **Action**: Add `shell: bash` to the Terraform Plan step that uses `PIPESTATUS`
-- **AC**: Step includes explicit `shell: bash` declaration
+- **File**: `.claude/evals/autopoietic-integration.sh` (new)
+- **Action**: End-to-end test that:
+  1. Runs autopoietic health check → verifies all conditions score > 0
+  2. Runs capability discovery → verifies 3 manifests found and ordered
+  3. Runs marginal value computation on synthetic data → verifies signal logic
+  4. Runs failure lore validation → verifies entries have required fields
+  5. Runs lore index validation → verifies all referenced files exist
+- **Toolchain**: Requires `jq` 1.6+ (see toolchain baseline in header). All sub-check JSON validated by `jq`.
+- **Runner**: Registered in `.claude/evals/run-all.sh` alongside `capability-discovery.sh`.
+- **AC**: (a) Test exits 0 on current codebase; (b) Each sub-check reports pass/fail with reason; (c) Failure in any sub-check produces actionable error message; (d) Script registered in `.claude/evals/run-all.sh`
 
-#### Task B1.5: Restrict ElastiCache egress to VPC CIDR (MEDIUM — medium-4)
-- **File**: `infrastructure/terraform/elasticache-finn.tf`
-- **Action**: Remove unrestricted egress and apply least-privilege network policy:
-  1. ElastiCache Redis is a single-node group (`num_cache_clusters = 1`) — no inter-node replication traffic
-  2. Redis only responds to inbound client connections; it does not initiate outbound connections
-  3. DNS resolution uses VPC DNS resolver (within VPC CIDR); NTP uses Amazon Time Sync (169.254.169.123 link-local, not routed via SG)
-  4. Replace `0.0.0.0/0` egress with VPC CIDR (`module.vpc.vpc_cidr_block`) to allow only intra-VPC responses
-  5. `bootstrap-redis-auth.sh` calls AWS API from the operator's machine, not from the Redis node — unaffected by SG changes
-- **AC**: (a) Egress rule changed to VPC CIDR only; (b) `terraform plan` shows 1 changed resource (SG rule), 0 destroyed; (c) W-8 wiring test (Finn→Redis) passes after apply; (d) No connectivity regressions in other wiring tests
+### Task 5.4: Update Ecosystem Architecture Document
 
-#### Task B1.6: Remove dead ROLLED_BACK tracking from deploy-ring.sh (MEDIUM — medium-1)
-- **File**: `infrastructure/terraform/scripts/deploy-ring.sh`
-- **Action**: Remove `ROLLED_BACK` array tracking since script exits on first health gate failure. Keep rollback_service function (it's used). Remove final summary block that checks ROLLED_BACK.
-- **AC**: No dead code; script behavior unchanged (exit on first failure)
-
-#### Task B1.7: Fix wiring test W-7 Cloud Map service name (MEDIUM — medium-2)
-- **File**: `infrastructure/terraform/scripts/staging-wiring-test.sh`
-- **Action**: Determine correct Cloud Map service discovery hostname deterministically:
-  1. Search Terraform HCL for `aws_service_discovery_service` resources: `grep -r 'aws_service_discovery_service' infrastructure/terraform/*.tf` to find the `name` attribute for each service
-  2. Cross-reference: the `name` attribute of each `aws_service_discovery_service` resource defines the DNS hostname in the private namespace (`<name>.<namespace>`)
-  3. If Terraform shows Freeside registered as `api` (matching ECS service `${CLUSTER}-api`), update W-7 from `freeside.${CLUSTER}.local` to `api.${CLUSTER}.local`
-  4. Also audit W-4 through W-10 to ensure all Cloud Map hostnames match their `aws_service_discovery_service.name` attributes
-- **AC**: (a) Each wiring test hostname traced to a specific `aws_service_discovery_service` resource name in Terraform; (b) W-7 URL updated to match; (c) `terraform plan` unchanged (no infra changes); (d) Comment in script header documents hostname→Terraform resource mapping for each service
-
-#### Task B1.8: Extract alarm thresholds to variables (LOW — low-1)
-- **File**: `infrastructure/terraform/monitoring-finn.tf`, `infrastructure/terraform/monitoring-dixie.tf`, `infrastructure/terraform/variables.tf`
-- **Action**: Extract CPU threshold, memory threshold, 5xx threshold, p99 latency threshold into Terraform variables with current values as defaults
-- **AC**: All alarm thresholds are parameterized; existing behavior unchanged
+- **File**: `docs/ecosystem-architecture.md` (extend)
+- **Action**: Add a "Layer 0: Metacognition" section documenting:
+  - Pipeline self-review (the system reviewing its own review infrastructure)
+  - Capability registry (declarative review composition)
+  - Economic feedback (cost-aware termination)
+  - Autopoietic health check (the system measuring its own flourishing conditions)
+  - The Ostrom governance mapping (why commons governance principles appear in AI review infrastructure)
+- **AC**: (a) New section added with Mermaid diagram; (b) References specific files and scripts; (c) Connects to the 5-layer stack as a foundational capability beneath Layer 1
 
 ---
 
-## Bridge Sprint B2: Bridgebuilder Iteration 2 Findings
+## Appendix A: Goal Traceability Matrix
 
-> **Source**: bridge-20260228-049956, Iteration 2
-> **Findings**: 0 HIGH, 1 MEDIUM, 1 LOW (2 actionable)
-> **Delivery**: 1 sprint (polish pass)
+| Goal | Sprint | Tasks | Acceptance Evidence |
+|------|--------|-------|---------------------|
+| G-1 | 1 | 1.1, 1.2, 1.3, 1.4, 1.5 | PR #115 merged; 0 HIGH findings |
+| G-2 | 2 | 2.1, 2.2, 2.3, 2.4, 2.5 | ≥3 failure lore entries; synthesis doc; Ostrom pattern |
+| G-3 | 3 | 3.1, 3.2, 3.3, 3.4, 3.5 | 3 manifests; discovery returns ordered chain |
+| G-4 | 4 | 4.1, 4.2, 4.3 | DIMINISHING_RETURNS signal emitted on test data |
+| G-5 | 4 | 4.4, 4.5 | 1 vision entry prototyped with outcome documented |
+| G-6 | 5 | 5.1, 5.2, 5.3, 5.4 | Autopoietic health check scores all 6 conditions > 0 |
 
-### Sprint B2: Address Bridgebuilder Iteration 2 Findings
+## Appendix B: FAANG & Research Parallels
 
-**Goal**: Fix remaining polish-level findings from Bridgebuilder iteration 2.
+| Parallel | System | Connection |
+|----------|--------|------------|
+| Google Tricorder | ISSTA 2018 | Composable analysis passes with scope declarations and budget allocation → capability manifests |
+| Kubernetes Admission Controllers | ValidatingWebhookConfiguration | Declarative capability registration, pattern-based matching, ordered execution |
+| Chromium OWNERS + ClusterFuzz | File-pattern review routing | Review routing by changed files → capability trigger patterns |
+| Netflix BeyondCorp / mTLS | Zero-trust internal networking | East-west threat model for internal ALB (HIGH-1) |
+| Google SRE Postmortems | Ch. 15, SRE Book | Blameless failure analysis → failure lore |
+| AWS Cost Anomaly Detection | Marginal spend analysis | Cost-aware termination → DIMINISHING_RETURNS signal |
+| Ostrom's Commons Governance | 8 principles, Nobel 2009 | Human commons governance maps 1:1 to AI review infrastructure |
+| Linux kernel libification | 2.4 → 2.6 modularization | Monolithic scripts → composable shared libraries (compliance-lib.sh) |
+| Stripe Dependency Health Score | Supply chain security | Transitive CVE forced review → node-vault triage (HIGH-2) |
+| Google Proto3 Migration | Serialization format change | Compile-time/runtime gap → Docker ESM failures (failure lore) |
 
-#### Task B2.1: Combine double curl in dry-run preflight (MEDIUM — medium-1)
-- **File**: `infrastructure/terraform/scripts/deploy-ring.sh`
-- **Action**: In `dry_run_preflight()`, combine the two `curl` calls per service into one using multiple `-w` format specifiers: `curl -sI -o /dev/null -w '%{http_code}\n%{url_effective}' --max-time 10 "$url"` and split the two-line output
-- **AC**: Single curl call per service in dry-run; output still shows HTTP code and effective URL
+## Appendix C: Cross-Cycle Dependencies
 
-#### Task B2.2: Simplify alarm description interpolation (LOW — low-1)
-- **File**: `infrastructure/terraform/agent-monitoring.tf`
-- **Action**: Replace inline `${var.agent_alarm_stale_reservation_ms / 1000}` division in alarm description with a `locals` block computing `agent_alarm_stale_reservation_s = var.agent_alarm_stale_reservation_ms / 1000`
-- **AC**: Alarm description uses `local.agent_alarm_stale_reservation_s`; `terraform plan` shows no effective change
+| This Cycle Produces | Consumed By |
+|---------------------|-------------|
+| Capability manifest schema | Future: dynamic capability execution (Phase 2-3 of migration path) |
+| Failure lore entries | Future: bridge lore loading enriches reviews with failure context |
+| Economic feedback signal | Future: autonomous bridge termination based on cost+quality signals |
+| Ostrom governance pattern | Future: formal governance framework for cross-repo compliance |
+| Autopoietic health check | Future: CI integration for ecosystem health monitoring |
+| Vision exploration mechanism | Future: systematic prototyping of speculative insights |
 
----
+## Appendix D: Connections to Concurrent Ridings
 
-## Sprint 6: Hounfour v8.3.1 Upgrade + Docker Redeploy (Global: 385)
-
-> **Issues**: #103 (partial), #108, #110
-> **Focus**: Update `@0xhoneyjar/loa-hounfour` from v8.2.0 (commit `addb0bf`) to v8.3.1 (tag), fix conformance tests for domain tag sanitization, replace local `advisoryLockKey()` with canonical export, rebuild Docker images, push to ECR, redeploy staging ECS services.
-> **Duration**: ~0.5 day (dependency upgrade + mechanical fixes + deploy)
-> **Risk**: LOW — patch release, backward compatible. Domain tag format change (dots→hyphens in version segment) affects hash values but epoch boundary design preserves existing entries.
-> **Deployment scope**: Freeside API + Finn only. Dixie is a separate repo/image (`arrakis-staging-loa-dixie`) with its own dependency tree — not affected by this monorepo's hounfour pin.
-> **Staging data note**: Staging was freshly deployed (cycle-046); no pre-existing audit trail data. Epoch boundary backward compatibility is verified by conformance vectors, not runtime data migration.
-
-### Task 6.1: Update hounfour pin in all package.json files
-
-- **Files**: `package.json`, `packages/adapters/package.json`, `themes/sietch/package.json`
-- **Action**: Update all three pins from current commits to `github:0xHoneyJar/loa-hounfour#v8.3.1`
-- **Then**: `npm install` (postinstall script `rebuild-hounfour-dist.sh` handles dist/ rebuild)
-- **Lockfile**: Commit updated `package-lock.json`; verify resolved SHA in lockfile matches v8.3.1 tag commit
-- **AC**: `node_modules/@0xhoneyjar/loa-hounfour/package.json` shows `"version": "8.3.1"`; `npm ls @0xhoneyjar/loa-hounfour` resolves cleanly; `npm ci` from clean workspace succeeds
-
-### Task 6.2: Verify advisory lock export path, then replace local implementation
-
-- **Pre-check**: After `npm install`, verify `computeAdvisoryLockKey` is exported — check `node_modules/@0xhoneyjar/loa-hounfour/package.json` `exports` map and `dist/` file layout for the actual importable path. If deep import `@0xhoneyjar/loa-hounfour/commons/advisory-lock-key` is not supported, use the barrel export from `@0xhoneyjar/loa-hounfour/commons` or top-level
-- **File**: `packages/adapters/storage/audit-helpers.ts` (lines 17-25)
-- **Action**: Replace local FNV-1a `advisoryLockKey()` with `computeAdvisoryLockKey()` from the verified import path
-- **Update imports** in `audit-trail-service.ts` (line 22) and `governed-mutation-service.ts` (line 18)
-- **AC**: Local `advisoryLockKey` function deleted; both services import from hounfour; `tsc -b` compiles cleanly; lock key values match (both use FNV-1a 32-bit)
-
-### Task 6.3: Update conformance test V-A02 for domain tag sanitization
-
-- **File**: `spec/conformance/test-commons-p0.ts`
-- **Action**: Update expected value for `buildDomainTag('GovernedCreditsSchema', '8.2.0')` — output changes from `loa-commons:audit:governedcreditsschema:8.2.0` to `loa-commons:audit:governedcreditsschema:8-2-0` (dots→hyphens)
-- **Also check**: v8.3.1 includes new legacy conformance vector `vectors/conformance/commons/audit-trail/hash-reference-vector-v8.3.0-legacy.json` — consider adding to test suite for backward compat coverage
-- **AC**: V-A02 conformance test passes with new expected value
-
-### Task 6.4: Verify governed-mutation-service and audit-trail-service
-
-- **Files**: `packages/adapters/storage/governed-mutation-service.ts`, `packages/adapters/storage/audit-trail-service.ts`
-- **Action**: Verify no hardcoded domain tag expected values. Both call `buildDomainTag()` dynamically — confirm no snapshot tests or string comparisons break
-- **AC**: `npm test` passes for unit tests touching these services
-
-### Task 6.5: Run full test + conformance suite
-
-- **Action**: Run `npm test`, `spec/conformance/test-commons-p0.ts`, `tests/unit/protocol-conformance.test.ts`, `tests/integration/e2e-goal-validation.test.ts`
-- **AC**: All tests pass; no regressions from domain tag format change
-
-### Task 6.6: Build and push Docker images to ECR
-
-- **Action**: Build Docker images for `finn` and `freeside-api`, tag with both `staging` and immutable git SHA tag, push to ECR repos (`arrakis-staging-loa-finn`, `arrakis-staging-api`)
-- **AC**: Both images present in ECR with `staging` tag; `aws ecr describe-images` confirms new digest differs from pre-upgrade digest
-
-### Task 6.7: Redeploy staging ECS services and verify image
-
-- **Action**: Register new task definition revisions pointing to the new image digest (SHA tag, not just `staging`). Update `arrakis-staging-finn` and `arrakis-staging-api` services to use new task definition revisions
-- **Verify**: Both services reach `running=1`; `aws ecs describe-tasks` confirms running containers reference the new image digest; finn logs show hounfour 8.3.1 in startup output; health checks pass
-- **AC**: `aws ecs describe-services` shows desired=1, running=1 for both; running task image digest matches ECR push digest
+| Source | Insight for This Cycle |
+|--------|----------------------|
+| loa-finn #24 (Bridgebuilder Genesis) | 6 conditions for flourishing → Sprint 5 autopoietic health check |
+| loa-finn #31 (Hounfour RFC) | Multi-model permission landscape → capability manifests as permission structures |
+| loa-finn #66 (Launch Readiness) | Agent economy infrastructure → capability registry serves the same launch sequence |
+| loa-finn #80 (Conway/Automaton) | Parallel agent infrastructure → cross-ecosystem synthesis (Sprint 2) |
+| loa-hounfour PR #22 (Constitutional Architecture) | Branded types, state machines → capability manifest as type-safe protocol |
+| loa-hounfour PR #29 (Decision Engine) | Trust × Capital → Access decision → economic feedback signal |
+| loa #247 (Meeting Geometries) | Multi-model collaboration philosophy → capability chain as structured deliberation |
+| loa PR #401 (Codex Integration) | 3-tier execution router → capability discovery as routing abstraction |
+| loa-freeside #62 (Billing RFC) | Economic infrastructure → economic feedback signal for review cost |
+| loa-freeside PR #90 (Economic Loop) | Conservation invariants → capability budgets as conservation system |
+| loa-dixie PR #5 (Knowledge Governance) | ResourceGovernor&lt;T&gt; → capability manifests as governed review resources |
+| meow.bio/web4.html | Universal seigniorage → democratized review creation |
 
 ---
 
-## Flatline Review Summary (3-model: Opus 4.6 + GPT-5.3-Codex + Gemini 2.5 Pro)
-
-**HIGH_CONSENSUS (auto-integrated):**
-- IMP-001: Route53 partial-apply rollback steps documented in Sprint 3/4 cutover playbook
-- IMP-002: Numeric RPO/RTO recovery objectives — Sprint 1 exit gate references backup verification
-- IMP-004: Import sequencing with explicit dependency order — Sprint 1 task 1.0/1.1 batching
-- IMP-009: DMARC policy progression gates — Sprint 5 task 5.1 ramp schedule
-
-**BLOCKERS (overridden — Sprints 1-5 already completed successfully):**
-- SKP-001 (910): Solo engineer vs approval requirements — executed with async approvals, no blockers hit
-- SKP-002 (885): Schedule underestimation — all 5 sprints delivered within planned windows
-- SKP-003 (860): State import corruption risk — imports completed safely with backup verification
-- SKP-004 (770): IAM over-privilege — mitigated with session time limits (note added to pre-flight)
-
-**BLOCKERS (accepted, operational notes added):**
-- SKP-005 (730): `ignore_changes` drift on SSM params — runtime drift audit recommended post-cycle
-- SKP-006 (705): Health gate false signals — minimum sample size and warm-up period noted for future deploy automation
+*"The firmness of the riverbanks is what gives the river its power."*
+*— Bridgebuilder Field Report #52*

@@ -1,31 +1,36 @@
 {
   "verdict": "APPROVED",
-  "summary": "All five previously blocking Sprint 6 issues are addressed with concrete verification steps and acceptable scope/compatibility rationale, and no new truly blocking problems were introduced.",
+  "summary": "All previously-blocking gaps (schema validation, bridge-state contract, health-check sources, vision integration scope, toolchain/runner assumptions, and merge gate realism) were addressed with concrete, testable tasks and config-gated integration points, with no new truly blocking issues introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "Redeploy scope omitted Dixie (risk of mixed protocol behavior across services)",
-      "status": "rejected_with_valid_reason",
-      "notes": "Sprint 6 now explicitly states Dixie is a separate repo/image with its own dependency tree and is out-of-scope for this monorepo pin; the plan also notes verification via ECR. Given that constraint, limiting rebuild/redeploy to Freeside API + Finn is reasonable and no longer a blocker for this sprint plan."
-    },
-    {
-      "original_issue": "Assumed deep import path for canonical advisory lock helper could fail due to exports map/dist layout",
+      "original_issue": "Sprint 3 capability manifest “schema validation” had no real validator (yq parseability ≠ validation)",
       "status": "fixed",
-      "notes": "Task 6.2 now requires a pre-check of the installed package’s `exports` map and `dist/` layout and explicitly allows falling back to a supported barrel/top-level export path before changing code. AC includes `tsc -b` passing, which closes the original build-break risk."
+      "notes": "Task 3.3 now explicitly implements `validate_capability_manifest()` with concrete required-key/type/range rules using `yq` assertions, plus pass/fail semantics and field-level error messages. Task 3.2/3.4 ACs now have a deterministic validation mechanism."
     },
     {
-      "original_issue": "No staging backward-compat verification for domain-tag sanitization hash change (risk to audit chain integrity)",
-      "status": "rejected_with_valid_reason",
-      "notes": "The plan documents staging is freshly deployed with no pre-existing audit trail data, so there is nothing historical to verify in staging. It also asserts epoch-boundary backward compatibility is covered via conformance vectors. Given the stated environment condition (fresh staging), the original staging-data verification requirement is not applicable for this sprint’s staging deploy."
-    },
-    {
-      "original_issue": "GitHub tag pinning without lockfile/commit verification could be non-reproducible",
+      "original_issue": "Sprint 4 economic feedback assumed `bridge-state.json:metrics.cost_estimates[]` exists without contract check/fallback",
       "status": "fixed",
-      "notes": "Task 6.1 now requires committing the updated lockfile, verifying the resolved SHA in the lockfile matches the v8.3.1 tag commit, and validating `npm ci` from a clean workspace. That addresses reproducibility and drift concerns for GitHub dependencies."
+      "notes": "Task 4.1 adds an explicit contract definition, defensive parsing behavior (NO_DATA), and a pinned fixture file for tests. ACs cover missing/empty/malformed behavior and ensure no crash/false signal."
     },
     {
-      "original_issue": "ECS redeploy verification only checked health/running count; could still run old image if task definition not updated",
+      "original_issue": "Sprint 5 autopoietic health check referenced underspecified artifacts/paths (constraints.json, Flatline config, stakes files)",
       "status": "fixed",
-      "notes": "Tasks 6.6/6.7 now include immutable SHA tagging, registering new task definition revisions pointing at the new digest/tag, updating services to the new revision, and verifying the running task’s image digest via `describe-tasks` (plus startup log confirmation). This resolves the ‘healthy but old image’ failure mode."
+      "notes": "Task 5.2 now names exact authoritative paths and parsing rules for each condition, plus a universal fallback rule (absent source → score=0 with remediation) and jq-parseable JSON output ACs."
+    },
+    {
+      "original_issue": "Sprint 4 ↔ Sprint 5 vision exploration integration point was unclear (standalone vs orchestrator wiring)",
+      "status": "fixed",
+      "notes": "Task 4.4 explicitly scopes vision explorer to standalone CLI only and defers orchestrator wiring, removing the earlier implied dependency/circularity. This resolves the integration ambiguity without creating a new requirement."
+    },
+    {
+      "original_issue": "Test harness/toolchain assumptions (jq availability, runner existence/CI execution) were not guaranteed",
+      "status": "fixed",
+      "notes": "Header now declares baseline `jq 1.6+` and states it is present in CI; tasks 3.4 and 5.3 specify registration in `.claude/evals/run-all.sh` (and creation if missing). This makes the eval execution path explicit and deterministic."
+    },
+    {
+      "original_issue": "Sprint 1 merge gate depended on external approvals/permissions not accounted for",
+      "status": "fixed",
+      "notes": "Header now states PR #115 requires 1 approval + CI green and adds a contingency: Sprint 1 deliverable becomes “ready-to-merge with approvals requested” if approval is delayed. This removes the ‘done but blocked’ sprint failure mode."
     }
   ],
   "new_blocking_concerns": [],

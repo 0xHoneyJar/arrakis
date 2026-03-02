@@ -168,7 +168,7 @@ packages/cli/src/commands/sandbox/index.ts:185:    .command('status <name>')
 - **/rtfm-testing** — RTFM Testing Skill
 - **/run-bridge** — Run Bridge — Autonomous Excellence Loop
 - **/run-mode** — Run mode
-- **/simstim-workflow** — Check post-PR state
+- **/simstim-workflow** — .loa.config.yaml
 - **/translating-for-executives** — Translating for executives
 
 ## Module Map
@@ -178,23 +178,23 @@ packages/cli/src/commands/sandbox/index.ts:185:    .command('status <name>')
 | `apps/` | 198 | Apps | \u2014 |
 | `config/` | 1 | Configuration files | \u2014 |
 | `decisions/` | 6 | Documentation | \u2014 |
-| `docs/` | 46 | Documentation | \u2014 |
+| `docs/` | 47 | Documentation | \u2014 |
 | `drizzle/` | 1 | Drizzle | \u2014 |
 | `evals/` | 122 | Benchmarking and regression framework for the Loa agent development system. Ensures framework changes don't degrade agent behavior through | [evals/README.md](evals/README.md) |
-| `grimoires/` | 885 | Home to all grimoire directories for the Loa | [grimoires/README.md](grimoires/README.md) |
-| `infrastructure/` | 66 | This directory contains the Infrastructure as Code (IaC) for Freeside, using Terraform to provision AWS | [infrastructure/README.md](infrastructure/README.md) |
-| `packages/` | 19742 | Shared libraries and utilities for the Freeside | [packages/README.md](packages/README.md) |
+| `grimoires/` | 912 | Home to all grimoire directories for the Loa | [grimoires/README.md](grimoires/README.md) |
+| `infrastructure/` | 225 | This directory contains the Infrastructure as Code (IaC) for Freeside, using Terraform to provision AWS | [infrastructure/README.md](infrastructure/README.md) |
+| `packages/` | 26193 | Shared libraries and utilities for the Freeside | [packages/README.md](packages/README.md) |
 | `scripts/` | 33 | Utility scripts | \u2014 |
 | `sites/` | 21 | Web properties for the Freeside | [sites/README.md](sites/README.md) |
-| `spec/` | 11 | Test suites | \u2014 |
-| `tests/` | 164 | Test suites | \u2014 |
-| `themes/` | 43400 | Theme-specific backend services for Freeside | [themes/README.md](themes/README.md) |
+| `spec/` | 10 | Test suites | \u2014 |
+| `tests/` | 176 | Test suites | \u2014 |
+| `themes/` | 49475 | Theme-specific backend services for Freeside | [themes/README.md](themes/README.md) |
 
 ## Verification
 <!-- provenance: CODE-FACTUAL -->
 - Trust Level: **L3 — Property-Based**
-- 175 test files across 2 suites
-- CI/CD: GitHub Actions (25 workflows)
+- 186 test files across 2 suites
+- CI/CD: GitHub Actions (26 workflows)
 - Security: SECURITY.md present
 
 ## Agents
@@ -242,16 +242,16 @@ cd themes/sietch && npx drizzle-kit push && cd ../..
 # Start development server
 pnpm run dev
 <!-- ground-truth-meta
-head_sha: ae360949f14298aa9a75499de292d16af673740a
-generated_at: 2026-02-27T05:49:05Z
+head_sha: 010b79e0c8053760d07188146cadc9c1e195b5cf
+generated_at: 2026-03-02T02:38:03Z
 generator: butterfreezone-gen v1.0.0
 sections:
   agent_context: 0dd1d0aca7f36e10b1067270e822ef62726525092dd9eaa44b90ab7bb73f9108
   capabilities: ab2576b1f2e7e8141f0e93e807d26ed2b7b155e21c96d787507a3ba933bb9795
   architecture: dca8ab5c169c3a31fab7986c6e4db4d9e4e7bed2671a907237e9250cea262fd8
-  interfaces: 5e79f50d9f65db04426777ba9f2f7bbf8b259d2ab8f659c01c8230d37489b39c
-  module_map: ea9565b6fd67cf58b47e81445c8af715fc201bf0bf5fe63916b8c20e489c1c64
-  verification: bf726e4371d44fc68cd338689efea2e4d5acedc2930f002b8d73758e5424e846
+  interfaces: b32c6654b3d8dc63c8f9d56980ea61f4d97451a2b773fd7be973e01439d932c6
+  module_map: 8032439313b0204cf9bb9f86b067616bde9111af46630a60f0350d2039b6936a
+  verification: 30d0b763fb5582212208756ee87bca30ebb42a8e7e9d8114f4100d52c409aeef
   agents: ca263d1e05fd123434a21ef574fc8d76b559d22060719640a1f060527ef6a0b6
   ecosystem: 41df6a594f66dfdccfc9516499e4826c04118fae1a2850465624443977bfd207
   quick_start: aa15ed859d837420815f7e0948f08651a127ddd6db965df8b99600b5ef930172

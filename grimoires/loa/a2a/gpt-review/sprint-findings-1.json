@@ -1,36 +1,42 @@
 {
   "verdict": "CHANGES_REQUIRED",
-  "summary": "Sprint 6 as written is likely to fail because it omits a required service rebuild/redeploy, has an unverified import path for the new canonical advisory lock helper, and doesn’t include any staging data/backward-compat verification for the domain-tag hash change.",
+  "summary": "The plan is close, but several tasks have implicit dependencies and missing validation work that will likely break implementation (especially schema validation, config gating, and test harness assumptions).",
   "blocking_issues": [
     {
-      "location": "Sprint 6 — Tasks 6.6/6.7 (Docker/ECR/ECS redeploy scope)",
-      "issue": "Plan rebuilds/redeploys only `finn` and `freeside-api`, but product context states three microservices (Freeside API, Finn, Dixie BFF/reputation) and the shared protocol library is used across the platform.",
-      "why_blocking": "If Dixie depends (directly or transitively) on `@0xhoneyjar/loa-hounfour`, it will continue running the old domain-tag behavior and/or old advisory lock key implementation, causing inconsistent protocol behavior across services and potentially breaking cross-service verification or reputation/audit flows. This directly violates the sprint acceptance criterion “Docker images rebuilt…ECS services redeployed and healthy” for the platform upgrade.",
-      "fix": "Add explicit dependency audit + deployment scope task: (1) `npm ls @0xhoneyjar/loa-hounfour` per service/package (including Dixie) to confirm consumers; (2) if Dixie consumes it, add Docker build/tag/push for Dixie ECR repo and force-new-deployment for `arrakis-staging-dixie` (or document and prove Dixie is not a consumer with a verifiable check). Update AC to list exactly which services are rebuilt/redeployed and why."
+      "location": "Sprint 3 (Tasks 3.1–3.4) — Capability manifest schema + validation",
+      "issue": "“Validate against schema” is specified, but no actual validator is planned; `capability-schema.yaml` is described as a schema yet only required to be parseable by `yq`, which does not validate YAML against a schema.",
+      "why_blocking": "Tasks 3.2 and 3.4 depend on “manifests validate against schema” and will be impossible to complete deterministically without implementing a validation mechanism (or redefining what validation means). This will stall Sprint 3 and cascade into Sprint 5 integration tests.",
+      "fix": "Add an explicit task (or extend Task 3.3) to implement `validate_capability_manifest()` with concrete rules (required keys/types/ranges) using `yq` assertions, and define pass/fail semantics. Alternatively, switch to JSON Schema + a validator tool and include it as a pinned dependency, but then update the “no jq dependency for YAML” constraint accordingly."
     },
     {
-      "location": "Sprint 6 — Task 6.2 (replace advisoryLockKey with canonical export)",
-      "issue": "Import path `@0xhoneyjar/loa-hounfour/commons/advisory-lock-key` is assumed but not validated; monorepo uses GitHub dependency + postinstall dist rebuild, so subpath exports can differ between source and built dist/package.json exports map.",
-      "why_blocking": "If the package does not export that subpath in its published/built `dist` (or uses an `exports` map that blocks deep imports), TypeScript/Node resolution will fail at build/test time, stopping the sprint. This is a common failure mode with GitHub-pinned deps + custom dist rebuild scripts.",
-      "fix": "Add a task to verify the actual exported entrypoint in v8.3.1: check `node_modules/@0xhoneyjar/loa-hounfour/package.json` `exports` and the built file layout after `npm install`. If deep import is not supported, switch to the supported barrel export (e.g., `@0xhoneyjar/loa-hounfour/commons` or top-level export) and/or add a protocol task to update hounfour to re-export `computeAdvisoryLockKey` from a stable path. Update AC to require `tsc -b` (or service build) passes, not just unit tests."
+      "location": "Sprint 4 (Tasks 4.1–4.3) — Economic feedback data contract",
+      "issue": "Economic feedback assumes `bridge-state.json:metrics.cost_estimates[]` exists and is “already populated,” but there’s no task to confirm the current bridge-state schema, add missing fields, or provide a fallback when absent.",
+      "why_blocking": "If `cost_estimates` is missing/renamed/structured differently (common in evolving orchestrators), `compute_marginal_value()` and orchestrator integration will fail at runtime or silently emit wrong signals. This also breaks Sprint 5 E2E tests that rely on synthetic data + real parsing paths.",
+      "fix": "Add a preflight contract check task: document the exact expected `bridge-state.json` shape (example JSON), implement defensive parsing (empty/missing arrays → no signal), and add a small fixture file used by tests. Update ACs to include behavior when cost data is missing."
     },
     {
-      "location": "Sprint 6 — Risk/compatibility coverage (Tasks 6.3–6.5)",
-      "issue": "Domain tag sanitization changes hash inputs (dots→hyphens) and the plan only updates one conformance vector (V-A02) and runs tests; it does not include any verification against existing stored audit trail data in staging (or an explicit epoch-boundary compatibility check).",
-      "why_blocking": "Audit trail integrity is a critical requirement; changing domain tags can change hash chain values. Unit/conformance tests can pass while staging data verification fails (e.g., inability to verify existing chains, mismatched anchors, or mixed-format tags). If this happens after deploy, the sprint fails the “audit trail integrity (hash chains must be verifiable)” requirement even if CI is green.",
-      "fix": "Add an explicit staging backward-compat verification task before deploy: run a script/job that (a) selects a sample of existing audit trail entries created pre-upgrade, (b) verifies their hash chain/anchors using the old epoch rules, and (c) verifies new entries created post-upgrade verify under the new tag format without breaking the chain rules (or confirms epoch boundary separation). Make the AC measurable (e.g., “verify N=100 historical trails + N=10 newly created trails; 0 verification failures”)."
+      "location": "Sprint 5 (Task 5.2) — Autopoietic health check metrics are underspecified / may not be testable",
+      "issue": "Several checks reference artifacts that may not exist in-repo or have unclear locations/formats: `constraints.json` (Permission), “Flatline config” location/format (Diversity), and “production deployment artifacts” (Stakes) without specifying exact paths to check.",
+      "why_blocking": "Task 5.2 AC requires the score to reflect actual state and not be hardcoded; without precise file paths and parsing rules, implementation will either be brittle (false negatives) or impossible to complete within the sprint because the engineer must first discover/standardize these sources.",
+      "fix": "Amend Task 5.2 to specify exact authoritative sources and acceptance thresholds, e.g. `grimoires/loa/constraints.json` (or whatever the real path is), `.claude/config/flatline.yaml` (or equivalent), and a concrete list of “stakes” files (e.g., `infrastructure/terraform/**`, `ecs-task-definitions/**`). Add a fallback rule: if a source file is absent, score=0 with a specific remediation message."
     },
     {
-      "location": "Sprint 6 — Task 6.1 (pinning to GitHub tag v8.3.1)",
-      "issue": "Pinning to `github:0xHoneyJar/loa-hounfour#v8.3.1` assumes the tag is immutable and that npm will resolve it consistently; the plan doesn’t require lockfile update/verification or a clean install check.",
-      "why_blocking": "In GitHub dependencies, tag movement or lockfile drift can lead to different commits being installed across environments, making “version 8.3.1” checks misleading (package.json version can remain 8.3.1 even if code differs). This can cause non-reproducible builds and failed deploy verification.",
-      "fix": "Add explicit lockfile and commit verification: require `package-lock.json` (or npm lockfile) updated and committed; verify `npm ci` from a clean workspace installs the expected commit (record resolved `resolved` URL / commit SHA from lockfile). Optionally pin by commit SHA for reproducibility and document why tag pin is acceptable if you keep it."
+      "location": "Sprint 4 ↔ Sprint 5 dependency — Vision exploration integration point",
+      "issue": "Task 4.4 says vision explorer is callable from bridge orchestrator after FLATLINE is reached, but Sprint 4 does not include the orchestrator wiring; Sprint 5 also does not include wiring for vision explorer (only capability discovery wiring).",
+      "why_blocking": "G-5 requires “Exploration budget activates one Vision Registry entry” and Sprint 4 ACs imply the mechanism is integrated with the orchestrator. As written, you can finish 4.4/4.5 as standalone scripts, but you may fail the intended “activation” behavior because no sprint actually connects it to the bridge flow.",
+      "fix": "Either (A) explicitly scope Sprint 4 to standalone CLI-only (remove orchestrator integration language from 4.4 AC), or (B) add a small orchestrator hook task (config-gated, default off) to call `vision-explorer.sh` when FLATLINE is reached. Ensure Sprint 5 E2E test covers the chosen behavior."
     },
     {
-      "location": "Sprint 6 — Task 6.6/6.7 (ECS deployment verification)",
-      "issue": "Redeploy step only says “force new deployment” and checks running=1; it doesn’t include updating task definition image digests/tags or verifying the new image is actually running (ECS can redeploy the same image tag if not updated).",
-      "why_blocking": "If the task definition still points at an old image digest (or `staging` tag is cached/unchanged), the service may come up healthy but still run the old hounfour version, failing the upgrade objective while appearing successful.",
-      "fix": "Add explicit task-definition revision update: register new task definition revision with the new image digest/tag (prefer immutable SHA tag), update service to that revision, then verify running task image digest via `describe-tasks` (container image) and/or application startup log includes hounfour commit/tag. Update AC to require task definition revision changed and running tasks reference the new image digest."
+      "location": "Sprint 3 (Task 3.4) and Sprint 5 (Task 5.3) — Test harness toolchain assumptions",
+      "issue": "Tests require JSON output parseable by `jq`, but Sprint 3 explicitly tries to avoid jq for YAML; repo/tooling may not guarantee `jq` availability in CI/local. Also no task ensures these eval scripts are executed by CI or a standard runner.",
+      "why_blocking": "If `jq` isn’t present, the new eval scripts will fail immediately, blocking “exits 0” acceptance criteria. If there’s no agreed runner, “E2E integration test” may exist but never run, causing late discovery of breakage.",
+      "fix": "Confirm toolchain baseline: add a task or explicit note that `jq` is required (and ensure CI installs it), or rewrite JSON validation to use `node -e`/python (whichever is guaranteed). Also specify how eval scripts are run (e.g., `make evals` / `./.claude/evals/run-all.sh`) and add/update that runner if missing."
+    },
+    {
+      "location": "Sprint 1 (Task 1.5) — Merge gate depends on external review/permissions not accounted for",
+      "issue": "Task 1.5 assumes the solo engineer can merge PR #115 after fixes; if branch protection requires approvals or CI contexts not under the engineer’s control, the sprint can fail even if all work is done.",
+      "why_blocking": "This is a classic “done but not merged” failure mode for 0.5-day merge sprints; it blocks the stated critical path (Sprint 1 → Sprint 2…).",
+      "fix": "Add an explicit prerequisite/step: verify merge requirements (required reviewers, required checks) and schedule/obtain approval. Or adjust Sprint 1 deliverable to “PR #115 ready-to-merge with approvals requested” if approvals are not guaranteed."
     }
   ],
   "question": "",

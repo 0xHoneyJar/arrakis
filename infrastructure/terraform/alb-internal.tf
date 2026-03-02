@@ -15,6 +15,11 @@
 #   - SG rules restrict to finn/freeside ECS tasks only
 #   - Upgrade to TLS via AWS Private CA if needed for compliance
 #
+# Threat model: Security groups protect routing, not content. East-west
+# lateral movement accepted as low-risk given VPC isolation, Fargate
+# workloads (no SSH), and short-lived JWT tokens (5min TTL).
+#
+# @see ADR-004: docs/adr/004-internal-alb-http.md
 # @see SDD §4.3 S2S JWT Contract
 # @see Sprint 0A, Task 0A.3b
 # =============================================================================

@@ -849,6 +849,89 @@ describe('Protocol Conformance Suite (v7.11.0)', () => {
     });
   });
 
+  // ─── Schema Structural Validation (NO_SCHEMA_CATEGORIES coverage) ────────
+  // ConsumerContractSchema and TransitionResultSchema have complex structures
+  // that don't map directly to conformance vector inputs. These tests validate
+  // the schemas themselves to ensure they accept/reject expected shapes.
+
+  describe('ConsumerContractSchema (integrity)', () => {
+    it('should accept a well-formed consumer contract', () => {
+      const validContract = {
+        consumer: 'loa-freeside',
+        provider: '@0xhoneyjar/loa-hounfour',
+        provider_version_range: '>=8.0.0 <9.0.0',
+        entrypoints: {
+          './commons': {
+            symbols: ['TransitionResultSchema', 'DynamicContractSchema'],
+          },
+          './integrity': {
+            symbols: ['ConsumerContractSchema'],
+            min_version: '8.3.0',
+          },
+        },
+        generated_at: '2026-03-02T00:00:00Z',
+      };
+      const { valid, errors } = validateSchema(
+        ConsumerContractSchema as Record<string, unknown>,
+        validContract,
+      );
+      expect(valid, `ConsumerContract should be valid: ${errors}`).toBe(true);
+    });
+
+    it('should reject a contract missing required fields', () => {
+      const invalidContract = {
+        consumer: 'loa-freeside',
+        // missing: provider, provider_version_range, entrypoints, generated_at
+      };
+      const { valid } = validateSchema(
+        ConsumerContractSchema as Record<string, unknown>,
+        invalidContract,
+      );
+      expect(valid).toBe(false);
+    });
+  });
+
+  describe('TransitionResultSchema (commons)', () => {
+    it('should accept a successful transition result', () => {
+      const validResult = {
+        success: true,
+        new_state: { balance: 1000, status: 'active' },
+        version: 1,
+      };
+      const { valid, errors } = validateSchema(
+        TransitionResultSchema as Record<string, unknown>,
+        validResult,
+      );
+      expect(valid, `TransitionResult should be valid: ${errors}`).toBe(true);
+    });
+
+    it('should accept a failed transition result with violations', () => {
+      const failedResult = {
+        success: false,
+        new_state: null,
+        version: 2,
+        violations: ['invariant_balance_non_negative', 'invariant_version_monotonic'],
+      };
+      const { valid, errors } = validateSchema(
+        TransitionResultSchema as Record<string, unknown>,
+        failedResult,
+      );
+      expect(valid, `TransitionResult with violations should be valid: ${errors}`).toBe(true);
+    });
+
+    it('should reject a result missing required fields', () => {
+      const invalidResult = {
+        success: true,
+        // missing: new_state, version
+      };
+      const { valid } = validateSchema(
+        TransitionResultSchema as Record<string, unknown>,
+        invalidResult,
+      );
+      expect(valid).toBe(false);
+    });
+  });
+
   // ─── VERSION file check ───────────────────────────────────────────────────
 
   describe('Vectors VERSION', () => {
