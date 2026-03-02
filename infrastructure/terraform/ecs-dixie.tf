@@ -466,6 +466,17 @@ resource "aws_iam_role_policy" "dixie_task" {
           "cloudwatch:PutMetricData"
         ]
         Resource = "*"
+      },
+      {
+        Sid    = "ECSExec"
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
       }
     ]
   })

@@ -434,6 +434,17 @@ resource "aws_iam_role_policy" "ecs_task" {
           "xray:PutTelemetryRecords"
         ]
         Resource = "*"
+      },
+      {
+        Sid    = "ECSExec"
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -746,7 +757,9 @@ resource "aws_ecs_service" "api" {
 
   depends_on = [aws_lb_listener.https]
 
-  tags = local.common_tags
+  tags = merge(local.common_tags, {
+    Sprint = "C46-3"
+  })
 }
 
 # Worker Service
