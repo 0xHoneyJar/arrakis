@@ -4,7 +4,7 @@
 **Source**: Bridge iteration 1 of bridge-20260213-8d24fa
 **PR**: #306
 **Date**: 2026-02-13T03:52:38Z
-**Status**: Captured
+**Status**: Explored
 **Tags**: [architecture]
 
 ## Insight

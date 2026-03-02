@@ -1,0 +1,178 @@
+# =============================================================================
+# Capability Manifest Schema — Declarative review capability registration
+# =============================================================================
+# Part of: Capability Manifest v0.1 (cycle-047, Sprint 388 Task 3.1)
+# Design Source: grimoires/loa/lore/capability-orchestration-design.md
+#
+# Each review capability declares itself via a YAML manifest placed in
+# .claude/capabilities/. The orchestrator discovers, matches, orders, and
+# budgets capabilities dynamically.
+#
+# FAANG Parallel: Kubernetes ValidatingWebhookConfiguration + Google Tricorder
+# (ISSTA 2018). Both use declarative registration, pattern-based matching,
+# and ordered execution. Adding a new analyzer should not require modifying
+# the framework.
+#
+# Validated by: .claude/scripts/lib/capability-lib.sh:validate_capability_manifest()
+# =============================================================================
+
+# Schema definition — documents the expected shape of a capability manifest.
+# This file is both human documentation AND the reference for validation logic.
+
+schema:
+  version: 1
+  root: capability
+
+  fields:
+    # --- Required fields ---
+
+    capability.id:
+      type: string
+      required: true
+      constraints: "non-empty, unique across all manifests"
+      description: >-
+        Unique identifier for this capability. Used in dependency references
+        and orchestration chain output. Convention: kebab-case.
+      example: "pipeline-self-review"
+
+    capability.type:
+      type: string
+      required: true
+      constraints: "must be 'review'"
+      description: >-
+        Capability type. Currently only 'review' is supported. Future types
+        may include 'transform', 'gate', 'observe'.
+      example: "review"
+
+    capability.version:
+      type: integer
+      required: true
+      constraints: ">= 1"
+      description: >-
+        Schema version of this manifest. Used for forward-compatible parsing.
+        Increment when manifest format changes in breaking ways.
+      example: 1
+
+    capability.description:
+      type: string
+      required: true
+      constraints: "non-empty"
+      description: >-
+        Human-readable description of what this capability reviews and why.
+        Used in chain reports and documentation generation.
+      example: "Reviews changes to pipeline scripts and skills for self-consistency"
+
+    # --- Trigger (required section) ---
+
+    capability.trigger.files:
+      type: "string[]"
+      required: true
+      constraints: "non-empty array, glob patterns"
+      description: >-
+        File glob patterns that activate this capability. If any changed file
+        matches any pattern, the capability is included in the chain.
+        Uses bash glob syntax (*, **, ?).
+      example: [".claude/scripts/**", ".claude/skills/**"]
+
+    capability.trigger.tags:
+      type: "string[]"
+      required: false
+      default: "[]"
+      description: >-
+        Semantic tags for content-based matching. Capabilities can be matched
+        by tag when file patterns are insufficient (e.g., 'security' tag
+        matches any security-relevant change regardless of file path).
+      example: ["security", "pipeline", "infrastructure"]
+
+    # --- Input (optional section) ---
+
+    capability.input.requires:
+      type: "string[]"
+      required: false
+      default: "[]"
+      description: >-
+        Input channels this capability needs. The orchestrator ensures these
+        are available before execution. Known channels: 'sdd', 'diff',
+        'prior_findings', 'lore', 'bridge_state'.
+      example: ["sdd", "diff"]
+
+    capability.input.optional:
+      type: "string[]"
+      required: false
+      default: "[]"
+      description: >-
+        Optional input channels. If available, provided to the capability.
+        If missing, capability proceeds without them.
+      example: ["prior_findings", "lore"]
+
+    # --- Output (optional section) ---
+
+    capability.output.format:
+      type: string
+      required: false
+      default: "findings-json"
+      description: >-
+        Output format. Determines how the orchestrator parses results.
+        'findings-json' = structured JSON per bridge-findings-parser.sh schema.
+        'text' = freeform prose. 'structured' = custom JSON schema.
+      example: "findings-json"
+
+    capability.output.severity_range:
+      type: "[integer, integer]"
+      required: false
+      default: "[0, 1000]"
+      description: >-
+        Min/max severity scores this capability may produce. Used by the
+        allocator to weight capabilities in the chain.
+      example: [0, 1000]
+
+    # --- Budget (required section) ---
+
+    capability.budget.min_tokens:
+      type: integer
+      required: true
+      constraints: "> 0"
+      description: >-
+        Minimum token budget for useful output. If the allocator cannot
+        guarantee this minimum, the capability is excluded from the chain.
+      example: 4000
+
+    capability.budget.optimal_tokens:
+      type: integer
+      required: false
+      default: "midpoint of min and max"
+      constraints: ">= min_tokens, <= max_tokens"
+      description: >-
+        Sweet spot for quality output. The allocator uses this as the
+        proportional weight when distributing remaining budget after
+        guaranteeing minimums.
+      example: 50000
+
+    capability.budget.max_tokens:
+      type: integer
+      required: true
+      constraints: ">= min_tokens"
+      description: >-
+        Upper bound on token allocation. Even if total budget is large,
+        no capability receives more than its max.
+      example: 150000
+
+    # --- Dependencies (optional section) ---
+
+    capability.dependencies.before:
+      type: "string[]"
+      required: false
+      default: "[]"
+      description: >-
+        Capability IDs that MUST run AFTER this capability. Expressed as
+        'this runs before X'. Used for topological ordering.
+      example: ["bridgebuilder-review"]
+
+    capability.dependencies.after:
+      type: "string[]"
+      required: false
+      default: "[]"
+      description: >-
+        Capability IDs that MUST run BEFORE this capability. Expressed as
+        'this runs after X'. Used for topological ordering.
+      example: ["pipeline-self-review"]

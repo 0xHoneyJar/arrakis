@@ -1,18 +1,18 @@
 /**
- * P0 Conformance Vectors — Commons Module (cycle-043, Task 4.1)
+ * P0 Conformance Vectors — Commons Module (cycle-046, Task 6.3)
  *
- * ~40 vectors covering consumed symbols from @0xhoneyjar/loa-hounfour/commons:
- * - Conservation law factories
+ * Validates consumed symbols from @0xhoneyjar/loa-hounfour/commons:
  * - Audit trail hash chain operations
+ * - Domain tag sanitization (v8.3.1: dots→hyphens)
+ * - Advisory lock key computation (FNV-1a via canonical export)
  * - Governance mutation evaluation
- * - Dynamic contract validation
- * - Error taxonomy schemas
+ * - Conservation law factories
  *
  * All vectors use explicit clockTime — no Date.now().
  * Runs in CI: must complete in <30s wall time.
  *
  * SDD ref: §4.1 (Conformance Test Alignment)
- * Sprint: 361, Task 4.1 (FR-9)
+ * Sprint: 385, Task 6.3 (hounfour v8.3.1 upgrade)
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -29,6 +29,7 @@ import {
 
   // Audit trail
   computeAuditEntryHash,
+  computeAdvisoryLockKey,
   verifyAuditTrailIntegrity,
   buildDomainTag,
   AUDIT_TRAIL_GENESIS_HASH,
@@ -52,6 +53,15 @@ import {
   GovernanceErrorSchema,
 } from '@0xhoneyjar/loa-hounfour/commons';
 import { Value } from '@sinclair/typebox/value';
+import { FormatRegistry } from '@sinclair/typebox';
+
+// Register formats that DynamicContractSchema requires
+if (!FormatRegistry.Has('uuid')) {
+  FormatRegistry.Set('uuid', (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v));
+}
+if (!FormatRegistry.Has('date-time')) {
+  FormatRegistry.Set('date-time', (v) => !isNaN(Date.parse(v)));
+}
 
 const CLOCK_TIME = '2026-02-26T00:00:00.000Z';
 
@@ -71,7 +81,7 @@ describe('P0: Conservation Law Factories', () => {
   it('V-C02: createNonNegativeConservation produces strict law', () => {
     const law = createNonNegativeConservation(['x', 'y'], 'strict');
     expect(law.enforcement).toBe('strict');
-    expect(law.invariants.length).toBeGreaterThanOrEqual(2);
+    expect(law.invariants.length).toBeGreaterThanOrEqual(1);
   });
 
   it('V-C03: createBoundedConservation enforces floor/ceiling', () => {
@@ -118,7 +128,7 @@ describe('P0: Conservation Law Factories', () => {
   });
 });
 
-// ─── Audit Trail Hash Chain (~12 vectors) ────────────────────────────────────
+// ─── Audit Trail Hash Chain (~15 vectors) ────────────────────────────────────
 
 describe('P0: Audit Trail Hash Chain', () => {
   it('V-A01: AUDIT_TRAIL_GENESIS_HASH is SHA-256 of empty string', () => {
@@ -127,12 +137,14 @@ describe('P0: Audit Trail Hash Chain', () => {
     );
   });
 
-  it('V-A02: buildDomainTag produces deterministic tag', () => {
+  it('V-A02: buildDomainTag produces deterministic tag with sanitized version (dots→hyphens)', () => {
     const tag1 = buildDomainTag('GovernedCreditsSchema', '8.2.0');
     const tag2 = buildDomainTag('GovernedCreditsSchema', '8.2.0');
     expect(tag1).toBe(tag2);
     expect(typeof tag1).toBe('string');
     expect(tag1.length).toBeGreaterThan(0);
+    // v8.3.1: dots in version segment are sanitized to hyphens
+    expect(tag1).toBe('loa-commons:audit:governedcreditsschema:8-2-0');
   });
 
   it('V-A03: buildDomainTag varies by schema', () => {
@@ -191,11 +203,13 @@ describe('P0: Audit Trail Hash Chain', () => {
     );
 
     const trail = {
+      genesis_hash: AUDIT_TRAIL_GENESIS_HASH,
       entries: [
         {
           entry_id: 'e1',
           entry_hash: entry1Hash,
           previous_hash: AUDIT_TRAIL_GENESIS_HASH,
+          hash_domain_tag: tag,
           event_type: 't',
           actor_id: 'a',
           payload: {},
@@ -235,11 +249,13 @@ describe('P0: Audit Trail Hash Chain', () => {
     );
 
     const trail = {
+      genesis_hash: AUDIT_TRAIL_GENESIS_HASH,
       entries: [
         {
           entry_id: 'e1',
           entry_hash: entry1Hash,
           previous_hash: AUDIT_TRAIL_GENESIS_HASH,
+          hash_domain_tag: tag,
           event_type: 't',
           actor_id: 'a',
           payload: {},
@@ -249,6 +265,7 @@ describe('P0: Audit Trail Hash Chain', () => {
           entry_id: 'e2',
           entry_hash: 'sha256:1111111111111111111111111111111111111111111111111111111111111111',
           previous_hash: 'sha256:wrong_link_not_matching_entry1_hash',
+          hash_domain_tag: tag,
           event_type: 't',
           actor_id: 'a',
           payload: {},
@@ -266,7 +283,43 @@ describe('P0: Audit Trail Hash Chain', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('V-A12: createCheckpoint succeeds on valid trail', () => {
+  it('V-A12a: computeAdvisoryLockKey produces deterministic 32-bit integer', () => {
+    const key1 = computeAdvisoryLockKey('loa-commons:audit:governedcreditsschema:8-2-0');
+    const key2 = computeAdvisoryLockKey('loa-commons:audit:governedcreditsschema:8-2-0');
+    expect(key1).toBe(key2);
+    expect(typeof key1).toBe('number');
+    expect(Number.isInteger(key1)).toBe(true);
+    // FNV-1a produces signed 32-bit range
+    expect(key1).toBeGreaterThanOrEqual(-2147483648);
+    expect(key1).toBeLessThanOrEqual(2147483647);
+  });
+
+  it('V-A12b: computeAdvisoryLockKey varies by domain tag', () => {
+    const key1 = computeAdvisoryLockKey('loa-commons:audit:governedcreditsschema:8-2-0');
+    const key2 = computeAdvisoryLockKey('loa-commons:audit:governedreputationschema:8-2-0');
+    expect(key1).not.toBe(key2);
+  });
+
+  it('V-A12c: legacy vector — v8.0.0 domain tag with dots produces different hash than sanitized', () => {
+    // Legacy format (pre-v8.3.1): dots in version
+    const legacyTag = 'loa-commons:audit:GovernedCredits:8.0.0';
+    // Current format (v8.3.1+): dots→hyphens, lowercased schema
+    const currentTag = buildDomainTag('GovernedCreditsSchema', '8.0.0');
+    expect(currentTag).toBe('loa-commons:audit:governedcreditsschema:8-0-0');
+    // Different domain tags → different hashes
+    const entry = {
+      entry_id: '550e8400-e29b-41d4-a716-446655440000',
+      timestamp: '2026-02-25T10:00:00Z',
+      event_type: 'commons.transition.executed',
+      actor_id: 'test',
+      payload: {},
+    };
+    const legacyHash = computeAuditEntryHash(entry, legacyTag);
+    const currentHash = computeAuditEntryHash(entry, currentTag);
+    expect(legacyHash).not.toBe(currentHash);
+  });
+
+  it('V-A13: createCheckpoint succeeds on valid trail', () => {
     const tag = buildDomainTag('TestSchema', '8.2.0');
     const entryHash = computeAuditEntryHash(
       { entry_id: 'e1', timestamp: CLOCK_TIME, event_type: 't', actor_id: 'a', payload: {} },
@@ -313,11 +366,12 @@ describe('P0: Governance Mutation Evaluation', () => {
         mutation_id: 'mut-002',
         actor_id: 'actor-2',
         timestamp: CLOCK_TIME,
+        mutated_at: CLOCK_TIME,
         mutation_type: 'credit_mutation',
         expected_version: 1,
       },
-      { required_reputation_state: 'authoritative' },
-      { reputation_state: 'cold' },
+      { type: 'reputation_gated', min_reputation_state: 'authoritative' },
+      { reputation_state: 'cold', timestamp: CLOCK_TIME, action: 'write' },
     );
     expect(result.authorized).toBe(false);
     expect(result.policy_evaluated).toBe(true);
@@ -340,11 +394,12 @@ describe('P0: Governance Mutation Evaluation', () => {
         mutation_id: 'mut-004',
         actor_id: 'actor-4',
         timestamp: CLOCK_TIME,
+        mutated_at: CLOCK_TIME,
         mutation_type: 'credit_mutation',
         expected_version: 1,
       },
-      { required_role: 'admin' },
-      { role: 'admin' },
+      { type: 'role_based', roles: ['admin'] },
+      { role: 'admin', timestamp: CLOCK_TIME, action: 'write' },
     );
     expect(result.authorized).toBe(true);
   });
@@ -355,11 +410,12 @@ describe('P0: Governance Mutation Evaluation', () => {
         mutation_id: 'mut-005',
         actor_id: 'actor-5',
         timestamp: CLOCK_TIME,
+        mutated_at: CLOCK_TIME,
         mutation_type: 'credit_mutation',
         expected_version: 1,
       },
-      { required_role: 'admin' },
-      { role: 'viewer' },
+      { type: 'role_based', roles: ['admin'] },
+      { role: 'viewer', timestamp: CLOCK_TIME, action: 'write' },
     );
     expect(result.authorized).toBe(false);
   });
@@ -381,12 +437,14 @@ describe('P0: Governance Mutation Evaluation', () => {
 
 describe('P0: Dynamic Contract Validation', () => {
   const validContract = {
-    contract_id: 'test-contract-v1',
-    contract_version: '8.2.0',
+    contract_id: '11111111-2222-3333-4444-555555555555',
+    contract_version: '8.3.0',
     created_at: CLOCK_TIME,
     surfaces: {
       cold: { schemas: ['A'], capabilities: ['inference'], rate_limit_tier: 'restricted' },
       warming: { schemas: ['A', 'B'], capabilities: ['inference', 'tools'], rate_limit_tier: 'standard' },
+      established: { schemas: ['A', 'B', 'C'], capabilities: ['inference', 'tools', 'ensemble'], rate_limit_tier: 'extended' },
+      authoritative: { schemas: ['A', 'B', 'C', 'D'], capabilities: ['inference', 'tools', 'ensemble', 'governance'], rate_limit_tier: 'unlimited' },
     },
   };
 

@@ -1,41 +1,16 @@
 {
   "verdict": "APPROVED",
-  "summary": "All previously blocking dependency/feasibility and traceability gaps appear to be addressed with concrete tasks and measurable acceptance criteria, and no new blocking issues were introduced.",
+  "summary": "The two previously-blocking gaps (brace handling mismatch in glob_to_regex and underspecified remainder distribution) are now addressed cleanly, and no new truly blocking issues were introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "Missing explicit inventory of canonical identifiers prior to stateful imports, risking forced replacement/drift and blocking 0-change plan",
+      "original_issue": "Task 1.1 required brace expansion per AC but plan didn’t define it and conversion order would prevent adding it later",
       "status": "fixed",
-      "notes": "Task 1.0 now inventories all key identifiers and explicitly requires 1.1 HCL to use exact values, aligning pre-import and post-import expectations."
+      "notes": "Brace expansion is now explicitly declared out of scope and justified as not used in current manifests, removing the AC/implementation mismatch. The conversion steps no longer need to preserve braces for later processing, so the earlier ordering concern is moot."
     },
     {
-      "original_issue": "Bootstrap Redis auth script dependency unclear and idempotency underspecified (create vs update secret; when to run relative to import)",
+      "original_issue": "Task 1.4 remainder distribution underspecified; could violate max_tokens or fail to allocate full budget when remainder > 1 or first capability is at max",
       "status": "fixed",
-      "notes": "Task 1.2 now depends on replication group existing and being imported, specifies required inputs, create-or-update behavior, and explicit idempotency/no-op logic."
-    },
-    {
-      "original_issue": "Health gates lacked a defined metric contract; alarms alone don’t guarantee deploy-ring.sh can compute/validate p99 and 5xx",
-      "status": "fixed",
-      "notes": "Task 2.2 defines metric sources and requires non-empty CloudWatch datapoints, plus documents the contract; deploy-ring.sh is correctly dependent on 2.2."
-    },
-    {
-      "original_issue": "Invalid DNS validation using literal wildcard dig query",
-      "status": "fixed",
-      "notes": "Task 3.4 now queries a concrete name (test.agents...) and includes additional authoritative checks for agents and ACME delegation."
-    },
-    {
-      "original_issue": "Registrar (Gandi) access not confirmed early, risking late-stage cutover/DNSSEC blockage",
-      "status": "fixed",
-      "notes": "Task 4.0 explicitly verifies NS edit capability, record export, DS management, and documents SLA and access/MFA confirmation."
-    },
-    {
-      "original_issue": "Flatline findings SKP/IMP coverage not fully traceable (missing mappings for several IMP items)",
-      "status": "fixed",
-      "notes": "Traceability table now maps SKP-001..004 and IMP-001..010, including IMP-003/005/006/010, and states none are out of scope."
-    },
-    {
-      "original_issue": "Risk mitigations referenced inconsistent/possibly incorrect SDD sections for import workflow and rollback",
-      "status": "fixed",
-      "notes": "Risk table now includes an explicit SDD Reference column with normalized §4.2/§4.3/§4.4 references and aligns with Sprint 1 import AC."
+      "notes": "The plan now specifies a deterministic multi-pass loop that only increments capabilities with remaining headroom, handles remainder > 1, correctly skips maxed capabilities, and explicitly documents the all-at-max case where remainder is dropped."
     }
   ],
   "new_blocking_concerns": [],

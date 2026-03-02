@@ -24,6 +24,7 @@ set -euo pipefail
 # Source bootstrap for PROJECT_ROOT and path-lib
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/bootstrap.sh"
+source "${SCRIPT_DIR}/compat-lib.sh"
 
 # Resolve paths using path-lib getters
 _GP_GRIMOIRE_DIR=$(get_grimoire_dir)
@@ -399,8 +400,8 @@ golden_trajectory() {
         *) flag="" ;;
     esac
 
-    # Time-bounded: 2-second timeout
-    timeout 2 "$script" $flag 2>/dev/null || return 0
+    # Time-bounded: 2-second timeout (portable via compat-lib.sh)
+    run_with_timeout 2 "$script" $flag 2>/dev/null || return 0
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -826,6 +827,80 @@ golden_bridge_progress() {
             echo "Bridge starting up (${state})..."
             ;;
     esac
+}
+
+# ─────────────────────────────────────────────────────────────
+# Installation Boundary Report (Task 2.4 — cycle-035 sprint-2)
+# ─────────────────────────────────────────────────────────────
+
+# Detect installation mode from .loa-version.json.
+# Returns: "submodule" | "vendored" | "unknown"
+golden_detect_install_mode() {
+    local version_file="${PROJECT_ROOT}/.loa-version.json"
+    if [[ ! -f "${version_file}" ]]; then
+        echo "unknown"
+        return
+    fi
+
+    local mode
+    mode=$(jq -r '.installation_mode // "standard"' "${version_file}" 2>/dev/null)
+    case "${mode}" in
+        submodule) echo "submodule" ;;
+        standard)  echo "vendored" ;;
+        *)         echo "unknown" ;;
+    esac
+}
+
+# Generate installation boundary report for /loa status display.
+# Returns multi-line report to stdout.
+golden_boundary_report() {
+    local version_file="${PROJECT_ROOT}/.loa-version.json"
+    if [[ ! -f "${version_file}" ]]; then
+        echo "  Installation: not detected (.loa-version.json missing)"
+        return
+    fi
+
+    local mode fw_version commit_hash
+    mode=$(golden_detect_install_mode)
+    fw_version=$(jq -r '.framework_version // "unknown"' "${version_file}" 2>/dev/null)
+
+    echo "  Mode:      ${mode}"
+    echo "  Version:   ${fw_version}"
+
+    if [[ "${mode}" == "submodule" ]]; then
+        commit_hash=$(jq -r '.submodule.commit // "unknown"' "${version_file}" 2>/dev/null)
+        local submodule_path
+        submodule_path=$(jq -r '.submodule.path // ".loa"' "${version_file}" 2>/dev/null)
+        echo "  Commit:    ${commit_hash:0:12}"
+        echo "  Submodule: ${submodule_path}"
+
+        # Count files in submodule
+        if [[ -d "${PROJECT_ROOT}/${submodule_path}" ]]; then
+            local sub_file_count
+            sub_file_count=$(find "${PROJECT_ROOT}/${submodule_path}" -type f | wc -l | tr -d ' ')
+            echo "  Submodule files: ${sub_file_count}"
+        fi
+    fi
+
+    # Count tracked .claude/ files
+    local tracked_count
+    tracked_count=$(git ls-files .claude/ 2>/dev/null | wc -l | tr -d ' ')
+    echo "  Tracked .claude/ files: ${tracked_count}"
+
+    # Count gitignored files
+    local ignored_count
+    ignored_count=$(git ls-files --others --ignored --exclude-standard .claude/ 2>/dev/null | wc -l | tr -d ' ')
+    echo "  Gitignored .claude/ files: ${ignored_count}"
+
+    # List user-owned tracked files (non-symlink)
+    local user_files
+    user_files=$(git ls-files .claude/overrides/ .claude/commands/ 2>/dev/null | head -10)
+    if [[ -n "${user_files}" ]]; then
+        echo "  User-owned tracked files:"
+        while IFS= read -r f; do
+            echo "    ${f}"
+        done <<< "${user_files}"
+    fi
 }
 
 # ─────────────────────────────────────────────────────────────

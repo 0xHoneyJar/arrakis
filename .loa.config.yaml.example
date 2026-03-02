@@ -542,15 +542,15 @@ butterfreezone:
     - repo: 0xHoneyJar/loa-finn
       role: runtime
       interface: hounfour-router
-      protocol: loa-hounfour@4.6.0
+      protocol: loa-hounfour@8.3.1
     - repo: 0xHoneyJar/loa-hounfour
       role: protocol
       interface: npm-package
-      protocol: loa-hounfour@4.6.0
+      protocol: loa-hounfour@8.3.1
     - repo: 0xHoneyJar/arrakis
       role: distribution
       interface: jwt-auth
-      protocol: loa-hounfour@4.6.0
+      protocol: loa-hounfour@8.3.1
   culture:                                # Cultural BUTTERFREEZONE (v1.40.0)
     # Optional section communicating project principles, naming, methodology.
     # Provenance: OPERATIONAL. Omitted when not configured.
@@ -1610,6 +1610,20 @@ run_bridge:
     # FR-3: Activate relevant visions during bridge cycles (scan for tag overlap)
     activation_enabled: false
 
+  # Economic Feedback Signal (cycle-047, Sprint 389)
+  # Computes marginal value of bridge iterations. When cost per iteration
+  # exceeds value per iteration, emits DIMINISHING_RETURNS signal.
+  # FAANG Parallel: AWS Cost Anomaly Detection marginal spend analysis.
+  economic_feedback:
+    # Master toggle — must be true to activate economic signals
+    enabled: false
+    # Marginal value ratio below which to emit DIMINISHING_RETURNS
+    # Lower = more tolerant of diminishing returns before signaling
+    value_threshold: 0.2
+    # Minimum iterations before economic signal can fire
+    # Prevents premature termination during ramp-up
+    min_iterations: 2
+
   # RTFM documentation gate (runs after loop termination)
   rtfm:
     enabled: true
@@ -1680,6 +1694,38 @@ run_bridge:
     trigger_after_iteration: 1      # Fire after N convergent iterations complete
     max_research_iterations: 1      # Maximum research iterations per bridge run
     inquiry_enabled: false          # Also trigger multi-model inquiry (FR-4)
+
+  # Pipeline Self-Review (cycle-046 FR-3) — pipeline code reviews itself
+  pipeline_self_review:
+    enabled: false                  # Enable pipeline self-review during bridge
+
+  # Red Team Compliance Gate Profiles (cycle-047)
+  # Each profile defines keywords for SDD section extraction and a prompt template
+  # for model evaluation. See .claude/scripts/lib/compliance-lib.sh for details.
+  # compliance_gates:
+  #   security:
+  #     keywords: [Security, Authentication, Authorization, Validation]
+  #     prompt_template: "security-comparison"   # Default template
+  #   # api_contract:                            # Future profile
+  #   #   keywords: [API, Endpoint, Contract, Schema, Interface]
+  #   #   prompt_template: "api-contract"
+  #   # economic_invariant:                      # Future profile
+  #   #   keywords: [Economic, Invariant, Token, Governance, Vault]
+  #   #   prompt_template: "economic-invariant"
+
+# =============================================================================
+# Capability Registry (cycle-047, Sprint 390)
+# =============================================================================
+# Declarative review capability manifests discovered from .claude/capabilities/*.yaml.
+# When discovery is enabled, the bridge orchestrator discovers, matches, orders,
+# and logs capability chains per iteration (Phase 1: discovery only, no dynamic execution).
+# FAANG Parallel: Kubernetes ValidatingWebhookConfiguration, Google Tricorder (ISSTA 2018).
+capabilities:
+  discovery:
+    # Enable capability discovery in bridge orchestrator
+    enabled: false
+    # Total token budget allocated across all matched capabilities
+    total_budget: 200000
 
 # =============================================================================
 # Agent Teams Compatibility (v1.39.0)

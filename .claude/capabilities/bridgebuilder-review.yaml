@@ -1,0 +1,45 @@
+# Bridgebuilder Review capability manifest
+# Comprehensive architectural review with educational depth
+# Source: core bridge review capability, formalized in cycle-047 Sprint 388
+
+capability:
+  id: bridgebuilder-review
+  type: review
+  version: 1
+  description: >-
+    Comprehensive architectural review with persona-enriched output. Produces
+    dual-stream output: structured findings JSON + rich prose with FAANG
+    parallels, metaphors, and teachable moments. The Bridgebuilder reviews
+    quality and architecture — whether the design is evolving well.
+
+  trigger:
+    files:
+      - "**/*"
+    tags:
+      - architecture
+      - quality
+      - design
+
+  input:
+    requires:
+      - sdd
+      - diff
+      - prior_findings
+    optional:
+      - lore
+      - bridge_state
+
+  output:
+    format: findings-json
+    severity_range: [0, 1000]
+
+  budget:
+    min_tokens: 10000
+    optimal_tokens: 50000
+    max_tokens: 150000
+
+  dependencies:
+    before: []
+    after:
+      - pipeline-self-review
+      - red-team-code

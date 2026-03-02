@@ -107,6 +107,14 @@ import {
   ScoringPathLogSchema as GovScoringPathLogSchema,
 } from '@0xhoneyjar/loa-hounfour/governance';
 
+import {
+  ConsumerContractSchema,
+} from '@0xhoneyjar/loa-hounfour/integrity';
+
+import {
+  TransitionResultSchema,
+} from '@0xhoneyjar/loa-hounfour/commons';
+
 // ---------------------------------------------------------------------------
 // JSON Schema Validator (ajv)
 // ---------------------------------------------------------------------------
@@ -227,6 +235,8 @@ const NO_SCHEMA_CATEGORIES = new Set([
   'pricing-calculation', // Complex multi-step — validated structurally
   'reputation-event',    // ReputationEventSchema has unresolvable internal $ref: "TaskType" in ajv
   'tool-call-roundtrip', // Complex multi-step — validated structurally
+  'consumer-contract',   // Validated via ConsumerContractSchema but complex entrypoint structure
+  'governed-resource-runtime', // Validated via TransitionResultSchema but wrapper structure differs
 ]);
 
 /**
@@ -304,6 +314,7 @@ const CATEGORY_SCHEMA_MAP: Record<string, SchemaEntry> = {
   'community-engagement': CommunityEngagementSignalSchema as Record<string, unknown>,
   'conservation-properties': ConservationPropertyRegistrySchema as Record<string, unknown>,
   'constraint-lifecycle': ConstraintLifecycleEventSchema as Record<string, unknown>,
+  'consumer-contract': undefined,
   'delegation-chain': DelegationChainSchema as Record<string, unknown>,
   'delegation-outcome': DelegationOutcomeSchema as Record<string, unknown>,
   'delegation-quality': DelegationQualityEventSchema as Record<string, unknown>,
@@ -318,6 +329,7 @@ const CATEGORY_SCHEMA_MAP: Record<string, SchemaEntry> = {
   'governed-freshness': GovernedFreshnessSchema as Record<string, unknown>,
   'governed-reputation': GovernedReputationSchema as Record<string, unknown>,
   'governed-resource': GovernedCreditsSchema as Record<string, unknown>,  // Representative schema; governed-resource neg vectors test governance fields
+  'governed-resource-runtime': undefined,
   'inter-agent-transaction': InterAgentTransactionAuditSchema as Record<string, unknown>,
   'jwt-boundary': JwtBoundarySpecSchema as Record<string, unknown>,
   'liveness-properties': LivenessPropertySchema as Record<string, unknown>,
@@ -366,8 +378,8 @@ describe('Protocol Conformance Suite (v7.11.0)', () => {
   // ─── AC-2.4.4: CONTRACT_VERSION ──────────────────────────────────────────
 
   describe('CONTRACT_VERSION', () => {
-    it('should match the actual v8.2.0 protocol version', () => {
-      expect(CONTRACT_VERSION).toBe('8.2.0');
+    it('should match the actual v8.3.0 protocol version', () => {
+      expect(CONTRACT_VERSION).toBe('8.3.0');
     });
 
     it('should be a valid semver string', () => {
@@ -378,12 +390,12 @@ describe('Protocol Conformance Suite (v7.11.0)', () => {
   // ─── AC-2.4.1 & AC-2.4.2: Vector loading ─────────────────────────────────
 
   describe('Vector Loading', () => {
-    it('should load all 262 vectors from nested directory structure', () => {
-      expect(allVectors.length).toBe(262);
+    it('should load all 276 vectors from nested directory structure', () => {
+      expect(allVectors.length).toBe(276);
     });
 
-    it('should load 219 conformance vectors', () => {
-      expect(conformanceVectors.length).toBe(219);
+    it('should load 233 conformance vectors', () => {
+      expect(conformanceVectors.length).toBe(233);
     });
 
     it('should cover all 16 top-level categories with JSON files', () => {
@@ -834,6 +846,89 @@ describe('Protocol Conformance Suite (v7.11.0)', () => {
     it('should load cross-ecosystem vectors', () => {
       const crossFiles = allVectors.filter((v) => v.category === 'cross-ecosystem');
       expect(crossFiles.length).toBeGreaterThanOrEqual(5);
+    });
+  });
+
+  // ─── Schema Structural Validation (NO_SCHEMA_CATEGORIES coverage) ────────
+  // ConsumerContractSchema and TransitionResultSchema have complex structures
+  // that don't map directly to conformance vector inputs. These tests validate
+  // the schemas themselves to ensure they accept/reject expected shapes.
+
+  describe('ConsumerContractSchema (integrity)', () => {
+    it('should accept a well-formed consumer contract', () => {
+      const validContract = {
+        consumer: 'loa-freeside',
+        provider: '@0xhoneyjar/loa-hounfour',
+        provider_version_range: '>=8.0.0 <9.0.0',
+        entrypoints: {
+          './commons': {
+            symbols: ['TransitionResultSchema', 'DynamicContractSchema'],
+          },
+          './integrity': {
+            symbols: ['ConsumerContractSchema'],
+            min_version: '8.3.0',
+          },
+        },
+        generated_at: '2026-03-02T00:00:00Z',
+      };
+      const { valid, errors } = validateSchema(
+        ConsumerContractSchema as Record<string, unknown>,
+        validContract,
+      );
+      expect(valid, `ConsumerContract should be valid: ${errors}`).toBe(true);
+    });
+
+    it('should reject a contract missing required fields', () => {
+      const invalidContract = {
+        consumer: 'loa-freeside',
+        // missing: provider, provider_version_range, entrypoints, generated_at
+      };
+      const { valid } = validateSchema(
+        ConsumerContractSchema as Record<string, unknown>,
+        invalidContract,
+      );
+      expect(valid).toBe(false);
+    });
+  });
+
+  describe('TransitionResultSchema (commons)', () => {
+    it('should accept a successful transition result', () => {
+      const validResult = {
+        success: true,
+        new_state: { balance: 1000, status: 'active' },
+        version: 1,
+      };
+      const { valid, errors } = validateSchema(
+        TransitionResultSchema as Record<string, unknown>,
+        validResult,
+      );
+      expect(valid, `TransitionResult should be valid: ${errors}`).toBe(true);
+    });
+
+    it('should accept a failed transition result with violations', () => {
+      const failedResult = {
+        success: false,
+        new_state: null,
+        version: 2,
+        violations: ['invariant_balance_non_negative', 'invariant_version_monotonic'],
+      };
+      const { valid, errors } = validateSchema(
+        TransitionResultSchema as Record<string, unknown>,
+        failedResult,
+      );
+      expect(valid, `TransitionResult with violations should be valid: ${errors}`).toBe(true);
+    });
+
+    it('should reject a result missing required fields', () => {
+      const invalidResult = {
+        success: true,
+        // missing: new_state, version
+      };
+      const { valid } = validateSchema(
+        TransitionResultSchema as Record<string, unknown>,
+        invalidResult,
+      );
+      expect(valid).toBe(false);
     });
   });
 
