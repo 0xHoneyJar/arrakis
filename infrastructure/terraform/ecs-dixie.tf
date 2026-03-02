@@ -300,6 +300,28 @@ resource "aws_security_group" "dixie" {
   }
 }
 
+# Allow dixie to reach loa-finn for health/API checks (SDD §3.2)
+resource "aws_security_group_rule" "dixie_to_finn" {
+  type                     = "egress"
+  from_port                = 3000
+  to_port                  = 3000
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.dixie.id
+  source_security_group_id = aws_security_group.finn.id
+  description              = "loa-dixie egress to loa-finn for health and API"
+}
+
+# Allow loa-finn to accept inbound from dixie
+resource "aws_security_group_rule" "finn_from_dixie" {
+  type                     = "ingress"
+  from_port                = 3000
+  to_port                  = 3000
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.finn.id
+  source_security_group_id = aws_security_group.dixie.id
+  description              = "loa-finn ingress from loa-dixie"
+}
+
 # Allow PgBouncer to accept inbound from dixie
 resource "aws_security_group_rule" "pgbouncer_from_dixie" {
   type                     = "ingress"
