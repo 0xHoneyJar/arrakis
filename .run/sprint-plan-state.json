@@ -1,45 +1,52 @@
 {
-  "plan_id": "plan-20260228-bridge2",
-  "branch": "feature/cycle-046-armitage-platform",
-  "state": "JACKED_OUT",
+  "plan_id": "plan-20260302-cycle047-autopoietic",
+  "branch": "feature/sprint-6-hounfour-upgrade",
+  "state": "RUNNING",
   "timestamps": {
-    "started": "2026-02-28T03:48:00Z",
-    "last_activity": "2026-02-28T04:25:00Z"
+    "started": "2026-03-02T02:40:00Z",
+    "last_activity": "2026-03-02T15:45:00Z"
   },
   "sprints": {
-    "total": 3,
-    "completed": 3,
-    "current": null,
+    "total": 5,
+    "completed": 4,
+    "current": "sprint-5",
     "list": [
       {
-        "id": "sprint-6",
+        "id": "sprint-1",
         "status": "completed",
-        "cycles": 1,
-        "files_changed": 8
+        "cycles": 1
       },
       {
-        "id": "sprint-7",
+        "id": "sprint-2",
         "status": "completed",
-        "cycles": 1,
-        "files_changed": 2
+        "cycles": 1
       },
       {
-        "id": "sprint-8",
+        "id": "sprint-3",
         "status": "completed",
-        "cycles": 1,
-        "files_changed": 3
+        "cycles": 1
+      },
+      {
+        "id": "sprint-4",
+        "status": "completed",
+        "cycles": 1
+      },
+      {
+        "id": "sprint-5",
+        "status": "in_progress",
+        "cycles": 0
       }
     ]
   },
   "options": {
-    "from": 6,
-    "to": 8,
+    "from": 1,
+    "to": 5,
     "max_cycles": 20,
     "timeout_hours": 8
   },
   "metrics": {
-    "total_cycles": 3,
-    "total_files_changed": 13,
-    "total_findings_fixed": 4
+    "total_cycles": 4,
+    "total_files_changed": 22,
+    "total_findings_fixed": 0
   }
 }

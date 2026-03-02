@@ -1,0 +1,35 @@
+{
+  "bridge_id": "bridge-test-economic",
+  "state": "ITERATING",
+  "current_iteration": 3,
+  "metrics": {
+    "cost_estimates": [
+      {
+        "iteration": 1,
+        "cost_micro": 50000,
+        "findings_count": 10,
+        "findings_addressed": 8
+      },
+      {
+        "iteration": 2,
+        "cost_micro": 55000,
+        "findings_count": 5,
+        "findings_addressed": 3
+      },
+      {
+        "iteration": 3,
+        "cost_micro": 60000,
+        "findings_count": 2,
+        "findings_addressed": 1
+      }
+    ],
+    "total_sprints": 9,
+    "total_files_changed": 45,
+    "total_findings_addressed": 12
+  },
+  "iterations": [
+    {"iteration": 1, "status": "completed"},
+    {"iteration": 2, "status": "completed"},
+    {"iteration": 3, "status": "completed"}
+  ]
+}

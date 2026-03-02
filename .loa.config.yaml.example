@@ -1610,6 +1610,20 @@ run_bridge:
     # FR-3: Activate relevant visions during bridge cycles (scan for tag overlap)
     activation_enabled: false
 
+  # Economic Feedback Signal (cycle-047, Sprint 389)
+  # Computes marginal value of bridge iterations. When cost per iteration
+  # exceeds value per iteration, emits DIMINISHING_RETURNS signal.
+  # FAANG Parallel: AWS Cost Anomaly Detection marginal spend analysis.
+  economic_feedback:
+    # Master toggle — must be true to activate economic signals
+    enabled: false
+    # Marginal value ratio below which to emit DIMINISHING_RETURNS
+    # Lower = more tolerant of diminishing returns before signaling
+    value_threshold: 0.2
+    # Minimum iterations before economic signal can fire
+    # Prevents premature termination during ramp-up
+    min_iterations: 2
+
   # RTFM documentation gate (runs after loop termination)
   rtfm:
     enabled: true

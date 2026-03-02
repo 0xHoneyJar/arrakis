@@ -588,6 +588,31 @@ bridge_main() {
       fi
     fi
 
+    # 2i-pre: Economic Feedback Signal (cycle-047, Sprint 389)
+    # Config-gated: run_bridge.economic_feedback.enabled (default: false)
+    local economic_enabled
+    economic_enabled=$(yq '.run_bridge.economic_feedback.enabled // false' "$CONFIG_FILE" 2>/dev/null || echo "false")
+    if [[ "$economic_enabled" == "true" ]]; then
+      if [[ -f "$SCRIPT_DIR/lib/economic-lib.sh" ]]; then
+        source "$SCRIPT_DIR/lib/economic-lib.sh"
+        local econ_result
+        econ_result=$(compute_marginal_value "$BRIDGE_STATE_FILE" 2>/dev/null || echo '{"signal":"NO_DATA"}')
+        local econ_signal
+        econ_signal=$(echo "$econ_result" | jq -r '.signal' 2>/dev/null)
+
+        # Log to bridge state
+        jq --argjson econ "$econ_result" --arg iter "$iteration" \
+          '.iterations = [(.iterations // [])[] | if .iteration == ($iter | tonumber) then . + {economic_feedback: $econ} else . end]' \
+          "$BRIDGE_STATE_FILE" > "$BRIDGE_STATE_FILE.tmp" 2>/dev/null && \
+          mv "$BRIDGE_STATE_FILE.tmp" "$BRIDGE_STATE_FILE"
+
+        if [[ "$econ_signal" == "DIMINISHING_RETURNS" ]]; then
+          echo "[ECONOMIC] DIMINISHING_RETURNS signal detected"
+          echo "SIGNAL:DIMINISHING_RETURNS:$iteration"
+        fi
+      fi
+    fi
+
     # 2i: Flatline Detection
     echo "[FLATLINE] Checking flatline condition..."
     echo "SIGNAL:FLATLINE_CHECK:$iteration"
