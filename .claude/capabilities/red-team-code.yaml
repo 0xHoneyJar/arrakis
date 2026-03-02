@@ -1,0 +1,46 @@
+# Red Team Code-vs-Design capability manifest
+# Compliance check: does the code match the SDD?
+# Source: cycle-047 bridge gate, formalized in Sprint 388
+
+capability:
+  id: red-team-code
+  type: review
+  version: 1
+  description: >-
+    Post-implementation compliance check comparing code changes against SDD
+    sections. Identifies architectural drift where implementation diverges
+    from design. Runs before Bridgebuilder so compliance findings are fixed
+    before the Bridgebuilder sees the code.
+
+  trigger:
+    files:
+      - ".claude/scripts/**"
+      - "packages/**"
+      - "themes/**"
+      - "infrastructure/**"
+    tags:
+      - security
+      - compliance
+      - design-drift
+
+  input:
+    requires:
+      - sdd
+      - diff
+    optional:
+      - prior_findings
+
+  output:
+    format: findings-json
+    severity_range: [0, 1000]
+
+  budget:
+    min_tokens: 4000
+    optimal_tokens: 20000
+    max_tokens: 80000
+
+  dependencies:
+    before:
+      - bridgebuilder-review
+    after:
+      - pipeline-self-review
