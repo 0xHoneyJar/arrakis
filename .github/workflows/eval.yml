@@ -102,7 +102,7 @@ jobs:
 
       # 4. Install dependencies
       - name: Install yq
-        uses: mikefarah/yq@v4.40.5
+        uses: mikefarah/yq@v4.52.4
 
       - name: Verify tools
         run: |
