@@ -126,7 +126,7 @@ jobs:
 
       - name: Run Hadolint
         if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: apps/worker/Dockerfile
           failure-threshold: warning
