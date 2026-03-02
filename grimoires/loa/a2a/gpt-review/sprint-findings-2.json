@@ -1,36 +1,16 @@
 {
   "verdict": "APPROVED",
-  "summary": "All previously-blocking gaps (schema validation, bridge-state contract, health-check sources, vision integration scope, toolchain/runner assumptions, and merge gate realism) were addressed with concrete, testable tasks and config-gated integration points, with no new truly blocking issues introduced.",
+  "summary": "The two previously-blocking gaps (brace handling mismatch in glob_to_regex and underspecified remainder distribution) are now addressed cleanly, and no new truly blocking issues were introduced.",
   "previous_issues_status": [
     {
-      "original_issue": "Sprint 3 capability manifest “schema validation” had no real validator (yq parseability ≠ validation)",
+      "original_issue": "Task 1.1 required brace expansion per AC but plan didn’t define it and conversion order would prevent adding it later",
       "status": "fixed",
-      "notes": "Task 3.3 now explicitly implements `validate_capability_manifest()` with concrete required-key/type/range rules using `yq` assertions, plus pass/fail semantics and field-level error messages. Task 3.2/3.4 ACs now have a deterministic validation mechanism."
+      "notes": "Brace expansion is now explicitly declared out of scope and justified as not used in current manifests, removing the AC/implementation mismatch. The conversion steps no longer need to preserve braces for later processing, so the earlier ordering concern is moot."
     },
     {
-      "original_issue": "Sprint 4 economic feedback assumed `bridge-state.json:metrics.cost_estimates[]` exists without contract check/fallback",
+      "original_issue": "Task 1.4 remainder distribution underspecified; could violate max_tokens or fail to allocate full budget when remainder > 1 or first capability is at max",
       "status": "fixed",
-      "notes": "Task 4.1 adds an explicit contract definition, defensive parsing behavior (NO_DATA), and a pinned fixture file for tests. ACs cover missing/empty/malformed behavior and ensure no crash/false signal."
-    },
-    {
-      "original_issue": "Sprint 5 autopoietic health check referenced underspecified artifacts/paths (constraints.json, Flatline config, stakes files)",
-      "status": "fixed",
-      "notes": "Task 5.2 now names exact authoritative paths and parsing rules for each condition, plus a universal fallback rule (absent source → score=0 with remediation) and jq-parseable JSON output ACs."
-    },
-    {
-      "original_issue": "Sprint 4 ↔ Sprint 5 vision exploration integration point was unclear (standalone vs orchestrator wiring)",
-      "status": "fixed",
-      "notes": "Task 4.4 explicitly scopes vision explorer to standalone CLI only and defers orchestrator wiring, removing the earlier implied dependency/circularity. This resolves the integration ambiguity without creating a new requirement."
-    },
-    {
-      "original_issue": "Test harness/toolchain assumptions (jq availability, runner existence/CI execution) were not guaranteed",
-      "status": "fixed",
-      "notes": "Header now declares baseline `jq 1.6+` and states it is present in CI; tasks 3.4 and 5.3 specify registration in `.claude/evals/run-all.sh` (and creation if missing). This makes the eval execution path explicit and deterministic."
-    },
-    {
-      "original_issue": "Sprint 1 merge gate depended on external approvals/permissions not accounted for",
-      "status": "fixed",
-      "notes": "Header now states PR #115 requires 1 approval + CI green and adds a contingency: Sprint 1 deliverable becomes “ready-to-merge with approvals requested” if approval is delayed. This removes the ‘done but blocked’ sprint failure mode."
+      "notes": "The plan now specifies a deterministic multi-pass loop that only increments capabilities with remaining headroom, handles remainder > 1, correctly skips maxed capabilities, and explicitly documents the all-at-max case where remainder is dropped."
     }
   ],
   "new_blocking_concerns": [],

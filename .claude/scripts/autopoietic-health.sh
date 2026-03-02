@@ -269,15 +269,15 @@ check_surprise() {
   local count=0
 
   if [[ ! -d "$cap_dir" ]]; then
-    remediation="no capability manifests — run Sprint 3"
+    remediation="no capability manifests directory — run Sprint 3"
   else
     count=$(find "$cap_dir" -name "*.yaml" -type f 2>/dev/null | wc -l) || count=0
 
-    if [[ "$count" -ge 3 ]]; then
+    # Binary scoring: a non-empty capability registry demonstrates surprise capacity.
+    # Count is reported as metadata for observability, not used as a threshold.
+    # This avoids Goodhart's Law — rewarding count incentivizes trivial manifests.
+    if [[ "$count" -gt 0 ]]; then
       score=1
-    elif [[ "$count" -gt 0 ]]; then
-      score=$(echo "$count" | awk '{v=$1/3; if(v>1) v=1; printf "%.2f", v}')
-      remediation="Only $count capability manifests — need ≥3"
     else
       remediation="no capability manifests found in .claude/capabilities/"
     fi
@@ -288,7 +288,7 @@ check_surprise() {
     --argjson score "$score" \
     --argjson count "$count" \
     --arg remediation "$remediation" \
-    '{name: $name, score: $score, detail: {manifest_count: $count, threshold: 3}, remediation: $remediation}'
+    '{name: $name, score: $score, detail: {manifest_count: $count, scoring: "binary_non_empty"}, remediation: $remediation}'
 }
 
 # =============================================================================

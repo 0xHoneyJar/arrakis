@@ -1,42 +1,18 @@
 {
   "verdict": "CHANGES_REQUIRED",
-  "summary": "The plan is close, but several tasks have implicit dependencies and missing validation work that will likely break implementation (especially schema validation, config gating, and test harness assumptions).",
+  "summary": "This sprint plan targets the right 5 findings, but two tasks have acceptance criteria/implementation gaps that will likely cause the work to stall or ship incorrect behavior.",
   "blocking_issues": [
     {
-      "location": "Sprint 3 (Tasks 3.1–3.4) — Capability manifest schema + validation",
-      "issue": "“Validate against schema” is specified, but no actual validator is planned; `capability-schema.yaml` is described as a schema yet only required to be parseable by `yq`, which does not validate YAML against a schema.",
-      "why_blocking": "Tasks 3.2 and 3.4 depend on “manifests validate against schema” and will be impossible to complete deterministically without implementing a validation mechanism (or redefining what validation means). This will stall Sprint 3 and cascade into Sprint 5 integration tests.",
-      "fix": "Add an explicit task (or extend Task 3.3) to implement `validate_capability_manifest()` with concrete rules (required keys/types/ranges) using `yq` assertions, and define pass/fail semantics. Alternatively, switch to JSON Schema + a validator tool and include it as a pinned dependency, but then update the “no jq dependency for YAML” constraint accordingly."
+      "location": "Task 1.1: Fix glob-to-regex conversion in capability matching",
+      "issue": "Brace expansion support is required by acceptance criteria but the implementation plan does not define how to implement it, and the proposed conversion order will break some patterns.",
+      "why_blocking": "The AC explicitly requires `glob_to_regex \"src/lib.{ts,js}\" handles braces`, but the implementation only mentions escaping metacharacters + `**/*/?` conversions. Also, escaping `{` and `}` before converting braces makes it impossible to implement brace alternation later; if you don’t implement braces, the task can’t be marked done per AC.",
+      "fix": "Either (a) remove brace handling from AC (if out of scope for the finding) or (b) specify and implement brace conversion: convert `{a,b}` -> `(a|b)` (including escaping inner tokens appropriately), and adjust conversion order (handle brace groups before escaping `{}` or exclude `{}` from the initial escape set and escape them after brace processing). Add at least one concrete test case for nested/edge braces or explicitly state limitations (e.g., no nesting)."
     },
     {
-      "location": "Sprint 4 (Tasks 4.1–4.3) — Economic feedback data contract",
-      "issue": "Economic feedback assumes `bridge-state.json:metrics.cost_estimates[]` exists and is “already populated,” but there’s no task to confirm the current bridge-state schema, add missing fields, or provide a fallback when absent.",
-      "why_blocking": "If `cost_estimates` is missing/renamed/structured differently (common in evolving orchestrators), `compute_marginal_value()` and orchestrator integration will fail at runtime or silently emit wrong signals. This also breaks Sprint 5 E2E tests that rely on synthetic data + real parsing paths.",
-      "fix": "Add a preflight contract check task: document the exact expected `bridge-state.json` shape (example JSON), implement defensive parsing (empty/missing arrays → no signal), and add a small fixture file used by tests. Update ACs to include behavior when cost data is missing."
-    },
-    {
-      "location": "Sprint 5 (Task 5.2) — Autopoietic health check metrics are underspecified / may not be testable",
-      "issue": "Several checks reference artifacts that may not exist in-repo or have unclear locations/formats: `constraints.json` (Permission), “Flatline config” location/format (Diversity), and “production deployment artifacts” (Stakes) without specifying exact paths to check.",
-      "why_blocking": "Task 5.2 AC requires the score to reflect actual state and not be hardcoded; without precise file paths and parsing rules, implementation will either be brittle (false negatives) or impossible to complete within the sprint because the engineer must first discover/standardize these sources.",
-      "fix": "Amend Task 5.2 to specify exact authoritative sources and acceptance thresholds, e.g. `grimoires/loa/constraints.json` (or whatever the real path is), `.claude/config/flatline.yaml` (or equivalent), and a concrete list of “stakes” files (e.g., `infrastructure/terraform/**`, `ecs-task-definitions/**`). Add a fallback rule: if a source file is absent, score=0 with a specific remediation message."
-    },
-    {
-      "location": "Sprint 4 ↔ Sprint 5 dependency — Vision exploration integration point",
-      "issue": "Task 4.4 says vision explorer is callable from bridge orchestrator after FLATLINE is reached, but Sprint 4 does not include the orchestrator wiring; Sprint 5 also does not include wiring for vision explorer (only capability discovery wiring).",
-      "why_blocking": "G-5 requires “Exploration budget activates one Vision Registry entry” and Sprint 4 ACs imply the mechanism is integrated with the orchestrator. As written, you can finish 4.4/4.5 as standalone scripts, but you may fail the intended “activation” behavior because no sprint actually connects it to the bridge flow.",
-      "fix": "Either (A) explicitly scope Sprint 4 to standalone CLI-only (remove orchestrator integration language from 4.4 AC), or (B) add a small orchestrator hook task (config-gated, default off) to call `vision-explorer.sh` when FLATLINE is reached. Ensure Sprint 5 E2E test covers the chosen behavior."
-    },
-    {
-      "location": "Sprint 3 (Task 3.4) and Sprint 5 (Task 5.3) — Test harness toolchain assumptions",
-      "issue": "Tests require JSON output parseable by `jq`, but Sprint 3 explicitly tries to avoid jq for YAML; repo/tooling may not guarantee `jq` availability in CI/local. Also no task ensures these eval scripts are executed by CI or a standard runner.",
-      "why_blocking": "If `jq` isn’t present, the new eval scripts will fail immediately, blocking “exits 0” acceptance criteria. If there’s no agreed runner, “E2E integration test” may exist but never run, causing late discovery of breakage.",
-      "fix": "Confirm toolchain baseline: add a task or explicit note that `jq` is required (and ensure CI installs it), or rewrite JSON validation to use `node -e`/python (whichever is guaranteed). Also specify how eval scripts are run (e.g., `make evals` / `./.claude/evals/run-all.sh`) and add/update that runner if missing."
-    },
-    {
-      "location": "Sprint 1 (Task 1.5) — Merge gate depends on external review/permissions not accounted for",
-      "issue": "Task 1.5 assumes the solo engineer can merge PR #115 after fixes; if branch protection requires approvals or CI contexts not under the engineer’s control, the sprint can fail even if all work is done.",
-      "why_blocking": "This is a classic “done but not merged” failure mode for 0.5-day merge sprints; it blocks the stated critical path (Sprint 1 → Sprint 2…).",
-      "fix": "Add an explicit prerequisite/step: verify merge requirements (required reviewers, required checks) and schedule/obtain approval. Or adjust Sprint 1 deliverable to “PR #115 ready-to-merge with approvals requested” if approvals are not guaranteed."
+      "location": "Task 1.4: Remainder distribution in budget allocator",
+      "issue": "Remainder distribution algorithm is underspecified and can fail acceptance criteria when the first capability is at max or when remainder > 1.",
+      "why_blocking": "AC requires sum(allocations) == total and no capability exceeds max_tokens. The plan says “Distribute remainder to the first capability … that hasn't hit its max,” but doesn’t define what happens if that capability is already at max, or if remainder is larger than remaining headroom. In those cases, the implementation could either violate max_tokens or leave tokens undistributed, failing AC.",
+      "fix": "Define a deterministic loop: while remainder > 0, iterate capabilities in priority order and increment any capability with remaining headroom by 1 until remainder is 0; if no headroom exists anywhere, document that remainder is intentionally dropped (or adjust earlier proportional step to respect global headroom). Add a test/AC example covering: (1) top capability at max, (2) remainder > 1, (3) all at max."
     }
   ],
   "question": "",

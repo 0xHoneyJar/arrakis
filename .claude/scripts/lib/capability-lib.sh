@@ -29,6 +29,51 @@
 CAPABILITY_DIR="${CAPABILITY_DIR:-.claude/capabilities}"
 
 # -----------------------------------------------------------------------------
+# glob_to_regex(pattern)
+# Converts a glob pattern to a POSIX extended regex pattern.
+# Handles: ** (recursive), * (single-segment), ? (single char), dot escaping.
+# Brace expansion ({a,b}) is NOT supported — not used in current manifests.
+# Order of operations:
+#   1. Escape regex metacharacters (. + ^ $ | ( ) [ ] { })
+#   2. Convert ** → .* (must happen before * conversion)
+#   3. Convert * → [^/]* (single path segment)
+#   4. Convert ? → [^/] (single character)
+# -----------------------------------------------------------------------------
+glob_to_regex() {
+  local pattern="$1"
+  local result=""
+
+  # Step 1: Escape regex metacharacters (preserve * and ? for glob conversion)
+  result=$(printf '%s' "$pattern" | sed \
+    -e 's/\./\\./g' \
+    -e 's/+/\\+/g' \
+    -e 's/\^/\\^/g' \
+    -e 's/\$/\\$/g' \
+    -e 's/|/\\|/g' \
+    -e 's/(/\\(/g' \
+    -e 's/)/\\)/g' \
+    -e 's/\[/\\[/g' \
+    -e 's/\]/\\]/g' \
+    -e 's/{/\\{/g' \
+    -e 's/}/\\}/g')
+
+  # Step 2: Convert ** → .* (recursive glob — must happen before single *)
+  # Use a sentinel to avoid double-conversion
+  result=$(printf '%s' "$result" | sed 's/\*\*/.GLOBLOB_DOUBLESTAR/g')
+
+  # Step 3: Convert remaining * → [^/]* (single path segment)
+  result=$(printf '%s' "$result" | sed 's/\*/[^\/]*/g')
+
+  # Step 4: Restore ** sentinel → .*
+  result=$(printf '%s' "$result" | sed 's/\.GLOBLOB_DOUBLESTAR/.*/g')
+
+  # Step 5: Convert ? → [^/] (single character, not path separator)
+  result=$(printf '%s' "$result" | sed 's/?/[^\/]/g')
+
+  printf '%s' "$result"
+}
+
+# -----------------------------------------------------------------------------
 # validate_capability_manifest(file)
 # Validates a manifest against schema rules. Returns exit 0 on pass,
 # exit 1 with specific field-level error messages on fail.
@@ -204,11 +249,10 @@ match_capabilities() {
     local matched=false
     for changed in "${changed_files[@]}"; do
       for pattern in "${patterns[@]}"; do
-        # Convert glob to regex-compatible pattern for matching
-        # Simple glob: * matches anything in a path segment, ** matches across segments
+        # Convert glob to regex using proper glob_to_regex function
         local regex_pattern
-        regex_pattern=$(echo "$pattern" | sed 's/\./\\./g; s/\*\*/DOUBLESTAR/g; s/\*/[^\/]*/g; s/DOUBLESTAR/.*/g')
-        if echo "$changed" | grep -qE "^${regex_pattern}$" 2>/dev/null; then
+        regex_pattern=$(glob_to_regex "$pattern")
+        if printf '%s' "$changed" | grep -qE "^${regex_pattern}$" 2>/dev/null; then
           matched=true
           break 2
         fi
@@ -268,7 +312,7 @@ resolve_ordering() {
   # Build edges from manifest declarations
   for id in "${input_ids[@]}"; do
     local cap_file
-    cap_file=$(find "$dir" -maxdepth 1 -name '*.yaml' -print0 2>/dev/null | xargs -0 grep -l "id: ${id}" 2>/dev/null | head -1)
+    cap_file=$(find "$dir" -maxdepth 1 -name '*.yaml' -print0 2>/dev/null | xargs -0 grep -Fl "id: ${id}" 2>/dev/null | head -1)
     [[ -z "$cap_file" ]] && continue
 
     # "before" means this capability runs before the listed ones
@@ -374,7 +418,7 @@ allocate_budgets() {
 
   for id in "${ids[@]}"; do
     local cap_file
-    cap_file=$(find "$dir" -maxdepth 1 -name '*.yaml' -print0 2>/dev/null | xargs -0 grep -l "id: ${id}" 2>/dev/null | head -1)
+    cap_file=$(find "$dir" -maxdepth 1 -name '*.yaml' -print0 2>/dev/null | xargs -0 grep -Fl "id: ${id}" 2>/dev/null | head -1)
     if [[ -z "$cap_file" ]]; then
       echo "ERROR: Manifest not found for capability: $id" >&2
       return 1
@@ -431,6 +475,31 @@ allocate_budgets() {
   for id in "${ids[@]}"; do
     if [[ "${allocated[$id]}" -gt "${max_t[$id]}" ]]; then
       allocated["$id"]=${max_t[$id]}
+    fi
+  done
+
+  # Step 4: Distribute integer division remainder
+  # Integer division truncates, so sum(allocations) may be < total.
+  # Distribute leftover tokens one-at-a-time to capabilities with headroom,
+  # iterating in priority order (ids array order from topological sort).
+  # If all capabilities are at max, remaining tokens are intentionally dropped.
+  local alloc_sum=0
+  for id in "${ids[@]}"; do
+    alloc_sum=$(( alloc_sum + ${allocated[$id]} ))
+  done
+  local remainder=$(( total - alloc_sum ))
+
+  while [[ "$remainder" -gt 0 ]]; do
+    local distributed_this_pass=false
+    for id in "${ids[@]}"; do
+      if [[ "${allocated[$id]}" -lt "${max_t[$id]}" && "$remainder" -gt 0 ]]; then
+        allocated["$id"]=$(( ${allocated[$id]} + 1 ))
+        remainder=$(( remainder - 1 ))
+        distributed_this_pass=true
+      fi
+    done
+    if [[ "$distributed_this_pass" == "false" ]]; then
+      break  # All capabilities at max — drop remaining tokens
     fi
   done
 

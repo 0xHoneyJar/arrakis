@@ -347,6 +347,10 @@ bridge_main() {
       if [[ -f "$SCRIPT_DIR/lib/capability-lib.sh" ]]; then
         source "$SCRIPT_DIR/lib/capability-lib.sh"
 
+        # Resolve base branch from config (default: "main")
+        local cap_base_branch
+        cap_base_branch=$(yq '.run_bridge.base_branch // "main"' "$CONFIG_FILE" 2>/dev/null || echo "main")
+
         # Discover all registered capabilities
         local all_caps
         all_caps=$(discover_capabilities 2>/dev/null) || all_caps="[]"
@@ -356,7 +360,7 @@ bridge_main() {
         if [[ "$cap_count" -gt 0 ]]; then
           # Match capabilities against changed files
           local changed_files
-          changed_files=$(git diff --name-only "main...HEAD" 2>/dev/null || echo "")
+          changed_files=$(git diff --name-only "${cap_base_branch}...HEAD" 2>/dev/null || echo "")
 
           if [[ -n "$changed_files" ]]; then
             local matched_caps
