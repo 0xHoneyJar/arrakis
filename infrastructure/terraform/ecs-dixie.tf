@@ -417,7 +417,7 @@ resource "aws_ecs_task_definition" "dixie" {
       }
 
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:3001/api/health || exit 1"]
+        command     = ["CMD-SHELL", "node -e \"const http = require('http'); const r = http.get('http://localhost:3001/api/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); r.on('error', () => process.exit(1)); r.setTimeout(5000, () => { r.destroy(); process.exit(1); });\""]
         interval    = 30
         timeout     = 10
         retries     = 3
