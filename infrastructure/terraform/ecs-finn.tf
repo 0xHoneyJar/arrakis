@@ -125,7 +125,8 @@ resource "aws_iam_role_policy" "ecs_execution_finn_secrets" {
           aws_secretsmanager_secret.redis_credentials.arn,
           aws_secretsmanager_secret.finn_s2s_es256_private_key.arn,
           aws_secretsmanager_secret.finn_nowpayments_api_key.arn,
-          aws_secretsmanager_secret.finn_nowpayments_ipn_secret.arn
+          aws_secretsmanager_secret.finn_nowpayments_ipn_secret.arn,
+          aws_secretsmanager_secret.nats_tls_ca.arn
         ]
       },
       {
@@ -392,7 +393,7 @@ resource "aws_ecs_task_definition" "finn" {
         { name = "FREESIDE_BASE_URL", value = "http://freeside.${local.name_prefix}.local:3000" },
         { name = "ARRAKIS_JWKS_URL", value = "http://freeside.${local.name_prefix}.local:3000/.well-known/jwks.json" },
         { name = "DIXIE_REPUTATION_URL", value = "http://dixie.${local.name_prefix}.local:3001/api/reputation/query" },
-        { name = "NATS_URL", value = "nats://nats.${local.name_prefix}.local:4222" },
+        { name = "NATS_URL", value = "tls://nats.${local.name_prefix}.local:4222" },
         # Feature flags
         { name = "FEATURE_PAYMENTS_ENABLED", value = "false" },
         { name = "FEATURE_INFERENCE_ENABLED", value = "true" }
@@ -414,7 +415,9 @@ resource "aws_ecs_task_definition" "finn" {
         { name = "CHEVAL_HMAC_SECRET", valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/loa-finn/armitage/CHEVAL_HMAC_SECRET" },
         { name = "FINN_CALIBRATION_BUCKET_NAME", valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/loa-finn/armitage/FINN_CALIBRATION_BUCKET_NAME" },
         { name = "FINN_CALIBRATION_HMAC_KEY", valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/loa-finn/armitage/FINN_CALIBRATION_HMAC_KEY" },
-        { name = "FINN_METRICS_BEARER_TOKEN", valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/loa-finn/armitage/FINN_METRICS_BEARER_TOKEN" }
+        { name = "FINN_METRICS_BEARER_TOKEN", valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/loa-finn/armitage/FINN_METRICS_BEARER_TOKEN" },
+        # SEC-4.4: NATS TLS CA certificate for client verification
+        { name = "NATS_TLS_CA", valueFrom = aws_secretsmanager_secret.nats_tls_ca.arn }
       ]
 
       logConfiguration = {
@@ -427,11 +430,11 @@ resource "aws_ecs_task_definition" "finn" {
       }
 
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+        command     = ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\""]
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 60
+        startPeriod = 90
       }
 
       # Allow graceful shutdown for in-flight inference requests

@@ -289,7 +289,8 @@ resource "aws_iam_role_policy" "ecs_execution_gateway_secrets" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = [
-          data.aws_secretsmanager_secret.app_config.arn
+          data.aws_secretsmanager_secret.app_config.arn,
+          aws_secretsmanager_secret.nats_tls_ca.arn
         ]
       }
     ]
@@ -342,7 +343,8 @@ resource "aws_iam_role_policy" "ecs_execution_gp_worker_secrets" {
           data.aws_secretsmanager_secret.app_config.arn,
           aws_secretsmanager_secret.db_credentials.arn,
           aws_secretsmanager_secret.redis_credentials.arn,
-          aws_secretsmanager_secret.rabbitmq_credentials.arn
+          aws_secretsmanager_secret.rabbitmq_credentials.arn,
+          aws_secretsmanager_secret.nats_tls_ca.arn
         ]
       }
     ]
@@ -1268,10 +1270,10 @@ resource "aws_ecs_task_definition" "gp_worker" {
           name  = "EVENT_PREFETCH"
           value = "10"
         },
-        # NATS connection via DNS-based service discovery
+        # NATS connection via DNS-based service discovery (SEC-4.4: TLS)
         {
           name  = "NATS_URL"
-          value = "nats://nats.${local.name_prefix}.local:4222"
+          value = "tls://nats.${local.name_prefix}.local:4222"
         }
       ]
 
@@ -1295,6 +1297,10 @@ resource "aws_ecs_task_definition" "gp_worker" {
         {
           name      = "DISCORD_BOT_TOKEN"
           valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:DISCORD_BOT_TOKEN::"
+        },
+        {
+          name      = "NATS_TLS_CA"
+          valueFrom = aws_secretsmanager_secret.nats_tls_ca.arn
         }
       ]
 
@@ -1307,7 +1313,7 @@ resource "aws_ecs_task_definition" "gp_worker" {
       ]
 
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+        command     = ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3

@@ -3,6 +3,114 @@
 # Replaces RabbitMQ for low-latency message routing per SDD §7.1
 
 # --------------------------------------------------------------------------
+# TLS Certificate Infrastructure (SEC-4.4)
+# Self-signed CA via Terraform tls provider (zero-cost alternative to ACM PCA)
+# --------------------------------------------------------------------------
+
+# CA private key
+resource "tls_private_key" "nats_ca" {
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
+}
+
+# Self-signed CA cert (10yr validity)
+resource "tls_self_signed_cert" "nats_ca" {
+  private_key_pem = tls_private_key.nats_ca.private_key_pem
+
+  subject {
+    common_name  = "Arrakis NATS CA"
+    organization = "0xHoneyJar"
+  }
+
+  validity_period_hours = 87600 # 10 years
+  is_ca_certificate     = true
+  allowed_uses          = ["cert_signing", "crl_signing"]
+}
+
+# Server private key
+resource "tls_private_key" "nats_server" {
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
+}
+
+# CSR for server cert
+resource "tls_cert_request" "nats_server" {
+  private_key_pem = tls_private_key.nats_server.private_key_pem
+
+  subject {
+    common_name = "nats.${local.name_prefix}.local"
+  }
+
+  dns_names    = ["nats.${local.name_prefix}.local", "*.nats.${local.name_prefix}.local", "localhost"]
+  ip_addresses = ["127.0.0.1"]
+}
+
+# CA-signed server cert (1yr validity)
+resource "tls_locally_signed_cert" "nats_server" {
+  cert_request_pem   = tls_cert_request.nats_server.cert_request_pem
+  ca_private_key_pem = tls_private_key.nats_ca.private_key_pem
+  ca_cert_pem        = tls_self_signed_cert.nats_ca.cert_pem
+
+  validity_period_hours = 8760 # 1 year
+  allowed_uses          = ["digital_signature", "key_encipherment", "server_auth"]
+}
+
+# --------------------------------------------------------------------------
+# Secrets Manager for NATS TLS Certificates
+# --------------------------------------------------------------------------
+
+resource "aws_secretsmanager_secret" "nats_tls_ca" {
+  name                    = "${local.name_prefix}/nats-tls-ca"
+  description             = "NATS TLS CA certificate (shared with all clients)"
+  recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.secrets.id
+
+  tags = merge(local.common_tags, {
+    Service = "NATS"
+    Sprint  = "SEC-4.4"
+  })
+}
+
+resource "aws_secretsmanager_secret_version" "nats_tls_ca" {
+  secret_id     = aws_secretsmanager_secret.nats_tls_ca.id
+  secret_string = tls_self_signed_cert.nats_ca.cert_pem
+}
+
+resource "aws_secretsmanager_secret" "nats_tls_cert" {
+  name                    = "${local.name_prefix}/nats-tls-cert"
+  description             = "NATS TLS server certificate"
+  recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.secrets.id
+
+  tags = merge(local.common_tags, {
+    Service = "NATS"
+    Sprint  = "SEC-4.4"
+  })
+}
+
+resource "aws_secretsmanager_secret_version" "nats_tls_cert" {
+  secret_id     = aws_secretsmanager_secret.nats_tls_cert.id
+  secret_string = tls_locally_signed_cert.nats_server.cert_pem
+}
+
+resource "aws_secretsmanager_secret" "nats_tls_key" {
+  name                    = "${local.name_prefix}/nats-tls-key"
+  description             = "NATS TLS server private key"
+  recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.secrets.id
+
+  tags = merge(local.common_tags, {
+    Service = "NATS"
+    Sprint  = "SEC-4.4"
+  })
+}
+
+resource "aws_secretsmanager_secret_version" "nats_tls_key" {
+  secret_id     = aws_secretsmanager_secret.nats_tls_key.id
+  secret_string = tls_private_key.nats_server.private_key_pem
+}
+
+# --------------------------------------------------------------------------
 # ECS Task Definition for NATS
 # --------------------------------------------------------------------------
 
@@ -21,9 +129,27 @@ resource "aws_ecs_task_definition" "nats" {
       image     = "nats:2.10-alpine"
       essential = true
 
-      command = [
-        "-js",       # Enable JetStream
-        "-m", "8222" # HTTP monitoring port
+      # SEC-4.4: TLS entrypoint — writes certs from env vars to disk, then starts NATS
+      entryPoint = ["sh", "-c"]
+      command = [join("", [
+        "mkdir -p /etc/nats/certs && ",
+        "printf '%s' \"$NATS_TLS_CERT\" > /etc/nats/certs/server.crt && ",
+        "printf '%s' \"$NATS_TLS_KEY\" > /etc/nats/certs/server.key && ",
+        "printf '%s' \"$NATS_TLS_CA\" > /etc/nats/certs/ca.crt && ",
+        "chmod 600 /etc/nats/certs/server.key && ",
+        "exec nats-server ",
+        "-js ",
+        "-m 8222 ",
+        "--tls ",
+        "--tlscert=/etc/nats/certs/server.crt ",
+        "--tlskey=/etc/nats/certs/server.key ",
+        "--tlscacert=/etc/nats/certs/ca.crt"
+      ])]
+
+      secrets = [
+        { name = "NATS_TLS_CERT", valueFrom = aws_secretsmanager_secret.nats_tls_cert.arn },
+        { name = "NATS_TLS_KEY", valueFrom = aws_secretsmanager_secret.nats_tls_key.arn },
+        { name = "NATS_TLS_CA", valueFrom = aws_secretsmanager_secret.nats_tls_ca.arn }
       ]
 
       portMappings = [
@@ -441,7 +567,7 @@ resource "aws_secretsmanager_secret" "nats" {
 resource "aws_secretsmanager_secret_version" "nats" {
   secret_id = aws_secretsmanager_secret.nats.id
   secret_string = jsonencode({
-    url          = "nats://nats.${local.name_prefix}.local:4222"
+    url          = "tls://nats.${local.name_prefix}.local:4222"
     cluster_name = "arrakis-nats"
     monitor_url  = "http://nats.${local.name_prefix}.local:8222"
   })
@@ -461,7 +587,10 @@ resource "aws_iam_role_policy" "ecs_execution_nats_secrets" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = [
-          aws_secretsmanager_secret.nats.arn
+          aws_secretsmanager_secret.nats.arn,
+          aws_secretsmanager_secret.nats_tls_ca.arn,
+          aws_secretsmanager_secret.nats_tls_cert.arn,
+          aws_secretsmanager_secret.nats_tls_key.arn
         ]
       }
     ]

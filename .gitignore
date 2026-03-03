@@ -322,3 +322,4 @@ sites/web/
 
 # Vercel local state
 **/.vercel/
+.finn-ssm-backup.json
