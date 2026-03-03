@@ -34,6 +34,22 @@ chatPageRouter.get('/:tokenId', (req: Request, res: Response) => {
     return;
   }
 
+  // Override global CSP for this HTML page — the inline <script> needs 'unsafe-inline'
+  // and the WebSocket connection needs same-host wss:/ws: in connect-src.
+  const host = req.get('host');
+  const wsOrigin = host ? `${req.secure ? 'wss' : 'ws'}://${host}` : '';
+  const connectSrc = wsOrigin ? `connect-src 'self' ${wsOrigin}` : "connect-src 'self'";
+
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    connectSrc,
+    "img-src 'self' data:",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+  ].join('; '));
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(getChatPage(tokenId));
 });
