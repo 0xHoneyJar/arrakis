@@ -33,6 +33,7 @@ interface ChatClient {
   lastActivity: number;
   isAlive: boolean;
   tokenId?: string;        // Agent token ID for personality routing
+  finnSessionId?: string;  // Reused finn session for conversation continuity
 }
 
 interface ChatMessage {
@@ -58,6 +59,7 @@ let wss: WebSocketServer | null = null;
 
 const ALLOWED_ORIGINS_DEFAULT = [
   'https://api.arrakis.community',
+  'https://staging.api.arrakis.community',
   'https://arrakis.community',
   'https://freeside.honeyjar.xyz',
 ];
@@ -263,6 +265,16 @@ export function createChatWebSocket(httpServer: HttpServer): WebSocketServer {
     ws.on('close', () => {
       const c = clients.get(ws);
       if (c) {
+        // Best-effort cleanup of finn session to avoid resource leaks
+        const loaFinnUrl = process.env.LOA_FINN_BASE_URL;
+        if (loaFinnUrl && c.finnSessionId) {
+          void fetch(`${loaFinnUrl}/api/sessions/${c.finnSessionId}`, {
+            method: 'DELETE',
+          }).catch((err) => {
+            logger.warn({ err, finnSessionId: c.finnSessionId }, 'Failed to delete finn session on WS close');
+          });
+        }
+
         decrementConnectionCount(ipConnectionCount, c.ip);
         if (c.userId !== 'anon') {
           decrementConnectionCount(userConnectionCount, c.userId);
@@ -361,11 +373,10 @@ async function handleChatMessage(ws: WebSocket, client: ChatClient, message: Cha
   const userMessage = message.payload.message.slice(0, 2000);
   const tokenId = message.payload.tokenId || client.tokenId;
 
-  // Proxy to loa-finn for inference via SSE, streaming tokens back over WS
+  // Proxy to loa-finn for inference via session API, returning response over WS
   const loaFinnUrl = process.env.LOA_FINN_BASE_URL;
-  const s2sSecret = process.env.DEVELOPER_API_S2S_SECRET || process.env.BILLING_INTERNAL_JWT_SECRET;
 
-  if (!loaFinnUrl || !s2sSecret) {
+  if (!loaFinnUrl) {
     ws.send(JSON.stringify({
       type: 'error',
       payload: { message: 'Inference service not configured' },
@@ -376,84 +387,82 @@ async function handleChatMessage(ws: WebSocket, client: ChatClient, message: Cha
   // Signal streaming start
   ws.send(JSON.stringify({ type: 'stream_start', payload: { tokenId } }));
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  const onClose = () => { controller.abort(); };
+  ws.once('close', onClose);
+
+  const sendStreamEnd = () => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'stream_end' }));
+    }
+  };
+
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
+    // Lazily create a finn session per WS client for conversation continuity
+    if (!client.finnSessionId) {
+      const createRes = await fetch(`${loaFinnUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+      });
 
-    // Close listener to abort upstream
-    const onClose = () => { controller.abort(); clearTimeout(timeout); };
-    ws.once('close', onClose);
+      if (!createRes.ok) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            payload: { message: `Failed to create inference session: ${createRes.status}` },
+          }));
+        }
+        sendStreamEnd();
+        return;
+      }
 
-    const response = await fetch(`${loaFinnUrl}/v1/chat/completions`, {
+      const sessionData = await createRes.json() as { sessionId?: string };
+      if (!sessionData.sessionId) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            payload: { message: 'Invalid session response from inference service' },
+          }));
+        }
+        sendStreamEnd();
+        return;
+      }
+      client.finnSessionId = sessionData.sessionId;
+      logger.info({ userId: client.userId, finnSessionId: client.finnSessionId }, 'Created finn session');
+    }
+
+    // Send message via finn session API (non-streaming)
+    const response = await fetch(`${loaFinnUrl}/api/sessions/${client.finnSessionId}/message`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${s2sSecret}`,
-        'X-Developer-Pool': 'cheap',
-        'X-Developer-Access-Level': 'free',
-        'X-Developer-Key-Id': `ws_${client.userId}`,
-      },
-      body: JSON.stringify({
-        messages: [{ role: 'user', content: userMessage }],
-        stream: true,
-        ...(tokenId ? { model: `agent:${tokenId}` } : {}),
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: userMessage }),
       signal: controller.signal,
     });
 
-    clearTimeout(timeout);
-    ws.removeListener('close', onClose);
-
     if (!response.ok) {
-      ws.send(JSON.stringify({
-        type: 'error',
-        payload: { message: `Inference error: ${response.status}` },
-      }));
-      return;
-    }
-
-    if (!response.body) {
-      ws.send(JSON.stringify({ type: 'stream_end' }));
-      return;
-    }
-
-    // Stream SSE tokens as WS messages
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const readLoop = async () => {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              ws.send(JSON.stringify({ type: 'stream_end' }));
-              return;
-            }
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                ws.send(JSON.stringify({ type: 'stream_token', payload: { content } }));
-              }
-            } catch {
-              // Skip malformed SSE data lines
-            }
-          }
-        }
+      // If session expired/not found, clear it so next message creates a new one
+      if (response.status === 404) {
+        client.finnSessionId = undefined;
       }
-      ws.send(JSON.stringify({ type: 'stream_end' }));
-    };
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          payload: { message: `Inference error: ${response.status}` },
+        }));
+      }
+      sendStreamEnd();
+      return;
+    }
 
-    await readLoop();
+    const result = await response.json() as { response?: string; toolCalls?: unknown[] };
+    const content = result.response || '';
+
+    if (content && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'stream_token', payload: { content } }));
+    }
+    sendStreamEnd();
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
       logger.info({ userId: client.userId }, 'WS chat inference aborted (client disconnect or timeout)');
@@ -466,6 +475,10 @@ async function handleChatMessage(ws: WebSocket, client: ChatClient, message: Cha
         }));
       }
     }
+    sendStreamEnd();
+  } finally {
+    clearTimeout(timeout);
+    ws.removeListener('close', onClose);
   }
 }
 
