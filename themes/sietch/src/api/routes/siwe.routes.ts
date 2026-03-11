@@ -320,8 +320,14 @@ siweRouter.post('/verify', async (req: Request, res: Response) => {
       expiresIn: 3600,
     });
   } catch (err) {
-    logger.error({ err }, 'SIWE verify error');
-    res.status(500).json({ error: 'Verification failed' });
+    const errMsg = err instanceof Error ? err.message : 'Unknown error';
+    logger.error({ err, errMsg }, 'SIWE verify error');
+    // Surface error category (not raw message) to aid debugging
+    const detail = errMsg.includes('SIWE_SESSION_SECRET') ? 'session secret not configured'
+      : errMsg.includes('HMAC') || errMsg.includes('crypto') ? 'token signing error'
+      : errMsg.includes('Cannot destructure') ? 'missing request body'
+      : 'internal error';
+    res.status(500).json({ error: `Verification failed: ${detail}` });
   }
 });
 
