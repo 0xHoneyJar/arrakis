@@ -317,6 +317,15 @@ sites/web/
 # =============================================================================
 # BINARY / GENERATED FILES
 # =============================================================================
+# Rust build artifacts
+**/target/
+
+# TypeScript compilation output in source directories
+packages/core/ports/*.js
+packages/core/ports/*.js.map
+packages/core/ports/*.d.ts
+packages/core/ports/*.d.ts.map
+
 # Next.js build output and artifacts (moved repos / stale builds)
 **/.next/
 
