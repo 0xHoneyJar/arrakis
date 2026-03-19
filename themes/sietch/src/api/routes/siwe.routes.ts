@@ -117,6 +117,7 @@ const ALLOWED_CHAIN_IDS = new Set([80084, 80085, 80094, 1, 11155111]);
 
 const ALLOWED_DOMAINS = new Set([
   'api.arrakis.community',
+  'staging.api.arrakis.community',
   'arrakis.community',
   'freeside.honeyjar.xyz',
   ...(process.env.NODE_ENV !== 'production' ? ['localhost'] : []),
@@ -320,8 +321,14 @@ siweRouter.post('/verify', async (req: Request, res: Response) => {
       expiresIn: 3600,
     });
   } catch (err) {
-    logger.error({ err }, 'SIWE verify error');
-    res.status(500).json({ error: 'Verification failed' });
+    const errMsg = err instanceof Error ? err.message : 'Unknown error';
+    logger.error({ err, errMsg }, 'SIWE verify error');
+    // Surface error category (not raw message) to aid debugging
+    const detail = errMsg.includes('SIWE_SESSION_SECRET') ? 'session secret not configured'
+      : errMsg.includes('HMAC') || errMsg.includes('crypto') ? 'token signing error'
+      : errMsg.includes('Cannot destructure') ? 'missing request body'
+      : 'internal error';
+    res.status(500).json({ error: `Verification failed: ${detail}` });
   }
 });
 

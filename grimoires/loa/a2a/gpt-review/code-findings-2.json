@@ -1,12 +1,13 @@
 {
   "verdict": "APPROVED",
-  "summary": "Both previously reported blocking issues are fixed as requested, and no new truly blocking problems were introduced.",
-  "issues": [],
-  "blocking_issues": [],
-  "fabrication_check": {
-    "passed": true,
-    "concerns": []
-  },
-  "iteration": 2,
-  "auto_approved": false
+  "summary": "The previously flagged IAM permission issue for the new JWT secret has been fixed and no new blocking concerns were introduced.",
+  "previous_issues_status": [
+    {
+      "original_issue": "New Secrets Manager secret not included in DixieServiceSecrets IAM statement",
+      "status": "fixed",
+      "notes": "The new dixie_jwt_private_key ARN is now included in the DixieServiceSecrets Resource list."
+    }
+  ],
+  "new_blocking_concerns": [],
+  "iteration": 2
 }

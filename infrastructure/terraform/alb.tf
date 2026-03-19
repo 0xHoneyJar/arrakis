@@ -50,7 +50,9 @@ resource "aws_lb" "main" {
     enabled = true
   }
 
-  tags = local.common_tags
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-alb"
+  })
 }
 
 resource "aws_lb_target_group" "api" {

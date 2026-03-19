@@ -94,6 +94,16 @@ export const STREAM_CONFIGS: StreamConfig[] = [
     replicas: 1, // Single replica for internal comms
     description: 'Internal health and metrics messages',
   },
+  {
+    name: 'USAGE',
+    subjects: ['inference.usage.>'],
+    retention: RetentionPolicy.Workqueue, // Messages removed after ACK
+    storage: StorageType.File, // Persistent for billing reconciliation
+    maxAge: 72 * 60 * 60 * 1_000_000_000, // 72 hours
+    maxBytes: 500_000_000, // 500MB
+    replicas: getReplicaCount(3),
+    description: 'Inference usage finalization events from loa-finn',
+  },
 ];
 
 // --------------------------------------------------------------------------
@@ -211,12 +221,18 @@ export class NatsClient {
       'Connecting to NATS'
     );
 
+    // SEC-4.4: Pass CA cert for TLS verification when NATS_TLS_CA is set
+    const tlsOpts = process.env['NATS_TLS_CA']
+      ? { tls: { ca: process.env['NATS_TLS_CA'] } }
+      : {};
+
     this.connection = await connect({
       servers: this.config.servers,
       name: this.config.name || `arrakis-worker-${podName}`,
       reconnect: true,
       maxReconnectAttempts: this.config.maxReconnectAttempts ?? -1,
       reconnectTimeWait: this.config.reconnectTimeWait ?? 1000,
+      ...tlsOpts,
     });
 
     // Handle connection events

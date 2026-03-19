@@ -140,10 +140,10 @@ resource "aws_ecs_task_definition" "gateway" {
           name  = "SHARDS_PER_POOL"
           value = "25"
         },
-        # NATS connection via service discovery
+        # NATS connection via service discovery (SEC-4.4: TLS)
         {
           name  = "NATS_URL"
-          value = "nats://nats.${local.name_prefix}.local:4222"
+          value = "tls://nats.${local.name_prefix}.local:4222"
         }
       ]
 
@@ -151,6 +151,10 @@ resource "aws_ecs_task_definition" "gateway" {
         {
           name      = "DISCORD_TOKEN"
           valueFrom = "${data.aws_secretsmanager_secret.app_config.arn}:DISCORD_BOT_TOKEN::"
+        },
+        {
+          name      = "NATS_TLS_CA"
+          valueFrom = aws_secretsmanager_secret.nats_tls_ca.arn
         }
       ]
 
