@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "next_sprint_number": 396,
-  "active_cycle": "cycle-047",
+  "active_cycle": null,
   "cycles": [
     {
       "id": "cycle-001",
@@ -1739,7 +1739,9 @@
     {
       "id": "cycle-046",
       "label": "Armitage Platform — Terraform Consolidation & DNS Authority",
-      "status": "active",
+      "status": "archived",
+      "archived": "2026-03-19T10:45:00Z",
+      "archive_path": "grimoires/loa/archive/cycle-046-armitage-platform",
       "created": "2026-02-28T00:00:00Z",
       "prd": "grimoires/loa/prd.md",
       "sdd": "grimoires/loa/sdd.md",
@@ -1748,70 +1750,76 @@
         {
           "local_label": "sprint-1",
           "global_id": 380,
-          "title": "Stateful Resource Consolidation"
+          "title": "Stateful Resource Consolidation",
+          "status": "completed"
         },
         {
           "local_label": "sprint-2",
           "global_id": 381,
-          "title": "Deploy Pipeline & Observability"
+          "title": "Deploy Pipeline & Observability",
+          "status": "completed"
         },
         {
           "local_label": "sprint-3",
           "global_id": 382,
-          "title": "DNS Module"
+          "title": "DNS Module",
+          "status": "completed"
         },
         {
           "local_label": "sprint-4",
           "global_id": 383,
-          "title": "Migration Validation & Cutover Prep"
+          "title": "Migration Validation & Cutover Prep",
+          "status": "completed"
         },
         {
           "local_label": "sprint-5",
           "global_id": 384,
-          "title": "Hardening & Drift Detection"
+          "title": "Hardening & Drift Detection",
+          "status": "completed"
         },
         {
           "local_label": "sprint-6",
           "global_id": 385,
           "title": "Hounfour v8.3.1 Upgrade + Docker Redeploy",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "local_label": "sprint-7",
           "global_id": 391,
           "title": "CI Unblock — OIDC Role + Finn Deploy Verification",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "local_label": "sprint-8",
           "global_id": 392,
           "title": "Terraform Import Runbook Execution",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "local_label": "sprint-9",
           "global_id": 393,
           "title": "Apply New Resources + Service Verification",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "local_label": "sprint-10",
           "global_id": 394,
           "title": "Legacy AWS Resource Cleanup",
-          "status": "pending"
+          "status": "completed"
         },
         {
           "local_label": "sprint-11",
           "global_id": 395,
           "title": "DNS Module Apply + Migration Prep",
-          "status": "pending"
+          "status": "completed"
         }
       ]
     },
     {
       "id": "cycle-047",
       "label": "Autopoietic Infrastructure — From Hardening to Self-Examination",
-      "status": "active",
+      "status": "archived",
+      "archived": "2026-03-19T10:45:00Z",
       "created": "2026-03-02T02:21:44Z",
       "prd": "grimoires/loa/prd.md",
       "sdd": "grimoires/loa/sdd.md",
@@ -1820,31 +1828,31 @@
           "global_id": 386,
           "local_label": "sprint-1",
           "title": "PR #115 Excellence Gate",
-          "status": "planned"
+          "status": "completed"
         },
         {
           "global_id": 387,
           "local_label": "sprint-2",
           "title": "Knowledge Architecture — Failure Lore & Ecosystem Synthesis",
-          "status": "planned"
+          "status": "completed"
         },
         {
           "global_id": 388,
           "local_label": "sprint-3",
           "title": "Capability Manifest v0.1 — Review as Economic Protocol",
-          "status": "planned"
+          "status": "completed"
         },
         {
           "global_id": 389,
           "local_label": "sprint-4",
           "title": "Economic Feedback & Exploration Budget",
-          "status": "planned"
+          "status": "completed"
         },
         {
           "global_id": 390,
           "local_label": "sprint-5",
           "title": "Integration & Autopoietic Verification",
-          "status": "planned"
+          "status": "completed"
         }
       ]
     }
