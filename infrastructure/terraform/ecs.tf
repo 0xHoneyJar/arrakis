@@ -489,6 +489,7 @@ resource "aws_ecs_task_definition" "api" {
         { name = "FEATURE_CRYPTO_PAYMENTS_ENABLED", value = var.feature_crypto_payments_enabled },
         { name = "FEATURE_API_KEYS_ENABLED", value = var.feature_api_keys_enabled },
         { name = "FEATURE_WEB_CHAT_ENABLED", value = var.feature_web_chat_enabled },
+        { name = "CHAT_ALLOWED_ADDRESSES", value = var.chat_allowed_addresses },
         # Sprint 172: In-house wallet verification base URL (derived from domain)
         { name = "VERIFY_BASE_URL", value = "https://${var.domain_name}" },
         # Hounfour Phase 4: Agent gateway

@@ -303,6 +303,12 @@ variable "feature_web_chat_enabled" {
   }
 }
 
+variable "chat_allowed_addresses" {
+  description = "Comma-separated wallet addresses allowed to send chat messages. Empty = open to all."
+  type        = string
+  default     = ""
+}
+
 # =============================================================================
 # loa-finn Service (Cycle 036)
 # =============================================================================

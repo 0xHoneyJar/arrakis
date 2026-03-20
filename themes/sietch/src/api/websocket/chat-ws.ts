@@ -24,6 +24,45 @@ const MAX_CONNS_PER_IP = 10;
 const GRACEFUL_DRAIN_MS = 120_000;     // 120s — matches ECS container stopTimeout
 const MAX_MESSAGE_SIZE = 4096;         // 4KB max inbound message
 
+// ─── Address Allowlist ──────────────────────────────────────────────────────
+// When CHAT_ALLOWED_ADDRESSES is set, only listed wallet addresses can send
+// messages. Others see read-only mode. Comma-separated, case-insensitive.
+// Unset = open to all authenticated users (public mode).
+
+const ETH_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+function normalizeAddress(address: string): string | null {
+  if (!ETH_ADDRESS_REGEX.test(address)) return null;
+  return address.toLowerCase();
+}
+
+function redactAddress(address: string): string {
+  if (!address || address === 'anon') return 'anon';
+  if (!ETH_ADDRESS_REGEX.test(address)) return 'unknown';
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+const allowedAddressesRaw = process.env.CHAT_ALLOWED_ADDRESSES || '';
+const allowedAddressesList = allowedAddressesRaw
+  .split(',')
+  .map((a) => a.trim())
+  .filter((a) => a.length > 0);
+
+const chatAllowedAddresses: Set<string> = new Set(
+  allowedAddressesList
+    .map((a) => normalizeAddress(a))
+    .filter((a): a is string => !!a)
+);
+
+const chatAllowlistEnabled = allowedAddressesRaw.trim().length > 0 && chatAllowedAddresses.size > 0;
+
+function isAddressAllowed(address: string): boolean {
+  if (!chatAllowlistEnabled) return true;
+  const normalized = normalizeAddress(address);
+  if (!normalized) return false;
+  return chatAllowedAddresses.has(normalized);
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface ChatClient {
@@ -231,16 +270,18 @@ export function createChatWebSocket(httpServer: HttpServer): WebSocketServer {
     }
 
     logger.info(
-      { userId: meta.userId, ip: meta.ip, tokenId: meta.tokenId, authenticated: meta.authenticated, totalClients: clients.size },
+      { userId: redactAddress(meta.userId), ip: meta.ip, tokenId: meta.tokenId, authenticated: meta.authenticated, totalClients: clients.size },
       'WS client connected'
     );
 
-    // Send welcome message with auth status
+    // Send welcome message with auth + allowlist status
+    const canSend = meta.authenticated && isAddressAllowed(meta.userId);
+
     ws.send(JSON.stringify({
       type: 'welcome',
       payload: {
         authenticated: meta.authenticated,
-        readOnly: !meta.authenticated,
+        readOnly: !canSend,
         tokenId: meta.tokenId,
         idleTimeoutMs: IDLE_TIMEOUT_MS,
         heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
@@ -281,7 +322,7 @@ export function createChatWebSocket(httpServer: HttpServer): WebSocketServer {
         }
         clients.delete(ws);
         logger.info(
-          { userId: c.userId, ip: c.ip, totalClients: clients.size },
+          { userId: redactAddress(c.userId), ip: c.ip, totalClients: clients.size },
           'WS client disconnected'
         );
       }
@@ -289,7 +330,7 @@ export function createChatWebSocket(httpServer: HttpServer): WebSocketServer {
 
     // Error handler
     ws.on('error', (err) => {
-      logger.error({ err, userId: meta.userId }, 'WS client error');
+      logger.error({ err, userId: redactAddress(meta.userId) }, 'WS client error');
     });
   });
 
@@ -297,7 +338,7 @@ export function createChatWebSocket(httpServer: HttpServer): WebSocketServer {
   heartbeatTimer = setInterval(() => {
     for (const [ws, client] of clients) {
       if (!client.isAlive) {
-        logger.info({ userId: client.userId, ip: client.ip }, 'WS client heartbeat timeout');
+        logger.info({ userId: redactAddress(client.userId), ip: client.ip }, 'WS client heartbeat timeout');
         ws.terminate();
         continue;
       }
@@ -311,7 +352,7 @@ export function createChatWebSocket(httpServer: HttpServer): WebSocketServer {
     const now = Date.now();
     for (const [ws, client] of clients) {
       if (now - client.lastActivity > IDLE_TIMEOUT_MS) {
-        logger.info({ userId: client.userId, ip: client.ip }, 'WS client idle timeout');
+        logger.info({ userId: redactAddress(client.userId), ip: client.ip }, 'WS client idle timeout');
         ws.close(4000, 'Idle timeout');
       }
     }
@@ -357,6 +398,15 @@ async function handleChatMessage(ws: WebSocket, client: ChatClient, message: Cha
     ws.send(JSON.stringify({
       type: 'error',
       payload: { message: 'Authentication required. Connect your wallet via SIWE to send messages.' },
+    }));
+    return;
+  }
+
+  // Enforce allowlist at message send time
+  if (!isAddressAllowed(client.userId)) {
+    ws.send(JSON.stringify({
+      type: 'error',
+      payload: { message: 'Your wallet is not on the allowlist. Read-only access only.' },
     }));
     return;
   }
@@ -430,7 +480,7 @@ async function handleChatMessage(ws: WebSocket, client: ChatClient, message: Cha
         return;
       }
       client.finnSessionId = sessionData.sessionId;
-      logger.info({ userId: client.userId, finnSessionId: client.finnSessionId }, 'Created finn session');
+      logger.info({ userId: redactAddress(client.userId), finnSessionId: client.finnSessionId }, 'Created finn session');
     }
 
     // Send message via finn session API (non-streaming)
@@ -465,9 +515,9 @@ async function handleChatMessage(ws: WebSocket, client: ChatClient, message: Cha
     sendStreamEnd();
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
-      logger.info({ userId: client.userId }, 'WS chat inference aborted (client disconnect or timeout)');
+      logger.info({ userId: redactAddress(client.userId) }, 'WS chat inference aborted (client disconnect or timeout)');
     } else {
-      logger.error({ err, userId: client.userId }, 'WS chat inference error');
+      logger.error({ err, userId: redactAddress(client.userId) }, 'WS chat inference error');
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'error',
