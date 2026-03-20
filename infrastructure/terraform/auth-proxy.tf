@@ -66,17 +66,29 @@ resource "aws_apigatewayv2_integration" "dynamic_proxy" {
   api_id             = aws_apigatewayv2_api.auth_proxy.id
   integration_type   = "HTTP_PROXY"
   integration_method = "ANY"
-  # HTTP API appends incoming path/query automatically — no {proxy} placeholder needed.
-  integration_uri    = "https://app.dynamic.xyz"
+  # app.dynamicauth.com is Dynamic's API-specific host.
+  # For /{proxy+} routes, API Gateway substitutes the {proxy} path variable.
+  integration_uri    = "https://app.dynamicauth.com/{proxy}"
 
-  # Forward all headers including cookies for SSO
   request_parameters = {
-    "overwrite:header.host" = "app.dynamic.xyz"
+    "overwrite:header.host" = "app.dynamicauth.com"
+  }
+}
+
+# Separate integration for root path (no {proxy} variable available)
+resource "aws_apigatewayv2_integration" "dynamic_proxy_root" {
+  api_id             = aws_apigatewayv2_api.auth_proxy.id
+  integration_type   = "HTTP_PROXY"
+  integration_method = "ANY"
+  integration_uri    = "https://app.dynamicauth.com"
+
+  request_parameters = {
+    "overwrite:header.host" = "app.dynamicauth.com"
   }
 }
 
 # -----------------------------------------------------------------------------
-# Catch-all Route
+# Routes
 # -----------------------------------------------------------------------------
 
 resource "aws_apigatewayv2_route" "proxy_route" {
@@ -85,11 +97,10 @@ resource "aws_apigatewayv2_route" "proxy_route" {
   target    = "integrations/${aws_apigatewayv2_integration.dynamic_proxy.id}"
 }
 
-# Root path route (for /api/v0 direct hits)
 resource "aws_apigatewayv2_route" "root_route" {
   api_id    = aws_apigatewayv2_api.auth_proxy.id
   route_key = "ANY /"
-  target    = "integrations/${aws_apigatewayv2_integration.dynamic_proxy.id}"
+  target    = "integrations/${aws_apigatewayv2_integration.dynamic_proxy_root.id}"
 }
 
 # -----------------------------------------------------------------------------
